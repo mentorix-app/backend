@@ -1,0 +1,74 @@
+---
+description: Mentorix backend — product, stack, MVP architecture, and Go standards for the agent
+alwaysApply: true
+---
+
+# Mentorix Backend — agent rules
+
+## Source of truth for product and project evolution
+
+Before non-trivial changes, **read and align with [AGENTS.md](AGENTS.md)** (roles, Supabase, Telegram, invites, database, env). If this file and AGENTS.md disagree, **AGENTS.md wins**; then suggest updating either file to match.
+
+---
+
+## Architecture — what this system is
+
+- **Monolith** in Go: one API deployment, **REST (Echo v4)** + **PostgreSQL** (planned: **pgx**, **sqlc**, migrations in git). **Microservices are not an MVP goal** — do not split services without explicit user request.
+- **Supabase Auth** on clients; backend **validates JWT** and does not store user passwords.
+- **Telegram bot** is served by **the same backend** (webhook, shared database and business logic with REST).
+- **Redis, full OpenTelemetry, public gRPC API, distributed rate limiting** — **not by default**; add only when explicitly decided or when AGENTS / the task requires it.
+
+---
+
+## Code layout
+
+- **`cmd/<name>/`** — build and wiring only: config parsing, `ListenAndServe`, dependency injection into `internal`. Minimal logic.
+- **`internal/`** — all application logic. As it grows, group by **feature** (e.g. `internal/invite/`) or by layer (`internal/http`, `internal/telegram`, `internal/config`, `internal/db`).
+- **`pkg/`** — do not create “for later”; only if a package is **actually** needed by external modules in this repo.
+- Public HTTP contract: target artifact is **OpenAPI 3** in the repo; when adding endpoints, do not break the spec without updating it in the same change.
+
+---
+
+## Go style and quality
+
+- Handle **all errors** explicitly; wrap with **`fmt.Errorf("context: %w", err)`** (or an equivalent clear wrapper).
+- Pass **`context.Context`** into methods that hit the database or external APIs (including Telegram); **timeouts** on outbound calls are expected.
+- **Do not use `panic`** in business logic; Echo `Recover` is a safety net, not the normal pattern.
+- Keep functions short and **single-purpose**; avoid global variables for dependencies — **inject** at startup or in constructors.
+- Goroutines only with cancellation via `Context` or a clear lifecycle; shared state protected with **mutexes or channels**.
+- Validate at the **HTTP boundary** (body, path, query); do not trust Telegram / webhook input without secret and payload checks.
+- Secrets and keys — **env only** (or a secret manager in production); **never** in the repository.
+- **Code comments:** **English only**. Use them **only where something is non-obvious** (non-trivial business rules, unusual invariants, gotchas). **Do not** scatter comments across the file, **do not** document the obvious, **do not** repeat what names and signatures already say. For exported symbols, add concise **GoDoc** only where the export truly needs explanation.
+
+Dependencies: **Go modules**; before adding a library, **briefly compare 2–3 options** (in chat or the PR) and record the choice in **AGENTS.md** when it is a significant decision.
+
+Tooling: **`go fmt`**, **`goimports`**, **`go vet`**, and **golangci-lint** in CI when available.
+
+---
+
+## Testing
+
+- **Table-driven tests** for business rules (invites, client statuses, linking, etc.).
+- Mock **external** dependencies via interfaces where isolated tests are needed.
+- Do not aim for “100% coverage of every exported symbol” unless the user asks; focus on **critical paths**.
+
+---
+
+## Observability (phased)
+
+- For now, **stdout logs** (Echo middleware) are enough. Later: **`log/slog`**, structured fields, **request ID** middleware.
+- **OpenTelemetry / Jaeger / Prometheus** — only when the user or AGENTS explicitly move to that phase; do not deploy a full observability stack on your own for MVP.
+
+---
+
+## Do not do without explicit request
+
+- Do not introduce a **microservices** repo layout or service-to-service network calls for the Mentorix domain.
+- Do not add **Redis**, **gRPC as the primary public API**, or a **distributed tracing stack** as mandatory infrastructure.
+- Do not over-engineer **Clean Architecture** with no payoff: **handler → service/use case → sqlc/repository** is enough; use interfaces where tests or a second implementation are needed.
+
+---
+
+## Alignment with the user
+
+The user prefers **comparing technology options** and getting their choice before picking libraries. On ambiguous architecture calls, state the trade-off briefly and wait for a decision when the task is not urgent.
