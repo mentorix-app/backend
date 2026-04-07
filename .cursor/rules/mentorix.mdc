@@ -7,16 +7,18 @@ alwaysApply: true
 
 ## Source of truth for product and project evolution
 
-Before non-trivial changes, **read and align with [AGENTS.md](AGENTS.md)** (roles, Supabase, Telegram, invites, database, env). If this file and AGENTS.md disagree, **AGENTS.md wins**; then suggest updating either file to match.
+Before non-trivial changes, **read and align with [AGENTS.md](AGENTS.md)** (roles, auth, Telegram, invites, database, env). If this file and AGENTS.md disagree, **AGENTS.md wins**; then suggest updating either file to match.
 
 ---
 
 ## Architecture — what this system is
 
-- **Monolith** in Go: one API deployment, **REST (Echo v4)** + **PostgreSQL** (planned: **pgx**, **sqlc**, migrations in git). **Microservices are not an MVP goal** — do not split services without explicit user request.
-- **Supabase Auth** on clients; backend **validates JWT** and does not store user passwords.
+- **Monolith** in Go: one API deployment, **REST (Echo v4)** + **managed PostgreSQL** (e.g. Render Postgres, Neon — per AGENTS). Application schema e.g. **`mentorix`**. Use **pgx**, **sqlc** (planned), SQL migrations in git. **Microservices are not an MVP goal** — do not split services without explicit user request.
+- **No Supabase:** **custom authentication** in Go and Postgres. **Phased login (design invariant):** however the user signs in — **email/password**, **Telegram (post-invite)**, **social/OAuth later** — there is **one** logical account: one **`user_id`**. **`users`** + **`auth_identities`** (`email_password`, `telegram`, `oauth_*`, …); all identities point to the **same** `user_id` where they belong to one person. **Ship first:** email+password for REST (argon2, JWT); **clients** primarily via Telegram bot → **`users` + `telegram` identity**, same model as REST users. **Later:** OAuth client flows add identities, not parallel shadow users. **Telegram → mobile:** same `user_id`; linking per AGENTS.md §1 (unified-account subsection). Business logic uses **`user_id`**, not login channel.
 - **Telegram bot** is served by **the same backend** (webhook, shared database and business logic with REST).
-- **Redis, full OpenTelemetry, public gRPC API, distributed rate limiting** — **not by default**; add only when explicitly decided or when AGENTS / the task requires it.
+- **Hosting (phased):** **Primary dev loop** = local `go run` + `.env` + local Docker Postgres/Redis. **Shared dev** = **Render** Web Service on branch **`develop`** with its **own** Render Postgres + Redis and `APP_ENV=development` for frontend integration. **Production** Render service (branch **`main`**, new prod DB/Redis, `APP_ENV=production`) — **only after** dev on Render is stable; do not provision prod early per AGENTS.md §4.
+- **Redis** — **before MVP** (stack decision): managed (**Render Redis**, **Upstash**, etc.) or local Docker for dev. Use for rate limiting, caching, optional session/revocation helpers as features land; inject client from `cmd`, avoid global singletons.
+- **Full OpenTelemetry, public gRPC API** — not by default; add when AGENTS / the task requires it.
 
 ---
 
@@ -64,7 +66,7 @@ Tooling: **`go fmt`**, **`goimports`**, **`go vet`**, and **golangci-lint** in C
 ## Do not do without explicit request
 
 - Do not introduce a **microservices** repo layout or service-to-service network calls for the Mentorix domain.
-- Do not add **Redis**, **gRPC as the primary public API**, or a **distributed tracing stack** as mandatory infrastructure.
+- Do not reuse **production** `DATABASE_URL` / `REDIS_URL` / secrets in **development** on a laptop. Do not add **gRPC as the primary public API** or a **distributed tracing stack** as mandatory infrastructure without explicit request.
 - Do not over-engineer **Clean Architecture** with no payoff: **handler → service/use case → sqlc/repository** is enough; use interfaces where tests or a second implementation are needed.
 
 ---
