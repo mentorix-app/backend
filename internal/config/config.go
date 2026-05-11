@@ -7,11 +7,12 @@ import (
 )
 
 type Config struct {
-	AppEnv      string
-	Port        string
-	DatabaseURL string
-	RedisURL    string
-	JWTSecret   string
+	AppEnv             string
+	Port               string
+	DatabaseURL        string
+	RedisURL           string
+	JWTSecret          string
+	CORSAllowedOrigins []string
 }
 
 func Load() (Config, error) {
@@ -26,11 +27,12 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		AppEnv:      appEnv,
-		Port:        port,
-		DatabaseURL: strings.TrimSpace(os.Getenv("DATABASE_URL")),
-		RedisURL:    strings.TrimSpace(os.Getenv("REDIS_URL")),
-		JWTSecret:   strings.TrimSpace(os.Getenv("JWT_SECRET")),
+		AppEnv:             appEnv,
+		Port:               port,
+		DatabaseURL:        strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		RedisURL:           strings.TrimSpace(os.Getenv("REDIS_URL")),
+		JWTSecret:          strings.TrimSpace(os.Getenv("JWT_SECRET")),
+		CORSAllowedOrigins: parseCommaSeparated(os.Getenv("CORS_ALLOW_ORIGINS")),
 	}
 
 	if cfg.AppEnv != "development" && cfg.AppEnv != "production" {
@@ -45,4 +47,20 @@ func Load() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func parseCommaSeparated(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
