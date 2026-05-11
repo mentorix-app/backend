@@ -9,11 +9,9 @@ import (
 
 const issuer = "mentorix-backend"
 
-const accessTTL = 24 * time.Hour
-
-func signAccessToken(userID uuid.UUID, secret []byte) (token string, expiresAt time.Time, err error) {
+func signAccessToken(userID uuid.UUID, secret []byte, ttl time.Duration) (token string, expiresAt time.Time, err error) {
 	now := time.Now().UTC()
-	exp := now.Add(accessTTL)
+	exp := now.Add(ttl)
 	claims := jwt.RegisteredClaims{
 		Issuer:    issuer,
 		Subject:   userID.String(),

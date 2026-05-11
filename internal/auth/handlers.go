@@ -8,22 +8,36 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+
+	"mentorix-backend/internal/config"
 )
 
 type Handlers struct {
-	svc       *Service
-	jwtSecret string
+	svc        *Service
+	jwtSecret  string
+	cookie     config.RefreshCookieSettings
+	refreshTTL time.Duration
+	limiter    *RateLimiter
 }
 
-func NewHandlers(svc *Service, jwtSecret string) *Handlers {
-	return &Handlers{svc: svc, jwtSecret: jwtSecret}
+func NewHandlers(svc *Service, jwtSecret string, cookie config.RefreshCookieSettings, refreshTTL time.Duration, limiter *RateLimiter) *Handlers {
+	return &Handlers{
+		svc:        svc,
+		jwtSecret:  jwtSecret,
+		cookie:     cookie,
+		refreshTTL: refreshTTL,
+		limiter:    limiter,
+	}
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
 	e.POST("/auth/register", h.Register)
 	e.POST("/auth/login", h.Login)
+	e.POST("/auth/refresh", h.Refresh)
+	e.POST("/auth/logout", h.Logout)
 	g := e.Group("", JWTMiddleware(h.jwtSecret))
 	g.GET("/auth/me", h.Me)
+	g.POST("/auth/logout-all", h.LogoutAll)
 }
 
 type authCredentialsBody struct {
@@ -44,7 +58,52 @@ type meResponse struct {
 	Email  string `json:"email"`
 }
 
+func (h *Handlers) setRefreshCookie(c echo.Context, value string) {
+	ck := &http.Cookie{
+		Name:     h.cookie.Name,
+		Value:    value,
+		Path:     h.cookie.Path,
+		Domain:   h.cookie.Domain,
+		MaxAge:   int(h.refreshTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   h.cookie.Secure,
+		SameSite: h.cookie.SameSite,
+	}
+	c.SetCookie(ck)
+}
+
+func (h *Handlers) clearRefreshCookie(c echo.Context) {
+	ck := &http.Cookie{
+		Name:     h.cookie.Name,
+		Value:    "",
+		Path:     h.cookie.Path,
+		Domain:   h.cookie.Domain,
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   h.cookie.Secure,
+		SameSite: h.cookie.SameSite,
+	}
+	c.SetCookie(ck)
+}
+
+func (h *Handlers) writeAuthJSON(c echo.Context, status int, issued IssuedAuth) error {
+	h.setRefreshCookie(c, issued.RefreshToken)
+	return c.JSON(status, tokenResponse{
+		AccessToken: issued.AccessToken,
+		TokenType:   "Bearer",
+		ExpiresAt:   issued.AccessExpires.UTC(),
+		UserID:      issued.UserID.String(),
+		Email:       issued.Email,
+	})
+}
+
 func (h *Handlers) Register(c echo.Context) error {
+	if err := h.limiter.AllowRegister(c.Request().Context(), c.RealIP()); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+	}
 	var body authCredentialsBody
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid json")
@@ -60,23 +119,23 @@ func (h *Handlers) Register(c echo.Context) error {
 	if err := ValidatePassword(body.Password); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	token, exp, userID, err := h.svc.RegisterTrainer(c.Request().Context(), email, body.Password)
+	issued, err := h.svc.RegisterTrainer(c.Request().Context(), email, body.Password)
 	if err != nil {
 		if errors.Is(err, ErrEmailTaken) {
 			return echo.NewHTTPError(http.StatusConflict, "email already registered")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "registration failed")
 	}
-	return c.JSON(http.StatusCreated, tokenResponse{
-		AccessToken: token,
-		TokenType:   "Bearer",
-		ExpiresAt:   exp.UTC(),
-		UserID:      userID.String(),
-		Email:       email,
-	})
+	return h.writeAuthJSON(c, http.StatusCreated, issued)
 }
 
 func (h *Handlers) Login(c echo.Context) error {
+	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+	}
 	var body authCredentialsBody
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid json")
@@ -86,20 +145,61 @@ func (h *Handlers) Login(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid email or password")
 	}
 	email := NormalizeEmail(addr.Address)
-	token, exp, userID, err := h.svc.Login(c.Request().Context(), email, body.Password)
+	issued, err := h.svc.Login(c.Request().Context(), email, body.Password)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
 			return echo.NewHTTPError(http.StatusUnauthorized, "invalid email or password")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "login failed")
 	}
-	return c.JSON(http.StatusOK, tokenResponse{
-		AccessToken: token,
-		TokenType:   "Bearer",
-		ExpiresAt:   exp.UTC(),
-		UserID:      userID.String(),
-		Email:       email,
-	})
+	return h.writeAuthJSON(c, http.StatusOK, issued)
+}
+
+func (h *Handlers) Refresh(c echo.Context) error {
+	plain := h.refreshFromRequest(c)
+	if plain == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "missing refresh token")
+	}
+	issued, err := h.svc.Refresh(c.Request().Context(), plain)
+	if err != nil {
+		if errors.Is(err, ErrInvalidRefresh) {
+			h.clearRefreshCookie(c)
+			return echo.NewHTTPError(http.StatusUnauthorized, "invalid refresh token")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "refresh failed")
+	}
+	return h.writeAuthJSON(c, http.StatusOK, issued)
+}
+
+func (h *Handlers) refreshFromRequest(c echo.Context) string {
+	cc, err := c.Cookie(h.cookie.Name)
+	if err != nil || cc == nil {
+		return ""
+	}
+	return cc.Value
+}
+
+func (h *Handlers) Logout(c echo.Context) error {
+	plain := h.refreshFromRequest(c)
+	if plain != "" {
+		if err := h.svc.Logout(c.Request().Context(), plain); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "logout failed")
+		}
+	}
+	h.clearRefreshCookie(c)
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *Handlers) LogoutAll(c echo.Context) error {
+	uid, ok := UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal")
+	}
+	if err := h.svc.LogoutAll(c.Request().Context(), uid); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "logout failed")
+	}
+	h.clearRefreshCookie(c)
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handlers) Me(c echo.Context) error {

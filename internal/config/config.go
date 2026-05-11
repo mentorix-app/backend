@@ -2,17 +2,43 @@ package config
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
+type RefreshCookieSettings struct {
+	Name     string
+	Path     string
+	Domain   string
+	Secure   bool
+	SameSite http.SameSite
+}
+
 type Config struct {
-	AppEnv             string
-	Port               string
-	DatabaseURL        string
-	RedisURL           string
-	JWTSecret          string
-	CORSAllowedOrigins []string
+	AppEnv              string
+	Port                string
+	DatabaseURL         string
+	RedisURL            string
+	JWTSecret           string
+	CORSAllowedOrigins  []string
+	AccessTTLMinutes    int
+	RefreshTTLDays      int
+	RefreshCookie       RefreshCookieSettings
+	AuthLoginRateMax    int
+	AuthLoginRateWindow time.Duration
+	AuthRegisterRateMax int
+	AuthRegisterRateWin time.Duration
+}
+
+func (c Config) AccessTokenTTL() time.Duration {
+	return time.Duration(c.AccessTTLMinutes) * time.Minute
+}
+
+func (c Config) RefreshTokenTTL() time.Duration {
+	return time.Duration(c.RefreshTTLDays) * 24 * time.Hour
 }
 
 func Load() (Config, error) {
@@ -26,6 +52,42 @@ func Load() (Config, error) {
 		port = "8080"
 	}
 
+	accessMin := intFromEnv("ACCESS_TTL_MINUTES", 15)
+	if accessMin < 1 {
+		accessMin = 15
+	}
+	refreshDays := intFromEnv("REFRESH_TTL_DAYS", 30)
+	if refreshDays < 1 {
+		refreshDays = 30
+	}
+
+	cookieName := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_NAME"))
+	if cookieName == "" {
+		cookieName = "mentorix_refresh"
+	}
+	cookiePath := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_PATH"))
+	if cookiePath == "" {
+		cookiePath = "/auth"
+	}
+	cookieDomain := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_DOMAIN"))
+
+	secure := appEnv == "production"
+	if v := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_SECURE")); v == "true" {
+		secure = true
+	} else if v == "false" {
+		secure = false
+	}
+
+	sameSite, err := sameSiteFromEnv(strings.TrimSpace(os.Getenv("REFRESH_COOKIE_SAMESITE")), appEnv)
+	if err != nil {
+		return Config{}, err
+	}
+
+	loginMax := intFromEnv("AUTH_LOGIN_RATE_MAX", 20)
+	loginWin := secondsFromEnv("AUTH_LOGIN_RATE_WINDOW_SEC", 900)
+	regMax := intFromEnv("AUTH_REGISTER_RATE_MAX", 10)
+	regWin := secondsFromEnv("AUTH_REGISTER_RATE_WINDOW_SEC", 900)
+
 	cfg := Config{
 		AppEnv:             appEnv,
 		Port:               port,
@@ -33,6 +95,19 @@ func Load() (Config, error) {
 		RedisURL:           strings.TrimSpace(os.Getenv("REDIS_URL")),
 		JWTSecret:          strings.TrimSpace(os.Getenv("JWT_SECRET")),
 		CORSAllowedOrigins: parseCommaSeparated(os.Getenv("CORS_ALLOW_ORIGINS")),
+		AccessTTLMinutes:   accessMin,
+		RefreshTTLDays:     refreshDays,
+		RefreshCookie: RefreshCookieSettings{
+			Name:     cookieName,
+			Path:     cookiePath,
+			Domain:   cookieDomain,
+			Secure:   secure,
+			SameSite: sameSite,
+		},
+		AuthLoginRateMax:    loginMax,
+		AuthLoginRateWindow: loginWin,
+		AuthRegisterRateMax: regMax,
+		AuthRegisterRateWin: regWin,
 	}
 
 	if cfg.AppEnv != "development" && cfg.AppEnv != "production" {
@@ -47,6 +122,49 @@ func Load() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func sameSiteFromEnv(raw, appEnv string) (http.SameSite, error) {
+	if raw == "" {
+		if appEnv == "production" {
+			return http.SameSiteNoneMode, nil
+		}
+		return http.SameSiteLaxMode, nil
+	}
+	switch strings.ToLower(raw) {
+	case "lax":
+		return http.SameSiteLaxMode, nil
+	case "strict":
+		return http.SameSiteStrictMode, nil
+	case "none":
+		return http.SameSiteNoneMode, nil
+	default:
+		return http.SameSiteDefaultMode, fmt.Errorf("config: REFRESH_COOKIE_SAMESITE must be lax, strict, or none, got %q", raw)
+	}
+}
+
+func intFromEnv(key string, defaultVal int) int {
+	s := strings.TrimSpace(os.Getenv(key))
+	if s == "" {
+		return defaultVal
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 0 {
+		return defaultVal
+	}
+	return v
+}
+
+func secondsFromEnv(key string, defaultSec int) time.Duration {
+	s := strings.TrimSpace(os.Getenv(key))
+	if s == "" {
+		return time.Duration(defaultSec) * time.Second
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 1 {
+		return time.Duration(defaultSec) * time.Second
+	}
+	return time.Duration(v) * time.Second
 }
 
 func parseCommaSeparated(s string) []string {
