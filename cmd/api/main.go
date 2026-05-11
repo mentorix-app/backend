@@ -40,6 +40,7 @@ func main() {
 	}
 
 	e := echo.New()
+	e.IPExtractor = echo.ExtractIPFromXFFHeader()
 	e.HideBanner = true
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
@@ -60,8 +61,15 @@ func main() {
 	health.RegisterReady(e, pool, rdb)
 
 	if pool != nil {
-		svc := auth.NewService(pool, cfg.JWTSecret)
-		auth.NewHandlers(svc, cfg.JWTSecret).Mount(e)
+		limiter := auth.NewRateLimiter(
+			rdb,
+			cfg.AuthLoginRateMax,
+			cfg.AuthLoginRateWindow,
+			cfg.AuthRegisterRateMax,
+			cfg.AuthRegisterRateWin,
+		)
+		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL())
+		auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter).Mount(e)
 	}
 
 	addr := ":" + cfg.Port

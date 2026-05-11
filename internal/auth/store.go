@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -84,4 +85,71 @@ func (s *Store) getEmailPasswordIdentity(ctx context.Context, email string) (ema
 		ProviderEmailPassword, email,
 	).Scan(&row.UserID, &row.PasswordHash)
 	return row, err
+}
+
+func (s *Store) InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO mentorix.refresh_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+		userID, tokenHash, expiresAt,
+	)
+	if err != nil {
+		return fmt.Errorf("insert refresh session: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var userID uuid.UUID
+	err = tx.QueryRow(ctx,
+		`SELECT user_id FROM mentorix.refresh_sessions WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now() FOR UPDATE`,
+		oldHash,
+	).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrInvalidRefresh
+		}
+		return uuid.Nil, fmt.Errorf("load refresh session: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE mentorix.refresh_sessions SET revoked_at = now() WHERE token_hash = $1`, oldHash); err != nil {
+		return uuid.Nil, fmt.Errorf("revoke refresh session: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO mentorix.refresh_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+		userID, newHash, newExpiresAt,
+	); err != nil {
+		return uuid.Nil, fmt.Errorf("insert rotated refresh session: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, fmt.Errorf("commit: %w", err)
+	}
+	return userID, nil
+}
+
+func (s *Store) RevokeRefreshSession(ctx context.Context, tokenHash []byte) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE mentorix.refresh_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
+		tokenHash,
+	)
+	if err != nil {
+		return fmt.Errorf("revoke refresh session: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE mentorix.refresh_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+		userID,
+	)
+	if err != nil {
+		return fmt.Errorf("revoke all refresh sessions: %w", err)
+	}
+	return nil
 }
