@@ -9,6 +9,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
+	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/config"
 	"mentorix-backend/internal/health"
 )
@@ -47,6 +48,11 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 	health.RegisterReady(e, pool, rdb)
+
+	if pool != nil {
+		svc := auth.NewService(pool, cfg.JWTSecret)
+		auth.NewHandlers(svc, cfg.JWTSecret).Mount(e)
+	}
 
 	addr := ":" + cfg.Port
 	e.Logger.Fatal(e.Start(addr))

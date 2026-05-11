@@ -7,7 +7,7 @@ alwaysApply: true
 
 ## Source of truth for product and project evolution
 
-Before non-trivial changes, **read and align with [AGENTS.md](AGENTS.md)** (roles, auth, Telegram, invites, database, env). If this file and AGENTS.md disagree, **AGENTS.md wins**; then suggest updating either file to match.
+Before non-trivial changes, **read and align with `AGENTS.md`** when present locally (roles, auth, Telegram, invites, database, env). It may be gitignored; then use this file plus tracked code and `.env.example`. If this file and `AGENTS.md` disagree, **`AGENTS.md` wins**; suggest updating either so they match.
 
 ---
 
@@ -68,6 +68,16 @@ Tooling: **`go fmt`**, **`goimports`**, **`go vet`**, and **golangci-lint** in C
 - Do not introduce a **microservices** repo layout or service-to-service network calls for the Mentorix domain.
 - Do not reuse **production** `DATABASE_URL` / `REDIS_URL` / secrets in **development** on a laptop. Do not add **gRPC as the primary public API** or a **distributed tracing stack** as mandatory infrastructure without explicit request.
 - Do not over-engineer **Clean Architecture** with no payoff: **handler → service/use case → sqlc/repository** is enough; use interfaces where tests or a second implementation are needed.
+
+---
+
+## Git naming conventions
+
+- **Branch names:** use prefixes from this set: `feature/`, `bugfix/`, `hotfix/`, `chore/`, `docs/`, `refactor/`, `test/`. Keep the suffix short, kebab-case, and task-oriented (example: `feature/auth-register-login`).
+- **Commit messages:** follow Conventional Commits: `type(scope): short summary`.
+- Allowed commit `type` values: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `ci`, `build`, `revert`.
+- Use **`feat(...)` only for new user-facing/backend-facing behavior**; use `fix(...)` for bugs and the other types for their respective intent.
+- Keep the subject line concise and imperative (example: `feat(auth): add register and login endpoints`).
 
 ---
 
