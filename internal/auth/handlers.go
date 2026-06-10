@@ -57,6 +57,7 @@ type meResponse struct {
 	UserID    string    `json:"user_id"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
+	Roles     []string  `json:"roles"`
 }
 
 func (h *Handlers) setRefreshCookie(c echo.Context, value string) {
@@ -219,5 +220,6 @@ func (h *Handlers) Me(c echo.Context) error {
 		UserID:    uid.String(),
 		Email:     profile.Email,
 		CreatedAt: profile.CreatedAt,
+		Roles:     profile.Roles,
 	})
 }

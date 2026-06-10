@@ -77,6 +77,7 @@ func (s *Store) UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string,
 type UserProfile struct {
 	Email     string
 	CreatedAt time.Time
+	Roles     []string
 }
 
 func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
@@ -92,7 +93,37 @@ func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile,
 		return UserProfile{}, fmt.Errorf("load user: %w", err)
 	}
 	profile.CreatedAt = profile.CreatedAt.UTC()
+
+	roles, err := s.UserRoles(ctx, userID)
+	if err != nil {
+		return UserProfile{}, err
+	}
+	profile.Roles = roles
 	return profile, nil
+}
+
+func (s *Store) UserRoles(ctx context.Context, userID uuid.UUID) ([]string, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT role FROM mentorix.user_roles WHERE user_id = $1 ORDER BY role`,
+		userID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load user roles: %w", err)
+	}
+	defer rows.Close()
+
+	roles := make([]string, 0)
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, fmt.Errorf("scan user role: %w", err)
+		}
+		roles = append(roles, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate user roles: %w", err)
+	}
+	return roles, nil
 }
 
 func (s *Store) getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error) {
