@@ -11,6 +11,7 @@ import (
 
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/config"
+	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
 )
 
@@ -70,6 +71,9 @@ func main() {
 		)
 		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL())
 		auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter).Mount(e)
+
+		exSvc := exercise.NewService(pool)
+		exercise.NewHandlers(exSvc, pool, cfg.JWTSecret).Mount(e)
 	}
 
 	addr := ":" + cfg.Port

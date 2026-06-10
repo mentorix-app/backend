@@ -46,6 +46,26 @@ Dependencies: **Go modules**; before adding a library, **briefly compare 2–3 o
 
 Tooling: **`go fmt`**, **`goimports`**, **`go vet`**, and **golangci-lint** in CI when available.
 
+### API and naming (mandatory — all new code)
+
+Single convention across Go code, PostgreSQL, and REST JSON. **Do not** use camelCase in JSON or kebab-case in enum/DB string values.
+
+| Layer | Rule | Example |
+|-------|------|---------|
+| Go exported fields / types | PascalCase | `NameRu`, `ExerciseType` |
+| Go string enum constants | type prefix + snake value | `ExerciseTypeStrength = "strength"` |
+| PostgreSQL columns | snake_case | `name_ru`, `muscle_group`, `created_at` |
+| JSON keys | explicit `json:"snake_case"` tags | `json:"access_token"`, `json:"modified_at"` |
+| JSON / DB enum values | snake_case | `pull_up_bar`, `full_body`, `email_password` |
+| HTTP URL paths | kebab-case (exception) | `/auth/logout-all` |
+
+- Never rely on default `encoding/json` field names (PascalCase). Always set `json` tags.
+- Do not name domain types `Type` — use a specific name (`ExerciseType`, `InviteStatus`, …).
+- **GET responses** for domain entities must include **`created_at`** whenever the table has that column (list and by-id). Operational endpoints (`/health`, `/health/ready`) are excluded.
+- API responses should expose the same snake_case fields as the DB where they are part of the contract.
+- Request DTOs in handlers may differ from response structs; both use snake_case JSON tags.
+- Exceptions only where a standard requires it: `token_type: "Bearer"`, single-word keys (`email`, `password`, `name`).
+
 ---
 
 ## Testing
