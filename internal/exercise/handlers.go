@@ -23,15 +23,16 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
-	g := e.Group("/exercises",
-		auth.JWTMiddleware(h.jwtSecret),
-		auth.TrainerMiddleware(h.pool),
-	)
-	g.GET("", h.List)
-	g.GET("/:id", h.Get)
-	g.POST("", h.Create)
-	g.PUT("/:id", h.Update)
-	g.DELETE("/:id", h.Delete)
+	base := e.Group("/exercises", auth.JWTMiddleware(h.jwtSecret))
+
+	read := base.Group("", auth.TrainerMiddleware(h.pool))
+	read.GET("", h.List)
+	read.GET("/:id", h.Get)
+
+	write := base.Group("", auth.AdminMiddleware(h.pool))
+	write.POST("", h.Create)
+	write.PUT("/:id", h.Update)
+	write.DELETE("/:id", h.Delete)
 }
 
 type upsertBody struct {
