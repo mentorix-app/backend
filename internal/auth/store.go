@@ -67,15 +67,32 @@ type emailIdentityRow struct {
 }
 
 func (s *Store) UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error) {
-	var email string
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(primary_email, '') FROM mentorix.users WHERE id = $1`, userID).Scan(&email)
+	profile, err := s.UserProfile(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	return profile.Email, nil
+}
+
+type UserProfile struct {
+	Email     string
+	CreatedAt time.Time
+}
+
+func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
+	var profile UserProfile
+	err := s.pool.QueryRow(ctx,
+		`SELECT COALESCE(primary_email, ''), created_at FROM mentorix.users WHERE id = $1`,
+		userID,
+	).Scan(&profile.Email, &profile.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", pgx.ErrNoRows
+			return UserProfile{}, pgx.ErrNoRows
 		}
-		return "", fmt.Errorf("load user: %w", err)
+		return UserProfile{}, fmt.Errorf("load user: %w", err)
 	}
-	return email, nil
+	profile.CreatedAt = profile.CreatedAt.UTC()
+	return profile, nil
 }
 
 func (s *Store) getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error) {

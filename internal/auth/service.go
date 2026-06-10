@@ -152,3 +152,7 @@ func (s *Service) LogoutAll(ctx context.Context, userID uuid.UUID) error {
 func (s *Service) UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error) {
 	return s.store.UserPrimaryEmail(ctx, userID)
 }
+
+func (s *Service) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
+	return s.store.UserProfile(ctx, userID)
+}

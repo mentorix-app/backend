@@ -54,8 +54,9 @@ type tokenResponse struct {
 }
 
 type meResponse struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
+	UserID    string    `json:"user_id"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (h *Handlers) setRefreshCookie(c echo.Context, value string) {
@@ -207,12 +208,16 @@ func (h *Handlers) Me(c echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal")
 	}
-	email, err := h.svc.UserPrimaryEmail(c.Request().Context(), uid)
+	profile, err := h.svc.UserProfile(c.Request().Context(), uid)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, "user not found")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal")
 	}
-	return c.JSON(http.StatusOK, meResponse{UserID: uid.String(), Email: email})
+	return c.JSON(http.StatusOK, meResponse{
+		UserID:    uid.String(),
+		Email:     profile.Email,
+		CreatedAt: profile.CreatedAt,
+	})
 }
