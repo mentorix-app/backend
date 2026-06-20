@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"mentorix-backend/internal/db"
 )
 
 const exerciseSelectColumns = `
@@ -35,7 +37,7 @@ func (s *Store) List(ctx context.Context, params ListParams) (ListResult, error)
 	listArgs := append(append([]any{}, args...), params.Limit, params.Offset())
 	query := fmt.Sprintf(`
 		SELECT %s
-		FROM mentorix.exercises
+		FROM `+db.Table("exercises")+`
 		%s
 		ORDER BY %s %s
 		LIMIT $%d OFFSET $%d`,
@@ -65,7 +67,7 @@ func (s *Store) List(ctx context.Context, params ListParams) (ListResult, error)
 }
 
 func (s *Store) countExercises(ctx context.Context, where string, args []any) (int, error) {
-	query := fmt.Sprintf(`SELECT COUNT(*) FROM mentorix.exercises %s`, where)
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM %s %s`, db.Table("exercises"), where)
 	var total int
 	if err := s.pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
 		return 0, fmt.Errorf("count exercises: %w", err)
@@ -113,7 +115,7 @@ func buildListWhere(params ListParams) (string, []any) {
 func (s *Store) GetByID(ctx context.Context, id uuid.UUID) (Exercise, error) {
 	row := s.pool.QueryRow(ctx, fmt.Sprintf(`
 		SELECT %s
-		FROM mentorix.exercises
+		FROM `+db.Table("exercises")+`
 		WHERE id = $1`, exerciseSelectColumns), id)
 	ex, err := scanExercise(row)
 	if err != nil {
@@ -134,7 +136,7 @@ func (s *Store) Create(ctx context.Context, userID uuid.UUID, in UpsertInput) (E
 	}
 	var id uuid.UUID
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO mentorix.exercises (
+		INSERT INTO `+db.Table("exercises")+` (
 			name, name_ru, added_by, modified_by, modified_at,
 			equipment, type, muscle_group, description, description_ru,
 			difficulty, video_url, preview_image_url
@@ -157,7 +159,7 @@ func (s *Store) Update(ctx context.Context, id, userID uuid.UUID, in UpsertInput
 		equipment = &v
 	}
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE mentorix.exercises SET
+		UPDATE `+db.Table("exercises")+` SET
 			name = $2, name_ru = $3, modified_by = $4, modified_at = $5,
 			equipment = $6, type = $7, muscle_group = $8, description = $9, description_ru = $10,
 			difficulty = $11, video_url = $12, preview_image_url = $13
@@ -175,7 +177,7 @@ func (s *Store) Update(ctx context.Context, id, userID uuid.UUID, in UpsertInput
 }
 
 func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM mentorix.exercises WHERE id = $1`, id)
+	tag, err := s.pool.Exec(ctx, `DELETE FROM `+db.Table("exercises")+` WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete exercise: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/auth"
+	httpx "mentorix-backend/internal/http"
 )
 
 type Handlers struct {
@@ -41,12 +42,12 @@ type userResponse struct {
 func (h *Handlers) GrantAdmin(c echo.Context) error {
 	targetUserID, err := uuid.Parse(c.Param("user_id"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid user_id")
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidUserID)
 	}
 	profile, err := h.svc.GrantAdmin(c.Request().Context(), targetUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user not found")
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "grant admin failed")
 	}

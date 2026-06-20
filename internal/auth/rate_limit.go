@@ -11,6 +11,14 @@ import (
 
 var ErrRateLimited = errors.New("too many requests")
 
+const (
+	rateLimitKeyPrefix = "mentorix:rl:"
+	rateLimitLogin     = "login:ip"
+	rateLimitRegister  = "register:ip"
+	rateLimitRefresh   = "refresh:ip"
+	rateLimitUnknownIP = "unknown"
+)
+
 type RateLimiter struct {
 	rdb         *redis.Client
 	loginMax    int
@@ -36,28 +44,28 @@ func (l *RateLimiter) AllowLogin(ctx context.Context, ip string) error {
 	if l == nil || l.loginMax <= 0 {
 		return nil
 	}
-	return l.allow(ctx, "login:ip", ip, l.loginMax, l.loginWin)
+	return l.allow(ctx, rateLimitLogin, ip, l.loginMax, l.loginWin)
 }
 
 func (l *RateLimiter) AllowRegister(ctx context.Context, ip string) error {
 	if l == nil || l.registerMax <= 0 {
 		return nil
 	}
-	return l.allow(ctx, "register:ip", ip, l.registerMax, l.registerWin)
+	return l.allow(ctx, rateLimitRegister, ip, l.registerMax, l.registerWin)
 }
 
 func (l *RateLimiter) AllowRefresh(ctx context.Context, ip string) error {
 	if l == nil || l.loginMax <= 0 {
 		return nil
 	}
-	return l.allow(ctx, "refresh:ip", ip, l.loginMax, l.loginWin)
+	return l.allow(ctx, rateLimitRefresh, ip, l.loginMax, l.loginWin)
 }
 
 func (l *RateLimiter) allow(ctx context.Context, prefix, key string, max int, window time.Duration) error {
 	if key == "" {
-		key = "unknown"
+		key = rateLimitUnknownIP
 	}
-	rkey := "mentorix:rl:" + prefix + ":" + key
+	rkey := rateLimitKeyPrefix + prefix + ":" + key
 	n, err := l.rdb.Incr(ctx, rkey).Result()
 	if err != nil {
 		return fmt.Errorf("rate limit incr: %w", err)

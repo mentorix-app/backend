@@ -11,7 +11,9 @@ const (
 	DefaultLimit     = 20
 	MaxLimit         = 100
 	defaultSortBy    = "name"
-	defaultSortOrder = "asc"
+	SortOrderAsc     = "asc"
+	SortOrderDesc    = "desc"
+	defaultSortOrder = SortOrderAsc
 	equipmentNone    = "none"
 )
 
@@ -91,7 +93,7 @@ func ParseListParams(
 
 	if sortOrder != "" {
 		order := strings.ToLower(sortOrder)
-		if order != "asc" && order != "desc" {
+		if order != SortOrderAsc && order != SortOrderDesc {
 			return ListParams{}, fmt.Errorf("%w: invalid sort_order", ErrValidation)
 		}
 		params.SortOrder = order

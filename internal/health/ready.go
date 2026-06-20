@@ -13,6 +13,15 @@ import (
 
 const pingTimeout = 2 * time.Second
 
+const (
+	StatusOK                    = "ok"
+	CheckError                  = "error"
+	CheckSkipped                = "skipped"
+	ReadyStatusReady            = "ready"
+	ReadyStatusNotReady         = "not_ready"
+	ReadyStatusNoDepsConfigured = "no_dependencies_configured"
+)
+
 type ReadyResponse struct {
 	Status string            `json:"status"`
 	Checks map[string]string `json:"checks"`
@@ -30,33 +39,33 @@ func RegisterReady(e *echo.Echo, pool *pgxpool.Pool, rdb *redis.Client) {
 		if pool != nil {
 			anyRequired = true
 			if err := pool.Ping(ctx); err != nil {
-				checks["database"] = "error"
+				checks["database"] = CheckError
 				allOK = false
 			} else {
-				checks["database"] = "ok"
+				checks["database"] = StatusOK
 			}
 		} else {
-			checks["database"] = "skipped"
+			checks["database"] = CheckSkipped
 		}
 
 		if rdb != nil {
 			anyRequired = true
 			if err := rdb.Ping(ctx).Err(); err != nil {
-				checks["redis"] = "error"
+				checks["redis"] = CheckError
 				allOK = false
 			} else {
-				checks["redis"] = "ok"
+				checks["redis"] = StatusOK
 			}
 		} else {
-			checks["redis"] = "skipped"
+			checks["redis"] = CheckSkipped
 		}
 
-		status := "ready"
+		status := ReadyStatusReady
 		if anyRequired && !allOK {
-			status = "not_ready"
+			status = ReadyStatusNotReady
 		}
 		if !anyRequired {
-			status = "no_dependencies_configured"
+			status = ReadyStatusNoDepsConfigured
 		}
 
 		code := http.StatusOK

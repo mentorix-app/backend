@@ -45,7 +45,7 @@ func (c Config) RefreshTokenTTL() time.Duration {
 func Load() (Config, error) {
 	appEnv := strings.TrimSpace(os.Getenv("APP_ENV"))
 	if appEnv == "" {
-		appEnv = "development"
+		appEnv = AppEnvDevelopment
 	}
 
 	port := strings.TrimSpace(os.Getenv("PORT"))
@@ -72,7 +72,7 @@ func Load() (Config, error) {
 	}
 	cookieDomain := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_DOMAIN"))
 
-	secure := appEnv == "production"
+	secure := appEnv == AppEnvProduction
 	if v := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_SECURE")); v == "true" {
 		secure = true
 	} else if v == "false" {
@@ -112,7 +112,7 @@ func Load() (Config, error) {
 		AuthRegisterRateWin: regWin,
 	}
 
-	if cfg.AppEnv != "development" && cfg.AppEnv != "production" {
+	if cfg.AppEnv != AppEnvDevelopment && cfg.AppEnv != AppEnvProduction {
 		return Config{}, fmt.Errorf("config: APP_ENV must be development or production, got %q", cfg.AppEnv)
 	}
 
@@ -128,17 +128,17 @@ func Load() (Config, error) {
 
 func sameSiteFromEnv(raw, appEnv string) (http.SameSite, error) {
 	if raw == "" {
-		if appEnv == "production" {
+		if appEnv == AppEnvProduction {
 			return http.SameSiteNoneMode, nil
 		}
 		return http.SameSiteLaxMode, nil
 	}
 	switch strings.ToLower(raw) {
-	case "lax":
+	case SameSiteLax:
 		return http.SameSiteLaxMode, nil
-	case "strict":
+	case SameSiteStrict:
 		return http.SameSiteStrictMode, nil
-	case "none":
+	case SameSiteNone:
 		return http.SameSiteNoneMode, nil
 	default:
 		return http.SameSiteDefaultMode, fmt.Errorf("config: REFRESH_COOKIE_SAMESITE must be lax, strict, or none, got %q", raw)

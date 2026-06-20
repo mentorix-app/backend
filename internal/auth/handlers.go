@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/config"
+	httpx "mentorix-backend/internal/http"
 )
 
 type Handlers struct {
@@ -92,7 +93,7 @@ func (h *Handlers) writeAuthJSON(c echo.Context, status int, issued IssuedAuth) 
 	h.setRefreshCookie(c, issued.RefreshToken)
 	return c.JSON(status, tokenResponse{
 		AccessToken: issued.AccessToken,
-		TokenType:   "Bearer",
+		TokenType:   TokenTypeBearer,
 		ExpiresAt:   issued.AccessExpires.UTC(),
 		UserID:      issued.UserID.String(),
 		Email:       issued.Email,
@@ -102,13 +103,13 @@ func (h *Handlers) writeAuthJSON(c echo.Context, status int, issued IssuedAuth) 
 func (h *Handlers) Register(c echo.Context) error {
 	if err := h.limiter.AllowRegister(c.Request().Context(), c.RealIP()); err != nil {
 		if errors.Is(err, ErrRateLimited) {
-			return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
+			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
 	}
 	var body authCredentialsBody
 	if err := c.Bind(&body); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid json")
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
 	addr, err := mail.ParseAddress(body.Email)
 	if err != nil {
@@ -124,7 +125,7 @@ func (h *Handlers) Register(c echo.Context) error {
 	issued, err := h.svc.RegisterTrainer(c.Request().Context(), email, body.Password)
 	if err != nil {
 		if errors.Is(err, ErrEmailTaken) {
-			return echo.NewHTTPError(http.StatusConflict, "email already registered")
+			return echo.NewHTTPError(http.StatusConflict, ErrEmailTaken.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "registration failed")
 	}
@@ -134,23 +135,23 @@ func (h *Handlers) Register(c echo.Context) error {
 func (h *Handlers) Login(c echo.Context) error {
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
 		if errors.Is(err, ErrRateLimited) {
-			return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
+			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
 	}
 	var body authCredentialsBody
 	if err := c.Bind(&body); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid json")
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
 	addr, err := mail.ParseAddress(body.Email)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized, "invalid email or password")
+		return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidCredentials.Error())
 	}
 	email := NormalizeEmail(addr.Address)
 	issued, err := h.svc.Login(c.Request().Context(), email, body.Password)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
-			return echo.NewHTTPError(http.StatusUnauthorized, "invalid email or password")
+			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidCredentials.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "login failed")
 	}
@@ -160,7 +161,7 @@ func (h *Handlers) Login(c echo.Context) error {
 func (h *Handlers) Refresh(c echo.Context) error {
 	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
 		if errors.Is(err, ErrRateLimited) {
-			return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
+			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
 	}
@@ -172,7 +173,7 @@ func (h *Handlers) Refresh(c echo.Context) error {
 	if err != nil {
 		if errors.Is(err, ErrInvalidRefresh) {
 			h.clearRefreshCookie(c)
-			return echo.NewHTTPError(http.StatusUnauthorized, "invalid refresh token")
+			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidRefresh.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "refresh failed")
 	}
@@ -201,7 +202,7 @@ func (h *Handlers) Logout(c echo.Context) error {
 func (h *Handlers) LogoutAll(c echo.Context) error {
 	uid, ok := UserIDFromContext(c)
 	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "internal")
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
 	if err := h.svc.LogoutAll(c.Request().Context(), uid); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "logout failed")
@@ -213,14 +214,14 @@ func (h *Handlers) LogoutAll(c echo.Context) error {
 func (h *Handlers) Me(c echo.Context) error {
 	uid, ok := UserIDFromContext(c)
 	if !ok {
-		return echo.NewHTTPError(http.StatusInternalServerError, "internal")
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
 	profile, err := h.svc.UserProfile(c.Request().Context(), uid)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "user not found")
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
 		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "internal")
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
 	return c.JSON(http.StatusOK, meResponse{
 		UserID:    uid.String(),

@@ -10,7 +10,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"mentorix-backend/internal/db"
 )
+
+const pgUniqueViolationCode = "23505"
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -28,29 +32,29 @@ func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwor
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var userID uuid.UUID
-	err = tx.QueryRow(ctx, `INSERT INTO mentorix.users (primary_email) VALUES ($1) RETURNING id`, email).Scan(&userID)
+	err = tx.QueryRow(ctx, `INSERT INTO `+db.Table("users")+` (primary_email) VALUES ($1) RETURNING id`, email).Scan(&userID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("insert user: %w", err)
 	}
 
 	_, err = tx.Exec(ctx,
-		`INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash) VALUES ($1, $2, $3, $4)`,
+		`INSERT INTO `+db.Table("auth_identities")+` (user_id, provider, subject, password_hash) VALUES ($1, $2, $3, $4)`,
 		userID, ProviderEmailPassword, email, passwordHash,
 	)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode {
 			return uuid.Nil, ErrEmailTaken
 		}
 		return uuid.Nil, fmt.Errorf("insert auth identity: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `INSERT INTO mentorix.user_roles (user_id, role) VALUES ($1, $2)`, userID, RoleTrainer)
+	_, err = tx.Exec(ctx, `INSERT INTO `+db.Table("user_roles")+` (user_id, role) VALUES ($1, $2)`, userID, RoleTrainer)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("insert user role: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `INSERT INTO mentorix.trainers (user_id) VALUES ($1)`, userID)
+	_, err = tx.Exec(ctx, `INSERT INTO `+db.Table("trainers")+` (user_id) VALUES ($1)`, userID)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("insert trainer: %w", err)
 	}
@@ -83,7 +87,7 @@ type UserProfile struct {
 func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
 	var profile UserProfile
 	err := s.pool.QueryRow(ctx,
-		`SELECT COALESCE(primary_email, ''), created_at FROM mentorix.users WHERE id = $1`,
+		`SELECT COALESCE(primary_email, ''), created_at FROM `+db.Table("users")+` WHERE id = $1`,
 		userID,
 	).Scan(&profile.Email, &profile.CreatedAt)
 	if err != nil {
@@ -104,7 +108,7 @@ func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile,
 
 func (s *Store) UserRoles(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT role FROM mentorix.user_roles WHERE user_id = $1 ORDER BY role`,
+		`SELECT role FROM `+db.Table("user_roles")+` WHERE user_id = $1 ORDER BY role`,
 		userID,
 	)
 	if err != nil {
@@ -128,7 +132,7 @@ func (s *Store) UserRoles(ctx context.Context, userID uuid.UUID) ([]string, erro
 
 func (s *Store) GrantRole(ctx context.Context, userID uuid.UUID, role string) error {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO mentorix.user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id, role) DO NOTHING`,
+		`INSERT INTO `+db.Table("user_roles")+` (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id, role) DO NOTHING`,
 		userID, role,
 	)
 	if err != nil {
@@ -140,7 +144,7 @@ func (s *Store) GrantRole(ctx context.Context, userID uuid.UUID, role string) er
 func (s *Store) getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error) {
 	var row emailIdentityRow
 	err := s.pool.QueryRow(ctx,
-		`SELECT user_id, COALESCE(password_hash, '') FROM mentorix.auth_identities WHERE provider = $1 AND subject = $2`,
+		`SELECT user_id, COALESCE(password_hash, '') FROM `+db.Table("auth_identities")+` WHERE provider = $1 AND subject = $2`,
 		ProviderEmailPassword, email,
 	).Scan(&row.UserID, &row.PasswordHash)
 	return row, err
@@ -148,7 +152,7 @@ func (s *Store) getEmailPasswordIdentity(ctx context.Context, email string) (ema
 
 func (s *Store) InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error {
 	_, err := s.pool.Exec(ctx,
-		`INSERT INTO mentorix.refresh_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+		`INSERT INTO `+db.Table("refresh_sessions")+` (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
 		userID, tokenHash, expiresAt,
 	)
 	if err != nil {
@@ -166,7 +170,7 @@ func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byt
 
 	var userID uuid.UUID
 	err = tx.QueryRow(ctx,
-		`SELECT user_id FROM mentorix.refresh_sessions WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now() FOR UPDATE`,
+		`SELECT user_id FROM `+db.Table("refresh_sessions")+` WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now() FOR UPDATE`,
 		oldHash,
 	).Scan(&userID)
 	if err != nil {
@@ -176,11 +180,11 @@ func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byt
 		return uuid.Nil, fmt.Errorf("load refresh session: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE mentorix.refresh_sessions SET revoked_at = now() WHERE token_hash = $1`, oldHash); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE `+db.Table("refresh_sessions")+` SET revoked_at = now() WHERE token_hash = $1`, oldHash); err != nil {
 		return uuid.Nil, fmt.Errorf("revoke refresh session: %w", err)
 	}
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO mentorix.refresh_sessions (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+		`INSERT INTO `+db.Table("refresh_sessions")+` (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
 		userID, newHash, newExpiresAt,
 	); err != nil {
 		return uuid.Nil, fmt.Errorf("insert rotated refresh session: %w", err)
@@ -193,7 +197,7 @@ func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byt
 
 func (s *Store) RevokeRefreshSession(ctx context.Context, tokenHash []byte) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE mentorix.refresh_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
+		`UPDATE `+db.Table("refresh_sessions")+` SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
 		tokenHash,
 	)
 	if err != nil {
@@ -204,7 +208,7 @@ func (s *Store) RevokeRefreshSession(ctx context.Context, tokenHash []byte) erro
 
 func (s *Store) RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error {
 	_, err := s.pool.Exec(ctx,
-		`UPDATE mentorix.refresh_sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+		`UPDATE `+db.Table("refresh_sessions")+` SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
 		userID,
 	)
 	if err != nil {
