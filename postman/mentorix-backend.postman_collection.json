@@ -1,0 +1,457 @@
+{
+  "info": {
+    "_postman_id": "e5f6a7b8-c9d0-1234-ef01-567890123456",
+    "name": "Mentorix Backend",
+    "description": "Коллекция сгенерирована по коду (`cmd/api`, `internal/auth`, `internal/exercise`, `internal/health`).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\nВыбери environment перед запросами.\n\n## Эндпоинты (14)\n| Method | Path | Auth | Роль |\n|--------|------|------|------|\n| GET | /health | — | — |\n| GET | /health/ready | — | — |\n| POST | /auth/register | — | — |\n| POST | /auth/login | — | — |\n| POST | /auth/refresh | cookie mentorix_refresh | — |\n| POST | /auth/logout | cookie mentorix_refresh | — |\n| GET | /auth/me | Bearer | — |\n| POST | /auth/logout-all | Bearer | — |\n| GET | /exercises | Bearer | trainer, admin |\n| GET | /exercises/:id | Bearer | trainer, admin |\n| POST | /exercises | Bearer | admin |\n| PUT | /exercises/:id | Bearer | admin |\n| DELETE | /exercises/:id | Bearer | admin |\n\nRegister создаёт пользователя с ролью trainer.\n\n## URL\nВсе URL — строки `{{base_url}}/path`. Query-параметры в строке URL (Postman надёжно подставляет переменные).\n\n## Порядок smoke-теста\n1. Health → Ready\n2. Login (или Register)\n3. Me\n4. List Exercises",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.name) {",
+          "    throw new Error('Выбери environment: Mentorix Local или Mentorix Render Dev');",
+          "}",
+          "const base = pm.environment.get('base_url');",
+          "if (!base) {",
+          "    throw new Error('base_url не задан в environment');",
+          "}",
+          "if (base.endsWith('/')) {",
+          "    pm.environment.set('base_url', base.replace(/\\/+$/, ''));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health",
+            "description": "Source: `cmd/api/main.go`\n\n200: `{\"status\":\"ok\"}`"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /health/ready",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/health/ready",
+            "description": "Source: `internal/health/ready.go`\n\n200: `{status, checks}` — database/redis ok\n503: dependency недоступна"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST /auth/register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const b = pm.response.json();",
+                  "    pm.environment.set('access_token', b.access_token);",
+                  "    pm.environment.set('user_id', b.user_id);",
+                  "}",
+                  "pm.test('status is 201 or 409', function () {",
+                  "    pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+            },
+            "url": "{{base_url}}/auth/register",
+            "description": "Source: `internal/auth/handlers.go` → Register\n\nBody: email, password (min 8 chars)\n201: access_token, token_type, expires_at, user_id, email + Set-Cookie mentorix_refresh\n400: invalid email/password\n409: email already registered\n429: rate limit"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    pm.environment.set('access_token', b.access_token);",
+                  "    pm.environment.set('user_id', b.user_id);",
+                  "    pm.test('access_token saved', () => {",
+                  "        pm.expect(pm.environment.get('access_token')).to.be.a('string').and.not.empty;",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+            },
+            "url": "{{base_url}}/auth/login",
+            "description": "Source: `internal/auth/handlers.go` → Login\n\n200: access_token + Set-Cookie mentorix_refresh\n401: invalid email or password"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    pm.environment.set('access_token', pm.response.json().access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/auth/refresh",
+            "description": "Source: `internal/auth/handlers.go` → Refresh\n\nCookie: mentorix_refresh (HttpOnly, path /auth)\n200: новый access_token\n401: missing/invalid refresh token"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /auth/me",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('has roles', () => pm.expect(pm.response.json().roles).to.be.an('array'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/auth/me",
+            "description": "Source: `internal/auth/handlers.go` → Me\n\nHeader: Authorization: Bearer <access_token>\n200: user_id, email, created_at, roles"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/auth/logout",
+            "description": "Source: `internal/auth/handlers.go` → Logout\n\nCookie: mentorix_refresh\n204: No Content"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/logout-all",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/auth/logout-all",
+            "description": "Source: `internal/auth/handlers.go` → LogoutAll\n\nHeader: Authorization: Bearer <access_token>\n204: No Content"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Exercises",
+      "item": [
+        {
+          "name": "GET /exercises",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    pm.test('items array', () => pm.expect(b.items).to.be.an('array'));",
+                  "    pm.test('pagination object', () => pm.expect(b.pagination).to.be.an('object'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/exercises?page=1&limit=20&sort_by=name&sort_order=asc",
+            "description": "Source: `internal/exercise/handlers.go` → List\n\nBearer + role trainer|admin\n\nQuery (defaults from `list_params.go`):\n- page=1, limit=20 (max 100)\n- sort_by: name|name_ru|created_at|modified_at|difficulty|type|muscle_group\n- sort_order: asc|desc\n- q: search name/name_ru\n- type, muscle_group, difficulty, equipment (single value)\n- equipment=none → без оборудования\n\n200: {items: Exercise[], pagination: {page, limit, total, total_pages}}"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /exercises (with filters example)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/exercises?page=1&limit=20&q=squat&type=strength&muscle_group=legs&difficulty=intermediate&equipment=barbell&sort_by=name_ru&sort_order=asc",
+            "description": "Пример GET /exercises с q и фильтрами. Редактируй query в URL."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /exercises/:id",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}",
+                  "if (!pm.environment.get('exercise_id')) {",
+                  "    throw new Error('exercise_id пустой — выполни POST /exercises (admin) или задай UUID в environment');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/exercises/{{exercise_id}}",
+            "description": "Source: `internal/exercise/handlers.go` → Get\n\nBearer + role trainer|admin\n200: Exercise\n404: exercise not found"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /exercises",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('exercise_id', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Back Squat\",\n  \"name_ru\": \"Присед со штангой\",\n  \"type\": \"strength\",\n  \"muscle_group\": \"legs\",\n  \"difficulty\": \"intermediate\",\n  \"equipment\": \"barbell\",\n  \"description\": \"\",\n  \"description_ru\": \"\",\n  \"video_url\": \"\",\n  \"preview_image_url\": \"\"\n}"
+            },
+            "url": "{{base_url}}/exercises",
+            "description": "Source: `internal/exercise/handlers.go` → Create\n\nBearer + role admin\n201: Exercise (сохраняет exercise_id)\n403: admin role required"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /exercises/:id",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}",
+                  "if (!pm.environment.get('exercise_id')) {",
+                  "    throw new Error('exercise_id пустой — выполни POST /exercises');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Back Squat\",\n  \"name_ru\": \"Присед со штангой (updated)\",\n  \"type\": \"strength\",\n  \"muscle_group\": \"legs\",\n  \"difficulty\": \"advanced\",\n  \"equipment\": \"barbell\",\n  \"description\": \"\",\n  \"description_ru\": \"\",\n  \"video_url\": \"\",\n  \"preview_image_url\": \"\"\n}"
+            },
+            "url": "{{base_url}}/exercises/{{exercise_id}}",
+            "description": "Source: `internal/exercise/handlers.go` → Update\n\nBearer + role admin\n200: Exercise\n404: exercise not found"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /exercises/:id",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}",
+                  "if (!pm.environment.get('exercise_id')) {",
+                  "    throw new Error('exercise_id пустой — выполни POST /exercises');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/exercises/{{exercise_id}}",
+            "description": "Source: `internal/exercise/handlers.go` → Delete\n\nBearer + role admin\n204: No Content\n404: exercise not found"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
