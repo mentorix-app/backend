@@ -32,8 +32,13 @@ func (h *Handlers) Mount(e *echo.Echo) {
 
 	write := base.Group("", auth.AdminMiddleware(h.pool))
 	write.POST("", h.Create)
+	write.DELETE("/all", h.DeleteAll)
 	write.PUT("/:id", h.Update)
 	write.DELETE("/:id", h.Delete)
+}
+
+type deleteAllResponse struct {
+	DeletedCount int64 `json:"deleted_count"`
 }
 
 type upsertBody struct {
@@ -159,4 +164,12 @@ func (h *Handlers) Delete(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "delete failed")
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *Handlers) DeleteAll(c echo.Context) error {
+	count, err := h.svc.DeleteAll(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "delete all failed")
+	}
+	return c.JSON(http.StatusOK, deleteAllResponse{DeletedCount: count})
 }

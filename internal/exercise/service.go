@@ -7,8 +7,17 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type exerciseStore interface {
+	List(ctx context.Context, params ListParams) (ListResult, error)
+	GetByID(ctx context.Context, id uuid.UUID) (Exercise, error)
+	Create(ctx context.Context, userID uuid.UUID, in UpsertInput) (Exercise, error)
+	Update(ctx context.Context, id, userID uuid.UUID, in UpsertInput) (Exercise, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+	DeleteAll(ctx context.Context) (int64, error)
+}
+
 type Service struct {
-	store *Store
+	store exerciseStore
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
@@ -39,4 +48,8 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, in UpsertInp
 
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.store.Delete(ctx, id)
+}
+
+func (s *Service) DeleteAll(ctx context.Context) (int64, error) {
+	return s.store.DeleteAll(ctx)
 }

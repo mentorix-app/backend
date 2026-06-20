@@ -56,6 +56,7 @@ routes=(
   "POST /exercises"
   "PUT /exercises/:id"
   "DELETE /exercises/:id"
+  "DELETE /exercises/all"
 )
 for r in "${routes[@]}"; do echo "  $r"; done
 
@@ -86,7 +87,7 @@ expected = {
     "/health", "/health/ready",
     "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/logout-all", "/auth/me",
     "/admin/users/{user_id}/roles/admin",
-    "/exercises", "/exercises/{id}",
+    "/exercises", "/exercises/{id}", "/exercises/all",
 }
 missing = expected - spec_paths
 extra = spec_paths - expected
