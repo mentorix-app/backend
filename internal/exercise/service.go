@@ -15,8 +15,8 @@ func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{store: NewStore(pool)}
 }
 
-func (s *Service) List(ctx context.Context) ([]Exercise, error) {
-	return s.store.List(ctx)
+func (s *Service) List(ctx context.Context, params ListParams) (ListResult, error) {
+	return s.store.List(ctx, params)
 }
 
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (Exercise, error) {
