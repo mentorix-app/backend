@@ -30,7 +30,7 @@ func RegisterReady(e *echo.Echo, pool *pgxpool.Pool, rdb *redis.Client) {
 		if pool != nil {
 			anyRequired = true
 			if err := pool.Ping(ctx); err != nil {
-				checks["database"] = "error: " + err.Error()
+				checks["database"] = "error"
 				allOK = false
 			} else {
 				checks["database"] = "ok"
@@ -42,7 +42,7 @@ func RegisterReady(e *echo.Echo, pool *pgxpool.Pool, rdb *redis.Client) {
 		if rdb != nil {
 			anyRequired = true
 			if err := rdb.Ping(ctx).Err(); err != nil {
-				checks["redis"] = "error: " + err.Error()
+				checks["redis"] = "error"
 				allOK = false
 			} else {
 				checks["redis"] = "ok"

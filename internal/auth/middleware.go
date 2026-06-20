@@ -31,7 +31,7 @@ func JWTMiddleware(secret string) echo.MiddlewareFunc {
 					return nil, fmt.Errorf("unexpected signing method")
 				}
 				return key, nil
-			})
+			}, jwt.WithIssuer(Issuer))
 			if err != nil {
 				return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
 			}

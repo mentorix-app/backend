@@ -71,6 +71,37 @@ for f in ["postman/mentorix-local.postman_environment.json", "postman/mentorix-r
 PY
 
 echo ""
+echo "=== OpenAPI paths (api/openapi.yaml) ==="
+if [ -f api/openapi.yaml ]; then
+  python3 <<'PY'
+import re, sys
+spec_paths = set()
+with open("api/openapi.yaml") as f:
+    for line in f:
+        m = re.match(r"^  (/[^:]+):", line)
+        if m:
+            spec_paths.add(m.group(1))
+expected = {
+    "/health", "/health/ready",
+    "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/logout-all", "/auth/me",
+    "/exercises", "/exercises/{id}",
+}
+missing = expected - spec_paths
+extra = spec_paths - expected
+for p in sorted(spec_paths):
+    print(f"  {p}")
+if missing:
+    print("FAIL: missing in OpenAPI:", sorted(missing))
+    sys.exit(1)
+if extra:
+    print("WARN: extra OpenAPI paths:", sorted(extra))
+print("OpenAPI path coverage: OK")
+PY
+else
+  echo "  api/openapi.yaml not found — skip"
+fi
+
+echo ""
 echo "=== Smoke test (localhost, if API running) ==="
 BASE="http://localhost:8080"
 if curl -sf "$BASE/health" > /dev/null 2>&1; then

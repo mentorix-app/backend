@@ -1,0 +1,617 @@
+openapi: 3.0.3
+info:
+  title: Mentorix Backend API
+  version: 1.0.0
+  description: REST API for Mentorix trainers and exercises.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://mentorix-backend.onrender.com
+    description: Render dev
+
+tags:
+  - name: health
+  - name: auth
+  - name: exercises
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /health/ready:
+    get:
+      tags: [health]
+      summary: Readiness probe (database and Redis)
+      operationId: getHealthReady
+      responses:
+        "200":
+          description: Ready or dependencies skipped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          description: Required dependency unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register trainer account
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthCredentials"
+      responses:
+        "201":
+          description: Registered
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh token cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Email already registered
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Login with email and password
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthCredentials"
+      responses:
+        "200":
+          description: Authenticated
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh token cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Invalid credentials
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate access token using refresh cookie
+      operationId: refresh
+      parameters:
+        - $ref: "#/components/parameters/RefreshCookie"
+      responses:
+        "200":
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Missing or invalid refresh token
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke current refresh session
+      operationId: logout
+      parameters:
+        - $ref: "#/components/parameters/RefreshCookie"
+      responses:
+        "204":
+          description: Logged out
+
+  /auth/logout-all:
+    post:
+      tags: [auth]
+      summary: Revoke all refresh sessions for the user
+      operationId: logoutAll
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RefreshCookie"
+      responses:
+        "204":
+          description: All sessions revoked
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current user profile
+      operationId: getMe
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+
+  /exercises:
+    get:
+      tags: [exercises]
+      summary: List exercises (trainer or admin)
+      operationId: listExercises
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/SortBy"
+        - $ref: "#/components/parameters/SortOrder"
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search in name and name_ru (ILIKE)
+        - name: type
+          in: query
+          schema:
+            $ref: "#/components/schemas/ExerciseType"
+        - name: muscle_group
+          in: query
+          schema:
+            $ref: "#/components/schemas/MuscleGroup"
+        - name: difficulty
+          in: query
+          schema:
+            $ref: "#/components/schemas/Difficulty"
+        - name: equipment
+          in: query
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/Equipment"
+              - type: string
+                enum: [none]
+          description: Filter by equipment; use `none` for exercises without equipment
+      responses:
+        "200":
+          description: Paginated exercise list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExerciseListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer or admin role required
+
+    post:
+      tags: [exercises]
+      summary: Create exercise (admin only)
+      operationId: createExercise
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExerciseUpsert"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exercise"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Admin role required
+
+  /exercises/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ExerciseId"
+    get:
+      tags: [exercises]
+      summary: Get exercise by ID (trainer or admin)
+      operationId: getExercise
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Exercise
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exercise"
+        "400":
+          description: Invalid UUID
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer or admin role required
+        "404":
+          description: Exercise not found
+
+    put:
+      tags: [exercises]
+      summary: Update exercise (admin only)
+      operationId: updateExercise
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExerciseUpsert"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Exercise"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Admin role required
+        "404":
+          description: Exercise not found
+
+    delete:
+      tags: [exercises]
+      summary: Delete exercise (admin only)
+      operationId: deleteExercise
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          description: Invalid UUID
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Admin role required
+        "404":
+          description: Exercise not found
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    RefreshCookie:
+      name: mentorix_refresh
+      in: cookie
+      required: false
+      schema:
+        type: string
+      description: HttpOnly refresh token (name configurable via REFRESH_COOKIE_NAME)
+
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    SortBy:
+      name: sort_by
+      in: query
+      schema:
+        type: string
+        enum:
+          - name
+          - name_ru
+          - created_at
+          - modified_at
+          - difficulty
+          - type
+          - muscle_group
+        default: name
+
+    SortOrder:
+      name: sort_order
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+
+    ExerciseId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Invalid request
+    Unauthorized:
+      description: Missing or invalid access token
+    TooManyRequests:
+      description: Rate limit exceeded
+
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    ReadyResponse:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready, no_dependencies_configured]
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ok, error, skipped]
+
+    AuthCredentials:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_at, user_id, email]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_at:
+          type: string
+          format: date-time
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+
+    MeResponse:
+      type: object
+      required: [user_id, email, created_at, roles]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [admin, trainer, client]
+
+    ExerciseListResponse:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Exercise"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    Pagination:
+      type: object
+      required: [page, limit, total, total_pages]
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+    Exercise:
+      type: object
+      required:
+        - id
+        - name
+        - name_ru
+        - added_by
+        - modified_by
+        - modified_at
+        - created_at
+        - type
+        - muscle_group
+        - description
+        - description_ru
+        - difficulty
+        - video_url
+        - preview_image_url
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        name_ru:
+          type: string
+        added_by:
+          type: string
+          format: uuid
+        modified_by:
+          type: string
+          format: uuid
+        modified_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        equipment:
+          $ref: "#/components/schemas/Equipment"
+        type:
+          $ref: "#/components/schemas/ExerciseType"
+        muscle_group:
+          $ref: "#/components/schemas/MuscleGroup"
+        description:
+          type: string
+        description_ru:
+          type: string
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        video_url:
+          type: string
+        preview_image_url:
+          type: string
+
+    ExerciseUpsert:
+      type: object
+      required: [name, type, muscle_group, difficulty]
+      properties:
+        name:
+          type: string
+        name_ru:
+          type: string
+        equipment:
+          $ref: "#/components/schemas/Equipment"
+        type:
+          $ref: "#/components/schemas/ExerciseType"
+        muscle_group:
+          $ref: "#/components/schemas/MuscleGroup"
+        description:
+          type: string
+        description_ru:
+          type: string
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        video_url:
+          type: string
+        preview_image_url:
+          type: string
+
+    MuscleGroup:
+      type: string
+      enum:
+        - compound
+        - chest
+        - back
+        - legs
+        - shoulders
+        - arms
+        - core
+        - full_body
+
+    ExerciseType:
+      type: string
+      enum:
+        - strength
+        - cardio
+        - mixed_modal
+        - intervals
+        - stretching
+        - metcon
+        - skill_work
+        - accessory
+
+    Equipment:
+      type: string
+      enum:
+        - barbell
+        - dumbbells
+        - kettlebell
+        - pull_up_bar
+        - squat_rack
+        - rowing_machine
+        - assault_bike
+        - jump_rope
+        - plyo_box
+        - medicine_ball
+        - wall_ball
+        - resistance_bands
+        - battle_ropes
+        - gymnastic_rings
+        - sandbag
+        - sled
+        - weight_plates
+
+    Difficulty:
+      type: string
+      enum:
+        - beginner
+        - intermediate
+        - advanced
+        - expert

@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -13,38 +17,63 @@ import (
 	"mentorix-backend/internal/config"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
+	apphttp "mentorix-backend/internal/http"
+)
+
+const (
+	readTimeout  = 15 * time.Second
+	writeTimeout = 15 * time.Second
+	idleTimeout  = 60 * time.Second
+	bodyLimit    = "1M"
+	shutdownTTL  = 10 * time.Second
 )
 
 func main() {
 	_ = godotenv.Load()
 
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("config load failed", "error", err)
+		os.Exit(1)
 	}
 
 	ctx := context.Background()
 	pool, err := health.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("database pool failed", "error", err)
+		os.Exit(1)
 	}
 	if pool != nil {
-		defer pool.Close()
+		defer func() {
+			pool.Close()
+		}()
 	}
 
 	rdb, err := health.NewRedisClient(cfg.RedisURL)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("redis client failed", "error", err)
+		os.Exit(1)
 	}
 	if rdb != nil {
-		defer rdb.Close()
+		defer func() {
+			if err := rdb.Close(); err != nil {
+				logger.Error("redis close failed", "error", err)
+			}
+		}()
 	}
 
 	e := echo.New()
-	e.IPExtractor = echo.ExtractIPFromXFFHeader()
+	apphttp.ConfigureIPExtractor(e, cfg.TrustedProxyCIDRs)
 	e.HideBanner = true
-	e.Use(middleware.Logger())
+	e.HidePort = true
+	e.Use(middleware.RequestID())
+	e.Use(apphttp.RequestLog(logger))
 	e.Use(middleware.Recover())
+	e.Use(middleware.BodyLimit(bodyLimit))
 
 	if len(cfg.CORSAllowedOrigins) > 0 {
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
@@ -74,8 +103,36 @@ func main() {
 
 		exSvc := exercise.NewService(pool)
 		exercise.NewHandlers(exSvc, pool, cfg.JWTSecret).Mount(e)
+	} else {
+		logger.Warn("DATABASE_URL not set; auth and exercise routes are disabled")
 	}
 
 	addr := ":" + cfg.Port
-	e.Logger.Fatal(e.Start(addr))
+	server := &http.Server{
+		Addr:         addr,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
+		IdleTimeout:  idleTimeout,
+	}
+
+	go func() {
+		if err := e.StartServer(server); err != nil && err != http.ErrServerClosed {
+			logger.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	logger.Info("server started", "addr", addr, "app_env", cfg.AppEnv)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	logger.Info("shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTTL)
+	defer cancel()
+	if err := e.Shutdown(shutdownCtx); err != nil {
+		logger.Error("shutdown failed", "error", err)
+		os.Exit(1)
+	}
 }
