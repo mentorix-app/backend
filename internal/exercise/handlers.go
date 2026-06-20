@@ -64,11 +64,26 @@ func (b upsertBody) toInput() UpsertInput {
 }
 
 func (h *Handlers) List(c echo.Context) error {
-	items, err := h.svc.List(c.Request().Context())
+	params, err := ParseListParams(
+		c.QueryParam("page"),
+		c.QueryParam("limit"),
+		c.QueryParam("sort_by"),
+		c.QueryParam("sort_order"),
+		c.QueryParam("q"),
+		c.QueryParam("type"),
+		c.QueryParam("muscle_group"),
+		c.QueryParam("difficulty"),
+		c.QueryParam("equipment"),
+	)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	result, err := h.svc.List(c.Request().Context(), params)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "list failed")
 	}
-	return c.JSON(http.StatusOK, items)
+	return c.JSON(http.StatusOK, result)
 }
 
 func (h *Handlers) Get(c echo.Context) error {

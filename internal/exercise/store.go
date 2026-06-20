@@ -4,12 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const exerciseSelectColumns = `
+	id, name, name_ru, added_by, modified_by, modified_at, created_at,
+	equipment, type, muscle_group, description, description_ru,
+	difficulty, video_url, preview_image_url`
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -19,27 +25,96 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
 }
 
-func (s *Store) List(ctx context.Context) ([]Exercise, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT id, name, name_ru, added_by, modified_by, modified_at, created_at,
-		       equipment, type, muscle_group, description, description_ru,
-		       difficulty, video_url, preview_image_url
-		FROM mentorix.exercises
-		ORDER BY name ASC`)
+func (s *Store) List(ctx context.Context, params ListParams) (ListResult, error) {
+	where, args := buildListWhere(params)
+	total, err := s.countExercises(ctx, where, args)
 	if err != nil {
-		return nil, fmt.Errorf("list exercises: %w", err)
+		return ListResult{}, err
+	}
+
+	listArgs := append(append([]any{}, args...), params.Limit, params.Offset())
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM mentorix.exercises
+		%s
+		ORDER BY %s %s
+		LIMIT $%d OFFSET $%d`,
+		exerciseSelectColumns,
+		where,
+		params.SortBy,
+		params.SortOrder,
+		len(args)+1,
+		len(args)+2,
+	)
+
+	rows, err := s.pool.Query(ctx, query, listArgs...)
+	if err != nil {
+		return ListResult{}, fmt.Errorf("list exercises: %w", err)
 	}
 	defer rows.Close()
-	return scanExercises(rows)
+
+	items, err := scanExercises(rows)
+	if err != nil {
+		return ListResult{}, err
+	}
+
+	return ListResult{
+		Items:      items,
+		Pagination: paginationMeta(params.Page, params.Limit, total),
+	}, nil
+}
+
+func (s *Store) countExercises(ctx context.Context, where string, args []any) (int, error) {
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM mentorix.exercises %s`, where)
+	var total int
+	if err := s.pool.QueryRow(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count exercises: %w", err)
+	}
+	return total, nil
+}
+
+func buildListWhere(params ListParams) (string, []any) {
+	var conditions []string
+	var args []any
+
+	if params.Query != "" {
+		pattern := "%" + escapeLike(params.Query) + "%"
+		args = append(args, pattern)
+		n := len(args)
+		conditions = append(conditions, fmt.Sprintf(
+			`(name ILIKE $%d ESCAPE '\' OR name_ru ILIKE $%d ESCAPE '\')`, n, n,
+		))
+	}
+	if params.Type != nil {
+		args = append(args, string(*params.Type))
+		conditions = append(conditions, fmt.Sprintf("type = $%d", len(args)))
+	}
+	if params.MuscleGroup != nil {
+		args = append(args, string(*params.MuscleGroup))
+		conditions = append(conditions, fmt.Sprintf("muscle_group = $%d", len(args)))
+	}
+	if params.Difficulty != nil {
+		args = append(args, string(*params.Difficulty))
+		conditions = append(conditions, fmt.Sprintf("difficulty = $%d", len(args)))
+	}
+	if params.EquipmentIsNull {
+		conditions = append(conditions, "equipment IS NULL")
+	} else if params.Equipment != nil {
+		args = append(args, string(*params.Equipment))
+		conditions = append(conditions, fmt.Sprintf("equipment = $%d", len(args)))
+	}
+
+	if len(conditions) == 0 {
+		return "", args
+	}
+	return "WHERE " + strings.Join(conditions, " AND "), args
 }
 
 func (s *Store) GetByID(ctx context.Context, id uuid.UUID) (Exercise, error) {
-	row := s.pool.QueryRow(ctx, `
-		SELECT id, name, name_ru, added_by, modified_by, modified_at, created_at,
-		       equipment, type, muscle_group, description, description_ru,
-		       difficulty, video_url, preview_image_url
+	row := s.pool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT %s
 		FROM mentorix.exercises
-		WHERE id = $1`, id)
+		WHERE id = $1`, exerciseSelectColumns), id)
 	ex, err := scanExercise(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
