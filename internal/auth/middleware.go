@@ -8,6 +8,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+
+	httpx "mentorix-backend/internal/http"
 )
 
 const ContextUserIDKey = "user_id"
@@ -16,13 +18,13 @@ func JWTMiddleware(secret string) echo.MiddlewareFunc {
 	key := []byte(secret)
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			h := c.Request().Header.Get("Authorization")
+			h := c.Request().Header.Get(echo.HeaderAuthorization)
 			if h == "" {
-				return echo.NewHTTPError(http.StatusUnauthorized, "missing authorization")
+				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgMissingAuth)
 			}
 			parts := strings.SplitN(h, " ", 2)
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-				return echo.NewHTTPError(http.StatusUnauthorized, "missing bearer token")
+			if len(parts) != 2 || !strings.EqualFold(parts[0], AuthSchemeBearer) {
+				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgMissingBearerToken)
 			}
 			raw := strings.TrimSpace(parts[1])
 			claims := &jwt.RegisteredClaims{}
@@ -33,11 +35,11 @@ func JWTMiddleware(secret string) echo.MiddlewareFunc {
 				return key, nil
 			}, jwt.WithIssuer(Issuer))
 			if err != nil {
-				return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
+				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgInvalidToken)
 			}
 			id, err := uuid.Parse(claims.Subject)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
+				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgInvalidToken)
 			}
 			c.Set(ContextUserIDKey, id)
 			return next(c)

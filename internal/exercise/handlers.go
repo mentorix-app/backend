@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/auth"
+	httpx "mentorix-backend/internal/http"
 )
 
 type Handlers struct {
@@ -89,12 +90,12 @@ func (h *Handlers) List(c echo.Context) error {
 func (h *Handlers) Get(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid id")
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
 	ex, err := h.svc.Get(c.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "exercise not found")
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgExerciseNotFound)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "get failed")
 	}
@@ -104,11 +105,11 @@ func (h *Handlers) Get(c echo.Context) error {
 func (h *Handlers) Create(c echo.Context) error {
 	uid, ok := auth.UserIDFromContext(c)
 	if !ok {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
 	}
 	var body upsertBody
 	if err := c.Bind(&body); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid json")
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
 	ex, err := h.svc.Create(c.Request().Context(), uid, body.toInput())
 	if err != nil {
@@ -123,20 +124,20 @@ func (h *Handlers) Create(c echo.Context) error {
 func (h *Handlers) Update(c echo.Context) error {
 	uid, ok := auth.UserIDFromContext(c)
 	if !ok {
-		return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
 	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid id")
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
 	var body upsertBody
 	if err := c.Bind(&body); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid json")
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
 	ex, err := h.svc.Update(c.Request().Context(), id, uid, body.toInput())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "exercise not found")
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgExerciseNotFound)
 		}
 		if errors.Is(err, ErrValidation) {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -149,11 +150,11 @@ func (h *Handlers) Update(c echo.Context) error {
 func (h *Handlers) Delete(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid id")
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
 	if err := h.svc.Delete(c.Request().Context(), id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, "exercise not found")
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgExerciseNotFound)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "delete failed")
 	}

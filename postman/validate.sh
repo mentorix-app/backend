@@ -50,6 +50,7 @@ routes=(
   "GET /auth/me"
   "POST /auth/logout"
   "POST /auth/logout-all"
+  "POST /admin/users/:user_id/roles/admin"
   "GET /exercises"
   "GET /exercises/:id"
   "POST /exercises"
@@ -84,6 +85,7 @@ with open("api/openapi.yaml") as f:
 expected = {
     "/health", "/health/ready",
     "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/logout-all", "/auth/me",
+    "/admin/users/{user_id}/roles/admin",
     "/exercises", "/exercises/{id}",
 }
 missing = expected - spec_paths

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "e5f6a7b8-c9d0-1234-ef01-567890123456",
     "name": "Mentorix Backend",
-    "description": "Коллекция сгенерирована по коду (`cmd/api`, `internal/auth`, `internal/exercise`, `internal/health`).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\nВыбери environment перед запросами.\n\n## Эндпоинты (14)\n| Method | Path | Auth | Роль |\n|--------|------|------|------|\n| GET | /health | — | — |\n| GET | /health/ready | — | — |\n| POST | /auth/register | — | — |\n| POST | /auth/login | — | — |\n| POST | /auth/refresh | cookie mentorix_refresh | — |\n| POST | /auth/logout | cookie mentorix_refresh | — |\n| GET | /auth/me | Bearer | — |\n| POST | /auth/logout-all | Bearer | — |\n| GET | /exercises | Bearer | trainer, admin |\n| GET | /exercises/:id | Bearer | trainer, admin |\n| POST | /exercises | Bearer | admin |\n| PUT | /exercises/:id | Bearer | admin |\n| DELETE | /exercises/:id | Bearer | admin |\n\nRegister создаёт пользователя с ролью trainer.\n\n## URL\nВсе URL — строки `{{base_url}}/path`. Query-параметры в строке URL (Postman надёжно подставляет переменные).\n\n## Порядок smoke-теста\n1. Health → Ready\n2. Login (или Register)\n3. Me\n4. List Exercises",
+    "description": "Коллекция сгенерирована по коду (`cmd/api`, `internal/auth`, `internal/admin`, `internal/exercise`, `internal/health`).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\nВыбери environment перед запросами.\n\n## Эндпоинты (15)\n| Method | Path | Auth | Роль |\n|--------|------|------|------|\n| GET | /health | — | — |\n| GET | /health/ready | — | — |\n| POST | /auth/register | — | — |\n| POST | /auth/login | — | — |\n| POST | /auth/refresh | cookie mentorix_refresh | — |\n| POST | /auth/logout | cookie mentorix_refresh | — |\n| GET | /auth/me | Bearer | — |\n| POST | /auth/logout-all | Bearer | — |\n| POST | /admin/users/:user_id/roles/admin | Bearer | trainer, admin (MVP) |\n| GET | /exercises | Bearer | trainer, admin |\n| GET | /exercises/:id | Bearer | trainer, admin |\n| POST | /exercises | Bearer | admin |\n| PUT | /exercises/:id | Bearer | admin |\n| DELETE | /exercises/:id | Bearer | admin |\n\nRegister создаёт пользователя с ролью trainer.\n\n## URL\nВсе URL — строки `{{base_url}}/path`. Query-параметры в строке URL (Postman надёжно подставляет переменные).\n\n## Порядок smoke-теста\n1. Health → Ready\n2. Login (или Register)\n3. Me\n4. Grant Admin (optional)\n5. List Exercises",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -230,6 +230,56 @@
             "header": [],
             "url": "{{base_url}}/auth/logout-all",
             "description": "Source: `internal/auth/handlers.go` → LogoutAll\n\nHeader: Authorization: Bearer <access_token>\n204: No Content"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "POST /admin/users/:user_id/roles/admin",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}",
+                  "const target = pm.environment.get('target_user_id') || pm.environment.get('user_id');",
+                  "if (!target) {",
+                  "    throw new Error('target_user_id или user_id пустой — выполни Register/Login или задай target_user_id');",
+                  "}",
+                  "pm.variables.set('grant_admin_user_id', target);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    pm.test('roles include admin', () => pm.expect(b.roles).to.include('admin'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/admin/users/{{grant_admin_user_id}}/roles/admin",
+            "description": "Source: `internal/admin/handlers.go` → GrantAdmin\n\nBearer + role trainer|admin (MVP; post-MVP: admin only)\n200: user_id, email, created_at, roles\n400: invalid user_id\n403: trainer role required\n404: user not found"
           },
           "response": []
         }
