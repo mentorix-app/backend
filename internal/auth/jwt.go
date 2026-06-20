@@ -7,13 +7,13 @@ import (
 	"github.com/google/uuid"
 )
 
-const issuer = "mentorix-backend"
+const Issuer = "mentorix-backend"
 
 func signAccessToken(userID uuid.UUID, secret []byte, ttl time.Duration) (token string, expiresAt time.Time, err error) {
 	now := time.Now().UTC()
 	exp := now.Add(ttl)
 	claims := jwt.RegisteredClaims{
-		Issuer:    issuer,
+		Issuer:    Issuer,
 		Subject:   userID.String(),
 		IssuedAt:  jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(exp),

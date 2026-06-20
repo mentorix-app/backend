@@ -24,6 +24,7 @@ type Config struct {
 	RedisURL            string
 	JWTSecret           string
 	CORSAllowedOrigins  []string
+	TrustedProxyCIDRs   []string
 	AccessTTLMinutes    int
 	RefreshTTLDays      int
 	RefreshCookie       RefreshCookieSettings
@@ -95,6 +96,7 @@ func Load() (Config, error) {
 		RedisURL:           strings.TrimSpace(os.Getenv("REDIS_URL")),
 		JWTSecret:          strings.TrimSpace(os.Getenv("JWT_SECRET")),
 		CORSAllowedOrigins: parseCommaSeparated(os.Getenv("CORS_ALLOW_ORIGINS")),
+		TrustedProxyCIDRs:  parseCommaSeparated(os.Getenv("TRUSTED_PROXY_CIDRS")),
 		AccessTTLMinutes:   accessMin,
 		RefreshTTLDays:     refreshDays,
 		RefreshCookie: RefreshCookieSettings{

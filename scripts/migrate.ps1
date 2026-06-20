@@ -5,8 +5,15 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
+
 if (-not (Test-Path ".env")) {
   Write-Error "Missing .env. Copy .env.example to .env first."
+}
+
+if (-not (Get-Command migrate -ErrorAction SilentlyContinue)) {
+  Write-Error "migrate CLI not found. Install with: go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.2"
 }
 
 $databaseUrlLine = Get-Content .env | Where-Object { $_ -match '^DATABASE_URL=' } | Select-Object -First 1

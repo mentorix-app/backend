@@ -10,6 +10,14 @@
 
 # Local build output (e.g. go build -o bin/api.exe)
 /bin/
+# Binary at repo root: go build -o api ./cmd/api (not the api/ OpenAPI directory)
+/api
+!/api/
+!/api/**
+
+# Delve / debug binaries
+__debug_bin*
+*.prof
 
 # Test binary, built with `go test -c`
 *.test

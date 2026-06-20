@@ -18,7 +18,7 @@ fi
 
 if ! command -v migrate >/dev/null 2>&1; then
   echo "migrate CLI not found. Install with:" >&2
-  echo "  go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest" >&2
+  echo "  go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.2" >&2
   exit 1
 fi
 
