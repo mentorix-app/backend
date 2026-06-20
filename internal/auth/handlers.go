@@ -158,6 +158,12 @@ func (h *Handlers) Login(c echo.Context) error {
 }
 
 func (h *Handlers) Refresh(c echo.Context) error {
+	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, "too many requests")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+	}
 	plain := h.refreshFromRequest(c)
 	if plain == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "missing refresh token")

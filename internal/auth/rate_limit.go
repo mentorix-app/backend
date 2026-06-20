@@ -46,6 +46,13 @@ func (l *RateLimiter) AllowRegister(ctx context.Context, ip string) error {
 	return l.allow(ctx, "register:ip", ip, l.registerMax, l.registerWin)
 }
 
+func (l *RateLimiter) AllowRefresh(ctx context.Context, ip string) error {
+	if l == nil || l.loginMax <= 0 {
+		return nil
+	}
+	return l.allow(ctx, "refresh:ip", ip, l.loginMax, l.loginWin)
+}
+
 func (l *RateLimiter) allow(ctx context.Context, prefix, key string, max int, window time.Duration) error {
 	if key == "" {
 		key = "unknown"

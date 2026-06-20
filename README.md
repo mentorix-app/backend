@@ -61,7 +61,23 @@ After changing Compose Postgres credentials, run `docker compose down -v` and up
 
 ## Render dev
 
-Deploy from `develop` branch. Run migrations against External `DATABASE_URL` from your machine. Set the same env keys as in `.env.example` (cloud block).
+Deploy from `develop` branch. Run migrations against External `DATABASE_URL` from your machine.
+
+Set the same env keys as in `.env.example` (cloud block), plus:
+
+```env
+TRUSTED_PROXY_CIDRS=private
+```
+
+Use this behind Render/nginx so rate limiting uses the real client IP (not spoofable `X-Forwarded-For`).
+
+For a frontend on another domain, also set:
+
+```env
+REFRESH_COOKIE_SAMESITE=none
+REFRESH_COOKIE_SECURE=true
+CORS_ALLOW_ORIGINS=https://your-frontend.example.com
+```
 
 ## Project layout
 

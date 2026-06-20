@@ -102,7 +102,11 @@ else
 fi
 
 echo ""
-echo "=== Smoke test (localhost, if API running) ==="
+if [ "${SKIP_SMOKE:-}" = "1" ]; then
+  echo "=== Smoke test ==="
+  echo "  skipped (SKIP_SMOKE=1)"
+else
+  echo "=== Smoke test (localhost, if API running) ==="
 BASE="http://localhost:8080"
 if curl -sf "$BASE/health" > /dev/null 2>&1; then
   echo "  GET /health OK"
@@ -117,6 +121,7 @@ if curl -sf "$BASE/health" > /dev/null 2>&1; then
   fi
 else
   echo "  API not running on $BASE — skip smoke"
+fi
 fi
 
 echo ""
