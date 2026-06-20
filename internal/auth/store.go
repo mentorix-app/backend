@@ -45,7 +45,7 @@ func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwor
 		return uuid.Nil, fmt.Errorf("insert auth identity: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `INSERT INTO mentorix.user_roles (user_id, role) VALUES ($1, 'trainer')`, userID)
+	_, err = tx.Exec(ctx, `INSERT INTO mentorix.user_roles (user_id, role) VALUES ($1, $2)`, userID, RoleTrainer)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("insert user role: %w", err)
 	}
@@ -124,6 +124,17 @@ func (s *Store) UserRoles(ctx context.Context, userID uuid.UUID) ([]string, erro
 		return nil, fmt.Errorf("iterate user roles: %w", err)
 	}
 	return roles, nil
+}
+
+func (s *Store) GrantRole(ctx context.Context, userID uuid.UUID, role string) error {
+	_, err := s.pool.Exec(ctx,
+		`INSERT INTO mentorix.user_roles (user_id, role) VALUES ($1, $2) ON CONFLICT (user_id, role) DO NOTHING`,
+		userID, role,
+	)
+	if err != nil {
+		return fmt.Errorf("grant role: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error) {

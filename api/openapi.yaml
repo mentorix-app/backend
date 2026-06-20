@@ -13,6 +13,7 @@ servers:
 tags:
   - name: health
   - name: auth
+  - name: admin
   - name: exercises
 
 paths:
@@ -165,6 +166,36 @@ paths:
                 $ref: "#/components/schemas/MeResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
+
+  /admin/users/{user_id}/roles/admin:
+    post:
+      tags: [admin]
+      summary: Grant admin role (trainer or admin for MVP)
+      operationId: grantAdminRole
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: User profile with updated roles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer or admin role required
         "404":
           description: User not found
 

@@ -13,6 +13,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
+	"mentorix-backend/internal/admin"
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/config"
 	"mentorix-backend/internal/exercise"
@@ -100,6 +101,9 @@ func main() {
 		)
 		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL())
 		auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter).Mount(e)
+
+		adminSvc := admin.NewService(pool)
+		admin.NewHandlers(adminSvc, pool, cfg.JWTSecret).Mount(e)
 
 		exSvc := exercise.NewService(pool)
 		exercise.NewHandlers(exSvc, pool, cfg.JWTSecret).Mount(e)
