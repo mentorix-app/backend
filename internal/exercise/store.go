@@ -187,6 +187,14 @@ func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (s *Store) DeleteAll(ctx context.Context) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM `+db.Table("exercises"))
+	if err != nil {
+		return 0, fmt.Errorf("delete all exercises: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 type scannable interface {
 	Scan(dest ...any) error
 }

@@ -276,6 +276,25 @@ paths:
         "403":
           description: Admin role required
 
+  /exercises/all:
+    delete:
+      tags: [exercises]
+      summary: Delete all exercises (admin only)
+      operationId: deleteAllExercises
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All exercises deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExerciseDeleteAllResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Admin role required
+
   /exercises/{id}:
     parameters:
       - $ref: "#/components/parameters/ExerciseId"
@@ -501,6 +520,15 @@ components:
             $ref: "#/components/schemas/Exercise"
         pagination:
           $ref: "#/components/schemas/Pagination"
+
+    ExerciseDeleteAllResponse:
+      type: object
+      required: [deleted_count]
+      properties:
+        deleted_count:
+          type: integer
+          format: int64
+          minimum: 0
 
     Pagination:
       type: object
