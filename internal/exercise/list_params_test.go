@@ -68,6 +68,22 @@ func TestParseListParams_sort(t *testing.T) {
 		t.Errorf("got sort_by=%q sort_order=%q", params.SortBy, params.SortOrder)
 	}
 
+	params, err = ParseListParams("", "", "equipment", "asc", "", "", "", "", "")
+	if err != nil {
+		t.Fatalf("equipment sort: unexpected error: %v", err)
+	}
+	if params.SortBy != "equipment" || params.SortOrder != "asc" {
+		t.Errorf("equipment sort: got sort_by=%q sort_order=%q", params.SortBy, params.SortOrder)
+	}
+
+	params, err = ParseListParams("", "", "equipment", "desc", "", "", "", "", "")
+	if err != nil {
+		t.Fatalf("equipment desc sort: unexpected error: %v", err)
+	}
+	if params.SortBy != "equipment" || params.SortOrder != "desc" {
+		t.Errorf("equipment desc sort: got sort_by=%q sort_order=%q", params.SortBy, params.SortOrder)
+	}
+
 	_, err = ParseListParams("", "", "bad_col", "", "", "", "", "", "")
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("invalid sort_by: expected ErrValidation, got %v", err)
