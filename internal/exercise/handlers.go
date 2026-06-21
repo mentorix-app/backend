@@ -25,10 +25,8 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 
 func (h *Handlers) Mount(e *echo.Echo) {
 	base := e.Group("/exercises", auth.JWTMiddleware(h.jwtSecret))
-
-	read := base.Group("", auth.TrainerMiddleware(h.pool))
-	read.GET("", h.List)
-	read.GET("/:id", h.Get)
+	base.GET("", h.List)
+	base.GET("/:id", h.Get)
 
 	write := base.Group("", auth.AdminMiddleware(h.pool))
 	write.POST("", h.Create)

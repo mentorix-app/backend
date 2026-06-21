@@ -172,7 +172,7 @@ paths:
   /admin/users/{user_id}/roles/admin:
     post:
       tags: [admin]
-      summary: Grant admin role (trainer or admin for MVP)
+      summary: Grant admin role (trainer or admin)
       operationId: grantAdminRole
       security:
         - bearerAuth: []
@@ -202,7 +202,7 @@ paths:
   /exercises:
     get:
       tags: [exercises]
-      summary: List exercises (trainer or admin)
+      summary: List exercises (authenticated)
       operationId: listExercises
       security:
         - bearerAuth: []
@@ -247,8 +247,6 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Trainer or admin role required
 
     post:
       tags: [exercises]
@@ -311,7 +309,7 @@ paths:
       - $ref: "#/components/parameters/ExerciseId"
     get:
       tags: [exercises]
-      summary: Get exercise by ID (trainer or admin)
+      summary: Get exercise by ID (authenticated)
       operationId: getExercise
       security:
         - bearerAuth: []
@@ -326,8 +324,6 @@ paths:
           description: Invalid UUID
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Trainer or admin role required
         "404":
           description: Exercise not found
 

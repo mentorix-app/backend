@@ -27,7 +27,7 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 func (h *Handlers) Mount(e *echo.Echo) {
 	g := e.Group("/admin",
 		auth.JWTMiddleware(h.jwtSecret),
-		auth.TrainerMiddleware(h.pool), // TODO(post-mvp): AdminMiddleware
+		auth.TrainerMiddleware(h.pool),
 	)
 	g.POST("/users/:user_id/roles/admin", h.GrantAdmin)
 }
