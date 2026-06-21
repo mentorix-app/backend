@@ -176,21 +176,10 @@ func (s *Store) Update(ctx context.Context, id, userID uuid.UUID, in UpsertInput
 	return s.GetByID(ctx, id)
 }
 
-func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM `+db.Table("exercises")+` WHERE id = $1`, id)
+func (s *Store) DeleteMany(ctx context.Context, ids []uuid.UUID) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM `+db.Table("exercises")+` WHERE id = ANY($1::uuid[])`, ids)
 	if err != nil {
-		return fmt.Errorf("delete exercise: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-func (s *Store) DeleteAll(ctx context.Context) (int64, error) {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM `+db.Table("exercises"))
-	if err != nil {
-		return 0, fmt.Errorf("delete all exercises: %w", err)
+		return 0, fmt.Errorf("delete exercises: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }

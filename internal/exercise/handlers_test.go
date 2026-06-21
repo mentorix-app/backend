@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -13,8 +14,8 @@ import (
 )
 
 type fakeExerciseStore struct {
-	deleteAllCount int64
-	deleteAllErr   error
+	deleteManyCount int64
+	deleteManyErr   error
 }
 
 func (f *fakeExerciseStore) List(context.Context, ListParams) (ListResult, error) {
@@ -33,52 +34,79 @@ func (f *fakeExerciseStore) Update(context.Context, uuid.UUID, uuid.UUID, Upsert
 	panic("not implemented")
 }
 
-func (f *fakeExerciseStore) Delete(context.Context, uuid.UUID) error {
-	panic("not implemented")
-}
-
-func (f *fakeExerciseStore) DeleteAll(context.Context) (int64, error) {
-	if f.deleteAllErr != nil {
-		return 0, f.deleteAllErr
+func (f *fakeExerciseStore) DeleteMany(context.Context, []uuid.UUID) (int64, error) {
+	if f.deleteManyErr != nil {
+		return 0, f.deleteManyErr
 	}
-	return f.deleteAllCount, nil
+	return f.deleteManyCount, nil
 }
 
-func testDeleteAllHandlers(store *fakeExerciseStore) *Handlers {
+func testDeleteManyHandlers(store *fakeExerciseStore) *Handlers {
 	return &Handlers{svc: &Service{store: store}}
 }
 
-func TestDeleteAll_success(t *testing.T) {
-	e := echo.New()
-	h := testDeleteAllHandlers(&fakeExerciseStore{deleteAllCount: 3})
-	e.DELETE("/exercises/all", h.DeleteAll)
+func TestDeleteMany(t *testing.T) {
+	id1 := uuid.New().String()
+	id2 := uuid.New().String()
 
-	req := httptest.NewRequest(http.MethodDelete, "/exercises/all", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
+	tests := []struct {
+		name       string
+		body       string
+		store      *fakeExerciseStore
+		wantStatus int
+		wantCount  int64
+	}{
+		{
+			name:       "success",
+			body:       `{"ids":["` + id1 + `","` + id2 + `"]}`,
+			store:      &fakeExerciseStore{deleteManyCount: 2},
+			wantStatus: http.StatusOK,
+			wantCount:  2,
+		},
+		{
+			name:       "empty ids",
+			body:       `{"ids":[]}`,
+			store:      &fakeExerciseStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "invalid uuid",
+			body:       `{"ids":["not-a-uuid"]}`,
+			store:      &fakeExerciseStore{},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "service error",
+			body:       `{"ids":["` + id1 + `"]}`,
+			store:      &fakeExerciseStore{deleteManyErr: errors.New("db down")},
+			wantStatus: http.StatusInternalServerError,
+		},
 	}
-	var body deleteAllResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if body.DeletedCount != 3 {
-		t.Fatalf("deleted_count = %d, want 3", body.DeletedCount)
-	}
-}
 
-func TestDeleteAll_serviceError(t *testing.T) {
-	e := echo.New()
-	h := testDeleteAllHandlers(&fakeExerciseStore{deleteAllErr: errors.New("db down")})
-	e.DELETE("/exercises/all", h.DeleteAll)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			h := testDeleteManyHandlers(tt.store)
+			e.DELETE("/exercises", h.DeleteMany)
 
-	req := httptest.NewRequest(http.MethodDelete, "/exercises/all", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+			req := httptest.NewRequest(http.MethodDelete, "/exercises", strings.NewReader(tt.body))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rec.Code)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+			var resp deleteManyResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if resp.DeletedCount != tt.wantCount {
+				t.Fatalf("deleted_count = %d, want %d", resp.DeletedCount, tt.wantCount)
+			}
+		})
 	}
 }

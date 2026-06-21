@@ -32,13 +32,16 @@ func (h *Handlers) Mount(e *echo.Echo) {
 
 	write := base.Group("", auth.AdminMiddleware(h.pool))
 	write.POST("", h.Create)
-	write.DELETE("/all", h.DeleteAll)
+	write.DELETE("", h.DeleteMany)
 	write.PUT("/:id", h.Update)
-	write.DELETE("/:id", h.Delete)
 }
 
-type deleteAllResponse struct {
+type deleteManyResponse struct {
 	DeletedCount int64 `json:"deleted_count"`
+}
+
+type deleteManyBody struct {
+	IDs []string `json:"ids"`
 }
 
 type upsertBody struct {
@@ -152,24 +155,32 @@ func (h *Handlers) Update(c echo.Context) error {
 	return c.JSON(http.StatusOK, ex)
 }
 
-func (h *Handlers) Delete(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+func (h *Handlers) DeleteMany(c echo.Context) error {
+	var body deleteManyBody
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
-	if err := h.svc.Delete(c.Request().Context(), id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgExerciseNotFound)
+	if len(body.IDs) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "ids is required")
+	}
+
+	seen := make(map[uuid.UUID]struct{}, len(body.IDs))
+	ids := make([]uuid.UUID, 0, len(body.IDs))
+	for _, raw := range body.IDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+
+	count, err := h.svc.DeleteMany(c.Request().Context(), ids)
+	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "delete failed")
 	}
-	return c.NoContent(http.StatusNoContent)
-}
-
-func (h *Handlers) DeleteAll(c echo.Context) error {
-	count, err := h.svc.DeleteAll(c.Request().Context())
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "delete all failed")
-	}
-	return c.JSON(http.StatusOK, deleteAllResponse{DeletedCount: count})
+	return c.JSON(http.StatusOK, deleteManyResponse{DeletedCount: count})
 }
