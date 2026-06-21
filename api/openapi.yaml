@@ -276,20 +276,31 @@ paths:
         "403":
           description: Admin role required
 
-  /exercises/all:
     delete:
       tags: [exercises]
-      summary: Delete all exercises (admin only)
-      operationId: deleteAllExercises
+      summary: Delete exercises by IDs (admin only)
+      description: >
+        Idempotent batch delete. Removes existing exercises matching the given IDs.
+        `deleted_count` may be less than the number of IDs if some were not found.
+        Duplicate IDs in the request are deduplicated before delete.
+      operationId: deleteExercises
       security:
         - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExerciseDeleteRequest"
       responses:
         "200":
-          description: All exercises deleted
+          description: Exercises deleted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ExerciseDeleteAllResponse"
+                $ref: "#/components/schemas/ExerciseDeleteResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -341,24 +352,6 @@ paths:
                 $ref: "#/components/schemas/Exercise"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Admin role required
-        "404":
-          description: Exercise not found
-
-    delete:
-      tags: [exercises]
-      summary: Delete exercise (admin only)
-      operationId: deleteExercise
-      security:
-        - bearerAuth: []
-      responses:
-        "204":
-          description: Deleted
-        "400":
-          description: Invalid UUID
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -522,7 +515,18 @@ components:
         pagination:
           $ref: "#/components/schemas/Pagination"
 
-    ExerciseDeleteAllResponse:
+    ExerciseDeleteRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uuid
+
+    ExerciseDeleteResponse:
       type: object
       required: [deleted_count]
       properties:
