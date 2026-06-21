@@ -25,6 +25,7 @@ var allowedSortColumns = map[string]string{
 	"difficulty":   "difficulty",
 	"type":         "type",
 	"muscle_group": "muscle_group",
+	"equipment":    "equipment",
 }
 
 type Pagination struct {

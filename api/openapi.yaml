@@ -412,6 +412,7 @@ components:
           - difficulty
           - type
           - muscle_group
+          - equipment
         default: name
 
     SortOrder:

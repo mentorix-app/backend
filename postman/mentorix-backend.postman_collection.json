@@ -325,7 +325,7 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/exercises?page=1&limit=20&sort_by=name&sort_order=asc",
-            "description": "Source: `internal/exercise/handlers.go` → List\n\nBearer + role trainer|admin\n\nQuery (defaults from `list_params.go`):\n- page=1, limit=20 (max 100)\n- sort_by: name|name_ru|created_at|modified_at|difficulty|type|muscle_group\n- sort_order: asc|desc\n- q: search name/name_ru\n- type, muscle_group, difficulty, equipment (single value)\n- equipment=none → без оборудования\n\n200: {items: Exercise[], pagination: {page, limit, total, total_pages}}"
+            "description": "Source: `internal/exercise/handlers.go` → List\n\nBearer + role trainer|admin\n\nQuery (defaults from `list_params.go`):\n- page=1, limit=20 (max 100)\n- sort_by: name|name_ru|created_at|modified_at|difficulty|type|muscle_group|equipment\n- sort_order: asc|desc\n- q: search name/name_ru\n- type, muscle_group, difficulty, equipment (single value)\n- equipment=none → без оборудования\n\n200: {items: Exercise[], pagination: {page, limit, total, total_pages}}"
           },
           "response": []
         },
@@ -351,7 +351,7 @@
             },
             "method": "GET",
             "header": [],
-            "url": "{{base_url}}/exercises?page=1&limit=20&q=squat&type=strength&muscle_group=legs&difficulty=intermediate&equipment=barbell&sort_by=name_ru&sort_order=asc",
+            "url": "{{base_url}}/exercises?page=1&limit=20&q=squat&type=strength&muscle_group=legs&difficulty=intermediate&equipment=barbell&sort_by=equipment&sort_order=asc",
             "description": "Пример GET /exercises с q и фильтрами. Редактируй query в URL."
           },
           "response": []
