@@ -1,6 +1,6 @@
 CREATE TABLE mentorix.exercises (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
+  name text NOT NULL DEFAULT '',
   name_ru text NOT NULL DEFAULT '',
   added_by uuid NOT NULL REFERENCES mentorix.users(id) ON DELETE RESTRICT,
   modified_by uuid NOT NULL REFERENCES mentorix.users(id) ON DELETE RESTRICT,
