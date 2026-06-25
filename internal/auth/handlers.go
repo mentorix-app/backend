@@ -1,11 +1,13 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/mail"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
@@ -13,8 +15,17 @@ import (
 	httpx "mentorix-backend/internal/http"
 )
 
+type credentialService interface {
+	RegisterTrainer(ctx context.Context, email, password string) (IssuedAuth, error)
+	Login(ctx context.Context, email, password string) (IssuedAuth, error)
+	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
+	Logout(ctx context.Context, refreshPlain string) error
+	LogoutAll(ctx context.Context, userID uuid.UUID) error
+	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
+}
+
 type Handlers struct {
-	svc        *Service
+	svc        credentialService
 	jwtSecret  string
 	cookie     config.RefreshCookieSettings
 	refreshTTL time.Duration

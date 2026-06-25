@@ -8,30 +8,52 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+
+	"mentorix-backend/internal/auth"
+	httpx "mentorix-backend/internal/http"
 )
 
 type fakeExerciseStore struct {
+	listResult      ListResult
+	listErr         error
+	getEx           Exercise
+	getErr          error
+	createEx        Exercise
+	createErr       error
+	updateEx        Exercise
+	updateErr       error
 	deleteManyCount int64
 	deleteManyErr   error
 }
 
 func (f *fakeExerciseStore) List(context.Context, ListParams) (ListResult, error) {
-	panic("not implemented")
+	return f.listResult, f.listErr
 }
 
 func (f *fakeExerciseStore) GetByID(context.Context, uuid.UUID) (Exercise, error) {
-	panic("not implemented")
+	if f.getErr != nil {
+		return Exercise{}, f.getErr
+	}
+	return f.getEx, nil
 }
 
 func (f *fakeExerciseStore) Create(context.Context, uuid.UUID, UpsertInput) (Exercise, error) {
-	panic("not implemented")
+	if f.createErr != nil {
+		return Exercise{}, f.createErr
+	}
+	return f.createEx, nil
 }
 
 func (f *fakeExerciseStore) Update(context.Context, uuid.UUID, uuid.UUID, UpsertInput) (Exercise, error) {
-	panic("not implemented")
+	if f.updateErr != nil {
+		return Exercise{}, f.updateErr
+	}
+	return f.updateEx, nil
 }
 
 func (f *fakeExerciseStore) DeleteMany(context.Context, []uuid.UUID) (int64, error) {
@@ -41,8 +63,260 @@ func (f *fakeExerciseStore) DeleteMany(context.Context, []uuid.UUID) (int64, err
 	return f.deleteManyCount, nil
 }
 
-func testDeleteManyHandlers(store *fakeExerciseStore) *Handlers {
+func testExerciseHandlers(store *fakeExerciseStore) *Handlers {
 	return &Handlers{svc: &Service{store: store}}
+}
+
+func sampleExercise() Exercise {
+	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	return Exercise{
+		ID:          uuid.New(),
+		Name:        "Squat",
+		NameRu:      "Присед",
+		Type:        ExerciseTypeStrength,
+		MuscleGroup: MuscleGroupLegs,
+		Difficulty:  DifficultyIntermediate,
+		CreatedAt:   now,
+		ModifiedAt:  now,
+	}
+}
+
+func validUpsertJSON() string {
+	return `{
+		"name":"Squat",
+		"name_ru":"Присед",
+		"type":"strength",
+		"muscle_group":"legs",
+		"difficulty":"intermediate"
+	}`
+}
+
+func TestList(t *testing.T) {
+	store := &fakeExerciseStore{
+		listResult: ListResult{
+			Items:      []Exercise{sampleExercise()},
+			Pagination: Pagination{Page: 1, Limit: 20, Total: 1},
+		},
+	}
+	e := echo.New()
+	h := testExerciseHandlers(store)
+	e.GET("/exercises", h.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/exercises?page=1&limit=20&sort_by=name&sort_order=asc", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestList_invalidParams(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	e.GET("/exercises", h.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/exercises?sort_by=invalid", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestList_serviceError(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{listErr: errors.New("db down")})
+	e.GET("/exercises", h.List)
+
+	req := httptest.NewRequest(http.MethodGet, "/exercises", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+}
+
+func TestGet(t *testing.T) {
+	ex := sampleExercise()
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{getEx: ex})
+	e.GET("/exercises/:id", h.Get)
+
+	req := httptest.NewRequest(http.MethodGet, "/exercises/"+ex.ID.String(), nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(ex.ID.String())
+
+	if err := h.Get(c); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestGet_invalidID(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	e.GET("/exercises/:id", h.Get)
+
+	req := httptest.NewRequest(http.MethodGet, "/exercises/not-a-uuid", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues("not-a-uuid")
+
+	err := h.Get(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("error = %v, want 400", err)
+	}
+}
+
+func TestGet_notFound(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{getErr: pgx.ErrNoRows})
+	e.GET("/exercises/:id", h.Get)
+
+	id := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/exercises/"+id.String(), nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(id.String())
+
+	err := h.Get(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusNotFound || he.Message != httpx.MsgExerciseNotFound {
+		t.Fatalf("error = %v, want 404", err)
+	}
+}
+
+func TestCreate(t *testing.T) {
+	ex := sampleExercise()
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{createEx: ex})
+	req := httptest.NewRequest(http.MethodPost, "/exercises", strings.NewReader(validUpsertJSON()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(auth.ContextUserIDKey, uuid.New())
+
+	if err := h.Create(c); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", rec.Code)
+	}
+}
+
+func TestCreate_missingUser(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	req := httptest.NewRequest(http.MethodPost, "/exercises", strings.NewReader(validUpsertJSON()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := h.Create(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusUnauthorized {
+		t.Fatalf("error = %v, want 401", err)
+	}
+}
+
+func TestCreate_invalidJSON(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	req := httptest.NewRequest(http.MethodPost, "/exercises", strings.NewReader("not-json"))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(auth.ContextUserIDKey, uuid.New())
+
+	err := h.Create(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("error = %v, want 400", err)
+	}
+}
+
+func TestCreate_validationError(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	body := `{"name":"","type":"strength","muscle_group":"legs","difficulty":"intermediate"}`
+	req := httptest.NewRequest(http.MethodPost, "/exercises", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(auth.ContextUserIDKey, uuid.New())
+
+	err := h.Create(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("error = %v, want 400", err)
+	}
+}
+
+func TestUpdate(t *testing.T) {
+	ex := sampleExercise()
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{updateEx: ex})
+	req := httptest.NewRequest(http.MethodPut, "/exercises/"+ex.ID.String(), strings.NewReader(validUpsertJSON()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(ex.ID.String())
+	c.Set(auth.ContextUserIDKey, uuid.New())
+
+	if err := h.Update(c); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestUpdate_notFound(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{updateErr: pgx.ErrNoRows})
+	id := uuid.New()
+	req := httptest.NewRequest(http.MethodPut, "/exercises/"+id.String(), strings.NewReader(validUpsertJSON()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(id.String())
+	c.Set(auth.ContextUserIDKey, uuid.New())
+
+	err := h.Update(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusNotFound {
+		t.Fatalf("error = %v, want 404", err)
+	}
 }
 
 func TestDeleteMany(t *testing.T) {
@@ -86,7 +360,7 @@ func TestDeleteMany(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := echo.New()
-			h := testDeleteManyHandlers(tt.store)
+			h := testExerciseHandlers(tt.store)
 			e.DELETE("/exercises", h.DeleteMany)
 
 			req := httptest.NewRequest(http.MethodDelete, "/exercises", strings.NewReader(tt.body))

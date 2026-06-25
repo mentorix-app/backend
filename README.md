@@ -55,6 +55,7 @@ API contract: [`api/openapi.yaml`](api/openapi.yaml) (OpenAPI 3).
 ./scripts/migrate.sh up
 ./scripts/migrate.sh down 1
 ./scripts/migrate.sh version
+./scripts/migrate-check.sh   # verify DB matches latest migration in repo
 ```
 
 After changing Compose Postgres credentials, run `docker compose down -v` and update `DATABASE_URL` in `.env`.
@@ -90,5 +91,5 @@ internal/health/   Health probes
 db/migrations/     SQL migrations
 postman/           API collection + validation
 api/               OpenAPI 3 specification
-scripts/           migrate wrappers
+scripts/           migrate and migrate-check wrappers
 ```
