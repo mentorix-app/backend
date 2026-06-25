@@ -87,9 +87,7 @@ func main() {
 		}))
 	}
 
-	e.GET("/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": health.StatusOK})
-	})
+	health.RegisterLiveness(e)
 	health.RegisterReady(e, pool, rdb)
 
 	if pool != nil {

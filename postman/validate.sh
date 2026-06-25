@@ -40,9 +40,9 @@ print("All URLs are strings: OK")
 PY
 
 echo ""
-echo "=== Postman route coverage (programs) ==="
+echo "=== Postman route coverage (all API routes) ==="
 python3 <<'PY'
-import json, re, sys
+import json, sys
 
 c = json.load(open("postman/mentorix-backend.postman_collection.json"))
 
@@ -76,6 +76,20 @@ def walk(items):
 walk(c["item"])
 
 expected = {
+    "GET /health",
+    "GET /health/ready",
+    "POST /auth/register",
+    "POST /auth/login",
+    "POST /auth/refresh",
+    "GET /auth/me",
+    "POST /auth/logout",
+    "POST /auth/logout-all",
+    "POST /admin/users/:user_id/roles/admin",
+    "GET /exercises",
+    "GET /exercises/:id",
+    "POST /exercises",
+    "PUT /exercises/:id",
+    "DELETE /exercises",
     "GET /programs",
     "POST /programs",
     "GET /programs/:id",
@@ -90,10 +104,13 @@ expected = {
     "DELETE /programs/:id/days/:day_id/exercises/:item_id",
 }
 missing = sorted(expected - found)
+extra = sorted(found - expected)
 if missing:
     print("FAIL: missing in Postman:", missing)
     sys.exit(1)
-print("All program routes present in Postman: OK")
+if extra:
+    print("WARN: extra Postman routes:", extra)
+print(f"All {len(expected)} API routes present in Postman: OK")
 PY
 
 echo ""

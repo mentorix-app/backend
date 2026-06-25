@@ -1,30 +1,136 @@
 package auth
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/config"
+	httpx "mentorix-backend/internal/http"
 )
 
-func testAuthHandlers() *Handlers {
-	return NewHandlers(
-		nil,
-		testJWTSecret,
-		config.RefreshCookieSettings{Name: "mentorix_refresh", Path: "/auth"},
-		time.Hour,
-		nil,
-	)
+type fakeAuthService struct {
+	registerIssued IssuedAuth
+	registerErr    error
+	loginIssued    IssuedAuth
+	loginErr       error
+	refreshIssued  IssuedAuth
+	refreshErr     error
+	logoutErr      error
+	logoutAllErr   error
+	profile        UserProfile
+	profileErr     error
+}
+
+func (f *fakeAuthService) RegisterTrainer(_ context.Context, email, _ string) (IssuedAuth, error) {
+	if f.registerErr != nil {
+		return IssuedAuth{}, f.registerErr
+	}
+	out := f.registerIssued
+	if out.Email == "" {
+		out.Email = email
+	}
+	if out.UserID == uuid.Nil {
+		out.UserID = uuid.New()
+	}
+	if out.AccessToken == "" {
+		out.AccessToken = "test-access-token"
+	}
+	if out.RefreshToken == "" {
+		out.RefreshToken = "test-refresh-token"
+	}
+	if out.AccessExpires.IsZero() {
+		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	return out, nil
+}
+
+func (f *fakeAuthService) Login(_ context.Context, email, _ string) (IssuedAuth, error) {
+	if f.loginErr != nil {
+		return IssuedAuth{}, f.loginErr
+	}
+	out := f.loginIssued
+	if out.Email == "" {
+		out.Email = email
+	}
+	if out.UserID == uuid.Nil {
+		out.UserID = uuid.New()
+	}
+	if out.AccessToken == "" {
+		out.AccessToken = "test-access-token"
+	}
+	if out.RefreshToken == "" {
+		out.RefreshToken = "test-refresh-token"
+	}
+	if out.AccessExpires.IsZero() {
+		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	return out, nil
+}
+
+func (f *fakeAuthService) Refresh(_ context.Context, _ string) (IssuedAuth, error) {
+	if f.refreshErr != nil {
+		return IssuedAuth{}, f.refreshErr
+	}
+	out := f.refreshIssued
+	if out.UserID == uuid.Nil {
+		out.UserID = uuid.New()
+	}
+	if out.AccessToken == "" {
+		out.AccessToken = "new-access-token"
+	}
+	if out.RefreshToken == "" {
+		out.RefreshToken = "new-refresh-token"
+	}
+	if out.AccessExpires.IsZero() {
+		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	return out, nil
+}
+
+func (f *fakeAuthService) Logout(_ context.Context, _ string) error {
+	return f.logoutErr
+}
+
+func (f *fakeAuthService) LogoutAll(_ context.Context, _ uuid.UUID) error {
+	return f.logoutAllErr
+}
+
+func (f *fakeAuthService) UserProfile(_ context.Context, _ uuid.UUID) (UserProfile, error) {
+	if f.profileErr != nil {
+		return UserProfile{}, f.profileErr
+	}
+	return f.profile, nil
+}
+
+func testAuthHandlers(svc credentialService) *Handlers {
+	return &Handlers{
+		svc:        svc,
+		jwtSecret:  testJWTSecret,
+		cookie:     config.RefreshCookieSettings{Name: "mentorix_refresh", Path: "/auth"},
+		refreshTTL: time.Hour,
+		limiter:    nil,
+	}
+}
+
+func assertHTTPStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
+	t.Helper()
+	if rec.Code != want {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, want, rec.Body.String())
+	}
 }
 
 func TestRegister_invalidJSON(t *testing.T) {
 	e := echo.New()
-	h := testAuthHandlers()
+	h := testAuthHandlers(&fakeAuthService{})
 	e.POST("/auth/register", h.Register)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader("not-json"))
@@ -32,14 +138,12 @@ func TestRegister_invalidJSON(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
-	}
+	assertHTTPStatus(t, rec, http.StatusBadRequest)
 }
 
 func TestRegister_invalidEmail(t *testing.T) {
 	e := echo.New()
-	h := testAuthHandlers()
+	h := testAuthHandlers(&fakeAuthService{})
 	e.POST("/auth/register", h.Register)
 
 	body := `{"email":"not-an-email","password":"password123"}`
@@ -48,14 +152,12 @@ func TestRegister_invalidEmail(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
-	}
+	assertHTTPStatus(t, rec, http.StatusBadRequest)
 }
 
 func TestRegister_shortPassword(t *testing.T) {
 	e := echo.New()
-	h := testAuthHandlers()
+	h := testAuthHandlers(&fakeAuthService{})
 	e.POST("/auth/register", h.Register)
 
 	body := `{"email":"user@example.com","password":"short"}`
@@ -64,14 +166,70 @@ func TestRegister_shortPassword(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
+	assertHTTPStatus(t, rec, http.StatusBadRequest)
+}
+
+func TestRegister_emailTaken(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{registerErr: ErrEmailTaken})
+	e.POST("/auth/register", h.Register)
+
+	body := `{"email":"user@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusConflict)
+}
+
+func TestRegister_success(t *testing.T) {
+	userID := uuid.New()
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{
+		registerIssued: IssuedAuth{UserID: userID, Email: "user@example.com"},
+	})
+	e.POST("/auth/register", h.Register)
+
+	body := `{"email":"user@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusCreated)
+	var resp tokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
+	if resp.AccessToken == "" || resp.TokenType != TokenTypeBearer {
+		t.Fatalf("unexpected token response: %+v", resp)
+	}
+	if resp.UserID != userID.String() {
+		t.Fatalf("user_id = %q, want %q", resp.UserID, userID)
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Value == "" {
+		t.Fatal("expected refresh cookie")
+	}
+}
+
+func TestLogin_invalidJSON(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	e.POST("/auth/login", h.Login)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader("not-json"))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusBadRequest)
 }
 
 func TestLogin_invalidEmail(t *testing.T) {
 	e := echo.New()
-	h := testAuthHandlers()
+	h := testAuthHandlers(&fakeAuthService{})
 	e.POST("/auth/login", h.Login)
 
 	body := `{"email":"bad","password":"password123"}`
@@ -80,37 +238,105 @@ func TestLogin_invalidEmail(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", rec.Code)
+	assertHTTPStatus(t, rec, http.StatusUnauthorized)
+}
+
+func TestLogin_invalidCredentials(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{loginErr: ErrInvalidCredentials})
+	e.POST("/auth/login", h.Login)
+
+	body := `{"email":"user@example.com","password":"wrong-password"}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusUnauthorized)
+}
+
+func TestLogin_success(t *testing.T) {
+	userID := uuid.New()
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{
+		loginIssued: IssuedAuth{UserID: userID, Email: "user@example.com"},
+	})
+	e.POST("/auth/login", h.Login)
+
+	body := `{"email":"user@example.com","password":"password123"}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	var resp tokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.UserID != userID.String() {
+		t.Fatalf("user_id = %q", resp.UserID)
 	}
 }
 
 func TestRefresh_missingCookie(t *testing.T) {
 	e := echo.New()
-	h := testAuthHandlers()
+	h := testAuthHandlers(&fakeAuthService{})
 	e.POST("/auth/refresh", h.Refresh)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", rec.Code)
+	assertHTTPStatus(t, rec, http.StatusUnauthorized)
+}
+
+func TestRefresh_invalidToken(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{refreshErr: ErrInvalidRefresh})
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "bad-token"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusUnauthorized)
+}
+
+func TestRefresh_success(t *testing.T) {
+	userID := uuid.New()
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{
+		refreshIssued: IssuedAuth{UserID: userID, Email: "user@example.com"},
+	})
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "valid-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	var resp tokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.UserID != userID.String() {
+		t.Fatalf("user_id = %q", resp.UserID)
 	}
 }
 
 func TestLogout_clearsCookie(t *testing.T) {
 	e := echo.New()
-	h := testAuthHandlers()
+	h := testAuthHandlers(&fakeAuthService{})
 	e.POST("/auth/logout", h.Logout)
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want 204", rec.Code)
-	}
+	assertHTTPStatus(t, rec, http.StatusNoContent)
 	cookies := rec.Result().Cookies()
 	if len(cookies) == 0 {
 		t.Fatal("expected Set-Cookie header")
@@ -120,16 +346,87 @@ func TestLogout_clearsCookie(t *testing.T) {
 	}
 }
 
+func TestLogoutAll_missingUserInContext(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	e.POST("/auth/logout-all", h.LogoutAll)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout-all", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusInternalServerError)
+}
+
+func TestLogoutAll_success(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout-all", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, uuid.New())
+
+	if err := h.LogoutAll(c); err != nil {
+		t.Fatalf("LogoutAll: %v", err)
+	}
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+}
+
 func TestMe_missingUserInContext(t *testing.T) {
 	e := echo.New()
-	h := testAuthHandlers()
+	h := testAuthHandlers(&fakeAuthService{})
 	e.GET("/auth/me", h.Me)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rec.Code)
+	assertHTTPStatus(t, rec, http.StatusInternalServerError)
+}
+
+func TestMe_notFound(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{profileErr: pgx.ErrNoRows})
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, uuid.New())
+
+	err := h.Me(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusNotFound || he.Message != httpx.MsgUserNotFound {
+		t.Fatalf("error = %v, want 404 user not found", err)
+	}
+}
+
+func TestMe_success(t *testing.T) {
+	userID := uuid.New()
+	createdAt := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{
+		profile: UserProfile{
+			Email:     "trainer@test.com",
+			CreatedAt: createdAt,
+			Roles:     []string{RoleTrainer},
+		},
+	})
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, userID)
+
+	if err := h.Me(c); err != nil {
+		t.Fatalf("Me: %v", err)
+	}
+	assertHTTPStatus(t, rec, http.StatusOK)
+	var resp meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.UserID != userID.String() || resp.Email != "trainer@test.com" {
+		t.Fatalf("resp = %+v", resp)
 	}
 }
