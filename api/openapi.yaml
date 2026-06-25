@@ -2,7 +2,9 @@ openapi: 3.0.3
 info:
   title: Mentorix Backend API
   version: 1.0.0
-  description: REST API for Mentorix trainers and exercises.
+  description: >
+    REST API for Mentorix: authentication, exercise catalog, training programs
+    (draft/publish workflow), and admin operations.
 
 servers:
   - url: http://localhost:8080
@@ -15,6 +17,7 @@ tags:
   - name: auth
   - name: admin
   - name: exercises
+  - name: programs
 
 paths:
   /health:
@@ -355,6 +358,344 @@ paths:
         "404":
           description: Exercise not found
 
+  /programs:
+    get:
+      tags: [programs]
+      summary: List programs with pagination, sort, search, and filters
+      description: >
+        Trainers see own programs; admins see all. Soft-deleted programs are excluded.
+        Search matches program name (ILIKE). Filter by status (comma-separated), category, difficulty.
+      operationId: listPrograms
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/ProgramSortBy"
+        - $ref: "#/components/parameters/SortOrder"
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search in program name (ILIKE)
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Comma-separated statuses (draft, published, archived)
+        - name: category
+          in: query
+          schema:
+            $ref: "#/components/schemas/ProgramCategory"
+        - name: difficulty
+          in: query
+          schema:
+            $ref: "#/components/schemas/Difficulty"
+      responses:
+        "200":
+          description: Paginated program list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer or admin role required
+
+    post:
+      tags: [programs]
+      summary: Create draft program with day 1
+      description: >
+        Creates a program in `draft` status with empty `name`, `description`, and `preview_image_url`,
+        and auto-creates day 1. Step-1 fields can be filled later via PATCH.
+      operationId: createProgram
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Draft program created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+              example:
+                id: "550e8400-e29b-41d4-a716-446655440000"
+                created_by: "550e8400-e29b-41d4-a716-446655440001"
+                modified_by: "550e8400-e29b-41d4-a716-446655440001"
+                status: draft
+                name: ""
+                description: ""
+                preview_image_url: ""
+                created_at: "2026-06-21T12:00:00Z"
+                modified_at: "2026-06-21T12:00:00Z"
+                days:
+                  - id: "550e8400-e29b-41d4-a716-446655440002"
+                    day_number: 1
+                    sort_order: 1
+                    exercises: []
+                    created_at: "2026-06-21T12:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer or admin role required
+
+  /programs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    get:
+      tags: [programs]
+      summary: Get program with days and exercises
+      operationId: getProgram
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Program detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program not found
+
+    patch:
+      tags: [programs]
+      summary: Update program fields (step 1)
+      description: >
+        Partial update for wizard step 1. All fields are optional.
+        Empty `name` is allowed while the program is in `draft`; publish requires a non-empty trimmed name.
+      operationId: updateProgram
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramPatch"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program not found
+
+    delete:
+      tags: [programs]
+      summary: Soft-delete program
+      operationId: deleteProgram
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Program deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program not found
+
+  /programs/{id}/publish:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    post:
+      tags: [programs]
+      summary: Publish program (validates required fields)
+      operationId: publishProgram
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Published program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program not found
+        "409":
+          description: Invalid status transition
+
+  /programs/{id}/archive:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    post:
+      tags: [programs]
+      summary: Archive published program
+      operationId: archiveProgram
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Archived program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program not found
+        "409":
+          description: Invalid status transition
+
+  /programs/{id}/days:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    post:
+      tags: [programs]
+      summary: Add program day
+      operationId: addProgramDay
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Program with new day
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program not found
+
+  /programs/{id}/days/{day_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramDayId"
+    delete:
+      tags: [programs]
+      summary: Delete program day
+      operationId: deleteProgramDay
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program or day not found
+
+  /programs/{id}/days/{day_id}/exercises:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramDayId"
+    post:
+      tags: [programs]
+      summary: Add exercise to program day
+      operationId: addProgramDayExercise
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramDayExerciseUpsert"
+      responses:
+        "201":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program or day not found
+
+  /programs/{id}/days/{day_id}/exercises/{item_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramDayId"
+      - $ref: "#/components/parameters/ProgramDayExerciseId"
+    put:
+      tags: [programs]
+      summary: Update exercise in program day
+      operationId: updateProgramDayExercise
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramDayExerciseUpsert"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program, day, or exercise item not found
+
+    delete:
+      tags: [programs]
+      summary: Remove exercise from program day
+      operationId: deleteProgramDayExercise
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden
+        "404":
+          description: Program, day, or exercise item not found
+
 components:
   securitySchemes:
     bearerAuth:
@@ -419,6 +760,38 @@ components:
       schema:
         type: string
         format: uuid
+
+    ProgramId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ProgramDayId:
+      name: day_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ProgramDayExerciseId:
+      name: item_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ProgramSortBy:
+      name: sort_by
+      in: query
+      schema:
+        type: string
+        enum: [name, created_at, modified_at, status, category, difficulty]
+        default: created_at
 
   responses:
     BadRequest:
@@ -675,3 +1048,184 @@ components:
         - intermediate
         - advanced
         - expert
+
+    ProgramStatus:
+      type: string
+      enum: [draft, published, archived]
+
+    ProgramCategory:
+      type: string
+      enum:
+        - weight_loss
+        - muscle_gain
+        - rehabilitation
+        - endurance
+        - functional
+
+    Program:
+      type: object
+      required:
+        - id
+        - created_by
+        - modified_by
+        - status
+        - name
+        - description
+        - preview_image_url
+        - created_at
+        - modified_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        modified_by:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ProgramStatus"
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          $ref: "#/components/schemas/ProgramCategory"
+          nullable: true
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+          nullable: true
+        preview_image_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        modified_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ProgramDayExercise:
+      type: object
+      required:
+        - id
+        - exercise_id
+        - exercise_name
+        - exercise_name_ru
+        - sort_order
+        - instruction
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        exercise_id:
+          type: string
+          format: uuid
+        exercise_name:
+          type: string
+        exercise_name_ru:
+          type: string
+        sort_order:
+          type: integer
+        sets:
+          type: integer
+          nullable: true
+        reps:
+          type: integer
+          nullable: true
+        weight_kg:
+          type: number
+          format: double
+          nullable: true
+        instruction:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ProgramDay:
+      type: object
+      required: [id, day_number, sort_order, exercises, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        day_number:
+          type: integer
+        sort_order:
+          type: integer
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramDayExercise"
+        created_at:
+          type: string
+          format: date-time
+
+    ProgramDetail:
+      allOf:
+        - $ref: "#/components/schemas/Program"
+        - type: object
+          required: [days]
+          properties:
+            days:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProgramDay"
+
+    ProgramListResponse:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Program"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    ProgramPatch:
+      type: object
+      description: >
+        Partial update for draft/published programs. Empty `name` is allowed in draft;
+        publish validates that name is non-empty.
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          $ref: "#/components/schemas/ProgramCategory"
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+        preview_image_url:
+          type: string
+
+    ProgramDayExerciseUpsert:
+      type: object
+      required: [exercise_id]
+      description: >
+        `sets` and `reps` are optional in draft; required with positive values on publish.
+      properties:
+        exercise_id:
+          type: string
+          format: uuid
+        sets:
+          type: integer
+          minimum: 1
+          nullable: true
+        reps:
+          type: integer
+          minimum: 1
+          nullable: true
+        weight_kg:
+          type: number
+          format: double
+          minimum: 0
+        instruction:
+          type: string

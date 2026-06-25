@@ -8,6 +8,8 @@ const (
 	MsgInvalidUserID       = "invalid user_id"
 	MsgUserNotFound        = "user not found"
 	MsgExerciseNotFound    = "exercise not found"
+	MsgProgramNotFound     = "program not found"
+	MsgForbidden           = "forbidden"
 	MsgInvalidToken        = "invalid token"
 	MsgMissingAuth         = "missing authorization"
 	MsgMissingBearerToken  = "missing bearer token"

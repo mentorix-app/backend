@@ -19,6 +19,7 @@ import (
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
 	apphttp "mentorix-backend/internal/http"
+	"mentorix-backend/internal/program"
 )
 
 const (
@@ -107,8 +108,11 @@ func main() {
 
 		exSvc := exercise.NewService(pool)
 		exercise.NewHandlers(exSvc, pool, cfg.JWTSecret).Mount(e)
+
+		progSvc := program.NewService(pool)
+		program.NewHandlers(progSvc, pool, cfg.JWTSecret).Mount(e)
 	} else {
-		logger.Warn("DATABASE_URL not set; auth and exercise routes are disabled")
+		logger.Warn("DATABASE_URL not set; auth, exercise, and program routes are disabled")
 	}
 
 	addr := ":" + cfg.Port

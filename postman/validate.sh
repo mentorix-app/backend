@@ -40,6 +40,63 @@ print("All URLs are strings: OK")
 PY
 
 echo ""
+echo "=== Postman route coverage (programs) ==="
+python3 <<'PY'
+import json, re, sys
+
+c = json.load(open("postman/mentorix-backend.postman_collection.json"))
+
+replacements = [
+    ("{{program_day_exercise_id}}", ":item_id"),
+    ("{{program_day_id}}", ":day_id"),
+    ("{{program_id}}", ":id"),
+    ("{{exercise_id}}", ":id"),
+    ("{{grant_admin_user_id}}", ":user_id"),
+]
+
+def norm(url: str) -> str:
+    path = url
+    if path.startswith("{{base_url}}"):
+        path = path[len("{{base_url}}"):]
+    for old, new in replacements:
+        path = path.replace(old, new)
+    return path.split("?", 1)[0]
+
+found = set()
+
+def walk(items):
+    for i in items:
+        if "item" in i:
+            walk(i["item"])
+        else:
+            req = i["request"]
+            route = f"{req['method']} {norm(req['url'])}"
+            found.add(route)
+
+walk(c["item"])
+
+expected = {
+    "GET /programs",
+    "POST /programs",
+    "GET /programs/:id",
+    "PATCH /programs/:id",
+    "DELETE /programs/:id",
+    "POST /programs/:id/publish",
+    "POST /programs/:id/archive",
+    "POST /programs/:id/days",
+    "DELETE /programs/:id/days/:day_id",
+    "POST /programs/:id/days/:day_id/exercises",
+    "PUT /programs/:id/days/:day_id/exercises/:item_id",
+    "DELETE /programs/:id/days/:day_id/exercises/:item_id",
+}
+missing = sorted(expected - found)
+if missing:
+    print("FAIL: missing in Postman:", missing)
+    sys.exit(1)
+print("All program routes present in Postman: OK")
+PY
+
+echo ""
 echo "=== Expected routes from Go ==="
 routes=(
   "GET /health"
@@ -56,6 +113,18 @@ routes=(
   "POST /exercises"
   "PUT /exercises/:id"
   "DELETE /exercises"
+  "GET /programs"
+  "POST /programs"
+  "GET /programs/:id"
+  "PATCH /programs/:id"
+  "DELETE /programs/:id"
+  "POST /programs/:id/publish"
+  "POST /programs/:id/archive"
+  "POST /programs/:id/days"
+  "DELETE /programs/:id/days/:day_id"
+  "POST /programs/:id/days/:day_id/exercises"
+  "PUT /programs/:id/days/:day_id/exercises/:item_id"
+  "DELETE /programs/:id/days/:day_id/exercises/:item_id"
 )
 for r in "${routes[@]}"; do echo "  $r"; done
 
@@ -87,6 +156,9 @@ expected = {
     "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/logout-all", "/auth/me",
     "/admin/users/{user_id}/roles/admin",
     "/exercises", "/exercises/{id}",
+    "/programs", "/programs/{id}", "/programs/{id}/publish", "/programs/{id}/archive",
+    "/programs/{id}/days", "/programs/{id}/days/{day_id}",
+    "/programs/{id}/days/{day_id}/exercises", "/programs/{id}/days/{day_id}/exercises/{item_id}",
 }
 missing = expected - spec_paths
 extra = spec_paths - expected
@@ -118,6 +190,7 @@ if curl -sf "$BASE/health" > /dev/null 2>&1; then
     echo "  POST /auth/login OK"
     curl -sf -H "Authorization: Bearer $TOKEN" "$BASE/auth/me" | python3 -c "import sys,json; d=json.load(sys.stdin); print('  GET /auth/me OK: roles=', d.get('roles'))"
     curl -sf -H "Authorization: Bearer $TOKEN" "$BASE/exercises?page=1&limit=20&sort_by=name&sort_order=asc" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'items' in d and 'pagination' in d; print('  GET /exercises OK: total=', d['pagination']['total'])"
+    curl -sf -H "Authorization: Bearer $TOKEN" "$BASE/programs?page=1&limit=20&sort_by=created_at&sort_order=desc" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'items' in d and 'pagination' in d; print('  GET /programs OK: total=', d['pagination']['total'])"
   else
     echo "  POST /auth/login skipped (user may not exist — run Register first)"
   fi
