@@ -6,37 +6,24 @@ Go REST API for Mentorix (trainers, clients, exercises). Echo + PostgreSQL + Red
 
 - Go 1.25+
 - Docker Desktop (Postgres + Redis locally)
-- [golang-migrate](https://github.com/golang-migrate/migrate) CLI
 
-Install migrate (once):
-
-```bash
-go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.2
-```
-
-Install sqlc (once):
+Install dev CLI tools once (migrate, sqlc, golangci-lint, air):
 
 ```bash
-go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0
-```
-
-Optional — golangci-lint (used by `./scripts/check.sh`; otherwise installed via `go run`):
-
-```bash
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2
+make install-tools
 ```
 
 ## Local setup
 
 ```bash
-docker compose up -d
-cp .env.example .env
-# Edit JWT_SECRET if needed (min 32 chars)
-
-./scripts/migrate.sh up
-
-go run ./cmd/api
+make install-tools   # once: migrate, sqlc, lint, air
+make setup           # docker compose, .env, migrations
+make dev             # API with hot reload (or: make run)
 ```
+
+`make setup` creates `.env` from `.env.example` if missing. Edit `JWT_SECRET` if needed (min 32 chars).
+
+List all commands: `make help`
 
 Check:
 
@@ -63,7 +50,7 @@ Select environment, then: Login → Me → List exercises.
 Validate collection (routes, OpenAPI paths, JSON schemas vs Go types, Postman bodies):
 
 ```bash
-./postman/validate.sh
+make validate
 ```
 
 This runs `go test ./internal/apicheck/...` — Go routes come from Echo `Mount()`, not a hand-maintained list.
@@ -73,10 +60,10 @@ API contract: [`api/openapi.yaml`](api/openapi.yaml) (OpenAPI 3).
 ## Migrations
 
 ```bash
-./scripts/migrate.sh up
-./scripts/migrate.sh down 1
-./scripts/migrate.sh version
-./scripts/migrate-check.sh   # verify DB matches latest migration in repo
+make migrate
+make migrate-down          # default N=1; e.g. make migrate-down N=2
+make migrate-version
+make migrate-check         # verify DB matches latest migration in repo
 ```
 
 After changing Compose Postgres credentials, run `docker compose down -v` and update `DATABASE_URL` in `.env`.
@@ -88,8 +75,8 @@ SQL queries live in `db/queries/`. Generated Go code: `internal/db/sqlc/`.
 After changing migrations or queries:
 
 ```bash
-./scripts/schema-sync.sh          # refresh db/schema.sql from migrations
-go generate ./internal/db/...     # runs sqlc (config: sqlc.yaml in repo root)
+make schema-sync    # refresh db/schema.sql from migrations
+make generate       # runs sqlc (config: sqlc.yaml in repo root)
 ```
 
 ## Store integration tests
@@ -97,34 +84,34 @@ go generate ./internal/db/...     # runs sqlc (config: sqlc.yaml in repo root)
 Requires Docker (Testcontainers). Not run in default `go test ./...`.
 
 ```bash
-go test -tags integration -timeout 5m ./internal/db/storetest/...
+make test-integration
 ```
 
 ## Local QA (all checks)
 
-`./scripts/check.sh` runs, in order: gofmt, go vet, `go test ./...`, build, sqlc/go-generate drift, golangci-lint, contract validation (`postman/validate.sh` + `internal/apicheck`), migrate-check, store integration tests, and API smoke on `http://localhost:8080`.
+`make check` runs, in order: gofmt, go vet, `go test ./...`, build, sqlc/go-generate drift, golangci-lint, contract validation (`postman/validate.sh` + `internal/apicheck`), migrate-check, store integration tests, and API smoke on `http://localhost:8080`.
 
 **Full suite** (Docker + `.env` + API running):
 
 ```bash
-./scripts/check.sh
+make check
 ```
 
 **CI parity** (no migrate-check, Testcontainers, or smoke):
 
 ```bash
-./scripts/check.sh --ci
+make check-ci
 ```
 
 **Partial** (combine as needed):
 
 ```bash
-./scripts/check.sh --no-smoke              # Docker OK, API not running
-./scripts/check.sh --no-integration        # skip Testcontainers
-./scripts/check.sh --no-migrate-check      # skip DB version check
+make check CHECK_FLAGS="--no-smoke"              # Docker OK, API not running
+make check CHECK_FLAGS="--no-integration"      # skip Testcontainers
+make check CHECK_FLAGS="--no-migrate-check"    # skip DB version check
 ```
 
-See `./scripts/check.sh --help` for all flags.
+See `scripts/check.sh --help` for all flags.
 
 ## Render dev
 
@@ -165,6 +152,8 @@ db/queries/           sqlc query definitions
 db/schema.sql         schema snapshot for sqlc (generated)
 postman/              API collection + validate.sh
 api/                  OpenAPI 3 specification
+Makefile              make help — dev commands (wraps scripts/)
+.air.toml             Air hot reload config (make dev)
 scripts/              migrate, migrate-check, schema-sync, check
 sqlc.yaml             sqlc config
 ```

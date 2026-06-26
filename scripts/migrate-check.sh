@@ -55,7 +55,7 @@ echo "  DB version: $current"
 echo "  Expected:   $expected"
 
 if (( current < expected )); then
-  echo "FAIL: migrations behind — run: ./scripts/migrate.sh up" >&2
+  echo "FAIL: migrations behind — run: make migrate" >&2
   exit 1
 fi
 
