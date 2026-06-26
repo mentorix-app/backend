@@ -4,7 +4,7 @@ Go REST API for Mentorix (trainers, clients, exercises). Echo + PostgreSQL + Red
 
 ## Prerequisites
 
-- Go 1.23+
+- Go 1.25+
 - Docker Desktop (Postgres + Redis locally)
 - [golang-migrate](https://github.com/golang-migrate/migrate) CLI
 

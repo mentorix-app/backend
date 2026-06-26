@@ -48,7 +48,7 @@ Before non-trivial changes, **read and align with `AGENTS.md`** when present loc
 
 Dependencies: **Go modules**; before adding a library, **briefly compare 2–3 options** (in chat or the PR) and record the choice in **AGENTS.md** when it is a significant decision.
 
-Tooling: **`go fmt`**, **`goimports`**, **`go vet`**, **golangci-lint**, **`./scripts/check.sh`** (local full QA) in CI when available. After changing migrations or sqlc queries: `scripts/schema-sync.sh`, then `go generate ./internal/db/...` or `sqlc generate`.
+Tooling: **`go fmt`**, **`goimports`**, **`go vet`**, **golangci-lint** in CI (`go run` with the project Go toolchain — **Go 1.25+** in `go.mod`), **`./scripts/check.sh`** (local full QA). After changing migrations or sqlc queries: `scripts/schema-sync.sh`, then `go generate ./internal/db/...` or `sqlc generate`.
 
 ### API and naming (mandatory — all new code)
 

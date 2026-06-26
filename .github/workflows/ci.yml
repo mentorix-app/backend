@@ -39,6 +39,4 @@ jobs:
         run: SKIP_SMOKE=1 bash postman/validate.sh
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.62.2
+        run: go run github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2 run ./...
