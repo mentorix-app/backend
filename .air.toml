@@ -1,0 +1,32 @@
+# Hot reload for local API development. Run: make dev
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/api ./cmd/api"
+  bin = "./tmp/api"
+  delay = 1000
+  exclude_dir = [
+    "tmp",
+    "bin",
+    "vendor",
+    "testdata",
+    "postman",
+    "db/migrations",
+    "internal/db/sqlc",
+    "internal/db/storetest",
+    ".git",
+    ".github",
+  ]
+  exclude_regex = ["_test\\.go$"]
+  include_ext = ["go", "tpl", "tmpl", "html", "yaml", "yml"]
+  log = "tmp/air-build.log"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = true
