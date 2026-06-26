@@ -48,7 +48,15 @@ Check:
 Import from `postman/`:
 
 - `mentorix-backend.postman_collection.json`
-- `mentorix-local.postman_environment.json` (or Render dev env)
+- `mentorix-local.postman_environment.json` — local API (`password123` for `trainer@test.com` is in the file)
+- `mentorix-render-dev.postman_environment.json` — Render dev URL; **`user_password` is empty in git**
+
+For **Render dev**, after import set in Postman → Environments → **Mentorix Render Dev**:
+
+- `user_email` — your account on that deployment (default in file: `dev-trainer@test.com`)
+- `user_password` — your password (**not** stored in the repository; set once in Postman on your machine)
+
+Do not re-export the Render environment into git with a filled password.
 
 Select environment, then: Login → Me → List exercises.
 
