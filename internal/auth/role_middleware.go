@@ -6,25 +6,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 
-	"mentorix-backend/internal/db"
+	"mentorix-backend/internal/db/pgconv"
+	"mentorix-backend/internal/db/sqlc"
 	httpx "mentorix-backend/internal/http"
 )
 
-func roleMiddleware(pool *pgxpool.Pool, forbiddenMsg string, roles ...string) echo.MiddlewareFunc {
+func roleMiddleware(q *sqlc.Queries, forbiddenMsg string, roles ...string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			uid, ok := UserIDFromContext(c)
 			if !ok {
 				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
 			}
-			var allowed bool
-			err := pool.QueryRow(c.Request().Context(),
-				`SELECT EXISTS(
-					SELECT 1 FROM `+db.Table("user_roles")+`
-					WHERE user_id = $1 AND role = ANY($2)
-				)`,
-				uid, roles,
-			).Scan(&allowed)
+			allowed, err := q.UserHasAnyRole(c.Request().Context(), sqlc.UserHasAnyRoleParams{
+				UserID: pgconv.ToPGUUID(uid),
+				Roles:  roles,
+			})
 			if err != nil {
 				return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 			}
@@ -37,9 +34,9 @@ func roleMiddleware(pool *pgxpool.Pool, forbiddenMsg string, roles ...string) ec
 }
 
 func TrainerMiddleware(pool *pgxpool.Pool) echo.MiddlewareFunc {
-	return roleMiddleware(pool, httpx.MsgTrainerRoleRequired, RoleTrainer, RoleAdmin)
+	return roleMiddleware(sqlc.New(pool), httpx.MsgTrainerRoleRequired, RoleTrainer, RoleAdmin)
 }
 
 func AdminMiddleware(pool *pgxpool.Pool) echo.MiddlewareFunc {
-	return roleMiddleware(pool, httpx.MsgAdminRoleRequired, RoleAdmin)
+	return roleMiddleware(sqlc.New(pool), httpx.MsgAdminRoleRequired, RoleAdmin)
 }

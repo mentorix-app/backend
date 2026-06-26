@@ -13,7 +13,7 @@ Before non-trivial changes, **read and align with `AGENTS.md`** when present loc
 
 ## Architecture — what this system is
 
-- **Monolith** in Go: one API deployment, **REST (Echo v4)** + **managed PostgreSQL** (e.g. Render Postgres, Neon — per AGENTS). Application schema e.g. **`mentorix`**. Use **pgx**, **sqlc** (planned), SQL migrations in git. **Microservices are not an MVP goal** — do not split services without explicit user request.
+- **Monolith** in Go: one API deployment, **REST (Echo v4)** + **managed PostgreSQL** (e.g. Render Postgres, Neon — per AGENTS). Application schema e.g. **`mentorix`**. Use **pgx** + **sqlc** (SQL in `db/queries/` → `internal/db/sqlc/`), SQL migrations in git. **Microservices are not an MVP goal** — do not split services without explicit user request.
 - **No Supabase:** **custom authentication** in Go and Postgres. **Phased login (design invariant):** however the user signs in — **email/password**, **Telegram (post-invite)**, **social/OAuth later** — there is **one** logical account: one **`user_id`**. **`users`** + **`auth_identities`** (`email_password`, `telegram`, `oauth_*`, …); all identities point to the **same** `user_id` where they belong to one person. **Ship first:** email+password for REST (argon2, JWT); **clients** primarily via Telegram bot → **`users` + `telegram` identity**, same model as REST users. **Later:** OAuth client flows add identities, not parallel shadow users. **Telegram → mobile:** same `user_id`; linking per AGENTS.md §1 (unified-account subsection). Business logic uses **`user_id`**, not login channel.
 - **Telegram bot** is served by **the same backend** (webhook, shared database and business logic with REST).
 - **Hosting (phased):** **Primary dev loop** = local `go run` + `.env` + local Docker Postgres/Redis. **Shared dev** = **Render** Web Service on branch **`develop`** with its **own** Render Postgres + Redis and `APP_ENV=development` for frontend integration. **Production** Render service (branch **`main`**, new prod DB/Redis, `APP_ENV=production`) — **only after** dev on Render is stable; do not provision prod early per AGENTS.md §4.
@@ -25,9 +25,13 @@ Before non-trivial changes, **read and align with `AGENTS.md`** when present loc
 ## Code layout
 
 - **`cmd/<name>/`** — build and wiring only: config parsing, `ListenAndServe`, dependency injection into `internal`. Minimal logic.
-- **`internal/`** — all application logic. As it grows, group by **feature** (e.g. `internal/invite/`) or by layer (`internal/http`, `internal/telegram`, `internal/config`, `internal/db`).
+- **`internal/`** — all application logic. Group by **feature** (e.g. `internal/auth/`, `internal/program/`) or shared layers (`internal/http`, `internal/config`, `internal/db`).
+- **`db/migrations/`** — golang-migrate SQL; **`db/queries/`** — sqlc query files; **`db/schema.sql`** — schema snapshot for sqlc (`scripts/schema-sync.sh`).
+- **`internal/db/sqlc/`** — generated sqlc code (do not hand-edit); **`internal/db/pgconv/`** — pgtype ↔ domain helpers; **`internal/db/storetest/`** — store integration tests (`-tags integration`).
+- **`internal/apicheck/`** — contract tests: Echo routes ↔ OpenAPI ↔ Postman; extend `schema.go` when adding response/request schemas.
+- **`scripts/`** — `migrate.sh`, `migrate-check.sh`, `schema-sync.sh`, **`check.sh`** (full local QA; `--ci` = GitHub CI parity).
 - **`pkg/`** — do not create “for later”; only if a package is **actually** needed by external modules in this repo.
-- Public HTTP contract: target artifact is **OpenAPI 3** in the repo; when adding endpoints, do not break the spec without updating it in the same change.
+- Public HTTP contract: **OpenAPI 3** in `api/openapi.yaml`; update OpenAPI, Postman, and apicheck bindings in the same change when adding endpoints.
 
 ---
 
@@ -44,20 +48,20 @@ Before non-trivial changes, **read and align with `AGENTS.md`** when present loc
 
 Dependencies: **Go modules**; before adding a library, **briefly compare 2–3 options** (in chat or the PR) and record the choice in **AGENTS.md** when it is a significant decision.
 
-Tooling: **`go fmt`**, **`goimports`**, **`go vet`**, and **golangci-lint** in CI when available.
+Tooling: **`go fmt`**, **`goimports`**, **`go vet`**, **golangci-lint** in CI (`go run` with the project Go toolchain — **Go 1.25+** in `go.mod`), **`./scripts/check.sh`** (local full QA). After changing migrations or sqlc queries: `scripts/schema-sync.sh`, then `go generate ./internal/db/...` or `sqlc generate`.
 
 ### API and naming (mandatory — all new code)
 
 Single convention across Go code, PostgreSQL, and REST JSON. **Do not** use camelCase in JSON or kebab-case in enum/DB string values.
 
-| Layer | Rule | Example |
-|-------|------|---------|
-| Go exported fields / types | PascalCase | `NameRu`, `ExerciseType` |
-| Go string enum constants | type prefix + snake value | `ExerciseTypeStrength = "strength"` |
-| PostgreSQL columns | snake_case | `name_ru`, `muscle_group`, `created_at` |
-| JSON keys | explicit `json:"snake_case"` tags | `json:"access_token"`, `json:"modified_at"` |
-| JSON / DB enum values | snake_case | `pull_up_bar`, `full_body`, `email_password` |
-| HTTP URL paths | kebab-case (exception) | `/auth/logout-all` |
+| Layer                      | Rule                              | Example                                      |
+| -------------------------- | --------------------------------- | -------------------------------------------- |
+| Go exported fields / types | PascalCase                        | `NameRu`, `ExerciseType`                     |
+| Go string enum constants   | type prefix + snake value         | `ExerciseTypeStrength = "strength"`          |
+| PostgreSQL columns         | snake_case                        | `name_ru`, `muscle_group`, `created_at`      |
+| JSON keys                  | explicit `json:"snake_case"` tags | `json:"access_token"`, `json:"modified_at"`  |
+| JSON / DB enum values      | snake_case                        | `pull_up_bar`, `full_body`, `email_password` |
+| HTTP URL paths             | kebab-case (exception)            | `/auth/logout-all`                           |
 
 - Never rely on default `encoding/json` field names (PascalCase). Always set `json` tags.
 - Do not name domain types `Type` — use a specific name (`ExerciseType`, `InviteStatus`, …).
@@ -71,6 +75,9 @@ Single convention across Go code, PostgreSQL, and REST JSON. **Do not** use came
 ## Testing
 
 - **Table-driven tests** for business rules (invites, client statuses, linking, etc.).
+- **Handler tests** with fake store/service interfaces.
+- **`internal/apicheck`** — routes, OpenAPI schemas, Postman bodies (run via `postman/validate.sh` or `go test ./internal/apicheck/...`).
+- **Store integration tests** — `go test -tags integration -timeout 5m ./internal/db/storetest/...` (Testcontainers; not in default `go test ./...`).
 - Mock **external** dependencies via interfaces where isolated tests are needed.
 - Do not aim for “100% coverage of every exported symbol” unless the user asks; focus on **critical paths**.
 
@@ -78,7 +85,7 @@ Single convention across Go code, PostgreSQL, and REST JSON. **Do not** use came
 
 ## Observability (phased)
 
-- For now, **stdout logs** (Echo middleware) are enough. Later: **`log/slog`**, structured fields, **request ID** middleware.
+- **`log/slog`** (JSON to stdout), Echo **request ID**, request logging middleware — in use.
 - **OpenTelemetry / Jaeger / Prometheus** — only when the user or AGENTS explicitly move to that phase; do not deploy a full observability stack on your own for MVP.
 
 ---

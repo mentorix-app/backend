@@ -40,12 +40,12 @@ type ListResult struct {
 }
 
 type ListParams struct {
-	Page           int
-	Limit          int
-	SortBy         string
-	SortOrder      string
-	Query          string
-	Statuses       []Status
+	Page       int
+	Limit      int
+	SortBy     string
+	SortOrder  string
+	Query      string
+	Statuses   []Status
 	Category   *Category
 	Difficulty *Difficulty
 	CreatedBy  *uuid.UUID

@@ -198,7 +198,7 @@ func TestRegister_success(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assertHTTPStatus(t, rec, http.StatusCreated)
-	var resp tokenResponse
+	var resp TokenResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestLogin_success(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assertHTTPStatus(t, rec, http.StatusOK)
-	var resp tokenResponse
+	var resp TokenResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestRefresh_success(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assertHTTPStatus(t, rec, http.StatusOK)
-	var resp tokenResponse
+	var resp TokenResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestMe_success(t *testing.T) {
 		t.Fatalf("Me: %v", err)
 	}
 	assertHTTPStatus(t, rec, http.StatusOK)
-	var resp meResponse
+	var resp MeResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
