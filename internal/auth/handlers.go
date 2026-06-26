@@ -52,26 +52,6 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.POST("/auth/logout-all", h.LogoutAll)
 }
 
-type authCredentialsBody struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-type tokenResponse struct {
-	AccessToken string    `json:"access_token"`
-	TokenType   string    `json:"token_type"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	UserID      string    `json:"user_id"`
-	Email       string    `json:"email"`
-}
-
-type meResponse struct {
-	UserID    string    `json:"user_id"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	Roles     []string  `json:"roles"`
-}
-
 func (h *Handlers) setRefreshCookie(c echo.Context, value string) {
 	ck := &http.Cookie{
 		Name:     h.cookie.Name,
@@ -102,7 +82,7 @@ func (h *Handlers) clearRefreshCookie(c echo.Context) {
 
 func (h *Handlers) writeAuthJSON(c echo.Context, status int, issued IssuedAuth) error {
 	h.setRefreshCookie(c, issued.RefreshToken)
-	return c.JSON(status, tokenResponse{
+	return c.JSON(status, TokenResponse{
 		AccessToken: issued.AccessToken,
 		TokenType:   TokenTypeBearer,
 		ExpiresAt:   issued.AccessExpires.UTC(),
@@ -118,7 +98,7 @@ func (h *Handlers) Register(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
 	}
-	var body authCredentialsBody
+	var body AuthCredentials
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -150,7 +130,7 @@ func (h *Handlers) Login(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
 	}
-	var body authCredentialsBody
+	var body AuthCredentials
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -234,7 +214,7 @@ func (h *Handlers) Me(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
-	return c.JSON(http.StatusOK, meResponse{
+	return c.JSON(http.StatusOK, MeResponse{
 		UserID:    uid.String(),
 		Email:     profile.Email,
 		CreatedAt: profile.CreatedAt,

@@ -26,6 +26,15 @@ jobs:
       - name: Go build
         run: go build -o /dev/null ./...
 
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0
+
+      - name: sqlc generate
+        run: $(go env GOPATH)/bin/sqlc generate
+
+      - name: sqlc generated code up to date
+        run: git diff --exit-code internal/db/sqlc/
+
       - name: Contract validation
         run: SKIP_SMOKE=1 bash postman/validate.sh
 

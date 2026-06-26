@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validates Postman collection against Go route definitions.
+# Validates Postman collection and OpenAPI against live Go route registration.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -40,110 +40,9 @@ print("All URLs are strings: OK")
 PY
 
 echo ""
-echo "=== Postman route coverage (all API routes) ==="
-python3 <<'PY'
-import json, sys
-
-c = json.load(open("postman/mentorix-backend.postman_collection.json"))
-
-replacements = [
-    ("{{program_day_exercise_id}}", ":item_id"),
-    ("{{program_day_id}}", ":day_id"),
-    ("{{program_id}}", ":id"),
-    ("{{exercise_id}}", ":id"),
-    ("{{grant_admin_user_id}}", ":user_id"),
-]
-
-def norm(url: str) -> str:
-    path = url
-    if path.startswith("{{base_url}}"):
-        path = path[len("{{base_url}}"):]
-    for old, new in replacements:
-        path = path.replace(old, new)
-    return path.split("?", 1)[0]
-
-found = set()
-
-def walk(items):
-    for i in items:
-        if "item" in i:
-            walk(i["item"])
-        else:
-            req = i["request"]
-            route = f"{req['method']} {norm(req['url'])}"
-            found.add(route)
-
-walk(c["item"])
-
-expected = {
-    "GET /health",
-    "GET /health/ready",
-    "POST /auth/register",
-    "POST /auth/login",
-    "POST /auth/refresh",
-    "GET /auth/me",
-    "POST /auth/logout",
-    "POST /auth/logout-all",
-    "POST /admin/users/:user_id/roles/admin",
-    "GET /exercises",
-    "GET /exercises/:id",
-    "POST /exercises",
-    "PUT /exercises/:id",
-    "DELETE /exercises",
-    "GET /programs",
-    "POST /programs",
-    "GET /programs/:id",
-    "PATCH /programs/:id",
-    "DELETE /programs/:id",
-    "POST /programs/:id/publish",
-    "POST /programs/:id/archive",
-    "POST /programs/:id/days",
-    "DELETE /programs/:id/days/:day_id",
-    "POST /programs/:id/days/:day_id/exercises",
-    "PUT /programs/:id/days/:day_id/exercises/:item_id",
-    "DELETE /programs/:id/days/:day_id/exercises/:item_id",
-}
-missing = sorted(expected - found)
-extra = sorted(found - expected)
-if missing:
-    print("FAIL: missing in Postman:", missing)
-    sys.exit(1)
-if extra:
-    print("WARN: extra Postman routes:", extra)
-print(f"All {len(expected)} API routes present in Postman: OK")
-PY
-
-echo ""
-echo "=== Expected routes from Go ==="
-routes=(
-  "GET /health"
-  "GET /health/ready"
-  "POST /auth/register"
-  "POST /auth/login"
-  "POST /auth/refresh"
-  "GET /auth/me"
-  "POST /auth/logout"
-  "POST /auth/logout-all"
-  "POST /admin/users/:user_id/roles/admin"
-  "GET /exercises"
-  "GET /exercises/:id"
-  "POST /exercises"
-  "PUT /exercises/:id"
-  "DELETE /exercises"
-  "GET /programs"
-  "POST /programs"
-  "GET /programs/:id"
-  "PATCH /programs/:id"
-  "DELETE /programs/:id"
-  "POST /programs/:id/publish"
-  "POST /programs/:id/archive"
-  "POST /programs/:id/days"
-  "DELETE /programs/:id/days/:day_id"
-  "POST /programs/:id/days/:day_id/exercises"
-  "PUT /programs/:id/days/:day_id/exercises/:item_id"
-  "DELETE /programs/:id/days/:day_id/exercises/:item_id"
-)
-for r in "${routes[@]}"; do echo "  $r"; done
+echo "=== Contract alignment (Go routes, OpenAPI paths, Postman, schemas) ==="
+go test ./internal/apicheck/... -count=1
+echo "OK"
 
 echo ""
 echo "=== Environment base_url ==="
@@ -156,41 +55,6 @@ for f in ["postman/mentorix-local.postman_environment.json", "postman/mentorix-r
     ok = base and not base.endswith("/")
     print(f"  {e['name']}: {base} {'OK' if ok else 'FAIL (empty or trailing slash)'}")
 PY
-
-echo ""
-echo "=== OpenAPI paths (api/openapi.yaml) ==="
-if [ -f api/openapi.yaml ]; then
-  python3 <<'PY'
-import re, sys
-spec_paths = set()
-with open("api/openapi.yaml") as f:
-    for line in f:
-        m = re.match(r"^  (/[^:]+):", line)
-        if m:
-            spec_paths.add(m.group(1))
-expected = {
-    "/health", "/health/ready",
-    "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout", "/auth/logout-all", "/auth/me",
-    "/admin/users/{user_id}/roles/admin",
-    "/exercises", "/exercises/{id}",
-    "/programs", "/programs/{id}", "/programs/{id}/publish", "/programs/{id}/archive",
-    "/programs/{id}/days", "/programs/{id}/days/{day_id}",
-    "/programs/{id}/days/{day_id}/exercises", "/programs/{id}/days/{day_id}/exercises/{item_id}",
-}
-missing = expected - spec_paths
-extra = spec_paths - expected
-for p in sorted(spec_paths):
-    print(f"  {p}")
-if missing:
-    print("FAIL: missing in OpenAPI:", sorted(missing))
-    sys.exit(1)
-if extra:
-    print("WARN: extra OpenAPI paths:", sorted(extra))
-print("OpenAPI path coverage: OK")
-PY
-else
-  echo "  api/openapi.yaml not found — skip"
-fi
 
 echo ""
 if [ "${SKIP_SMOKE:-}" = "1" ]; then
