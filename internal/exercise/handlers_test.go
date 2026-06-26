@@ -63,8 +63,35 @@ func (f *fakeExerciseStore) DeleteMany(context.Context, []uuid.UUID) (int64, err
 	return f.deleteManyCount, nil
 }
 
+func TestNewService(t *testing.T) {
+	svc := NewService(nil)
+	if svc == nil || svc.store == nil {
+		t.Fatal("expected service")
+	}
+}
+
+func TestNewHandlers(t *testing.T) {
+	h := NewHandlers(&Service{store: &stubExerciseStore{}}, nil, "test-jwt-secret-at-least-32-chars")
+	if h == nil {
+		t.Fatal("expected handlers")
+	}
+}
+
 func testExerciseHandlers(store *fakeExerciseStore) *Handlers {
 	return &Handlers{svc: &Service{store: store}}
+}
+
+func TestHandlers_Mount_registersRoutes(t *testing.T) {
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	e := echo.New()
+	h.Mount(e)
+	found := map[string]bool{}
+	for _, r := range e.Routes() {
+		found[r.Method+" "+r.Path] = true
+	}
+	if !found["GET /exercises"] || !found["POST /exercises"] {
+		t.Fatalf("routes missing: %v", found)
+	}
 }
 
 func sampleExercise() Exercise {
@@ -316,6 +343,50 @@ func TestUpdate_notFound(t *testing.T) {
 	he, ok := err.(*echo.HTTPError)
 	if !ok || he.Code != http.StatusNotFound {
 		t.Fatalf("error = %v, want 404", err)
+	}
+}
+
+func TestUpdate_validationError(t *testing.T) {
+	ex := sampleExercise()
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	req := httptest.NewRequest(http.MethodPut, "/exercises/"+ex.ID.String(), strings.NewReader(`{"name":"","type":"strength","muscle_group":"legs","difficulty":"beginner"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(ex.ID.String())
+	c.Set(auth.ContextUserIDKey, uuid.New())
+
+	err := h.Update(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("error = %v, want 400", err)
+	}
+}
+
+func TestUpdate_internalError(t *testing.T) {
+	ex := sampleExercise()
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{updateErr: errors.New("db down")})
+	req := httptest.NewRequest(http.MethodPut, "/exercises/"+ex.ID.String(), strings.NewReader(validUpsertJSON()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(ex.ID.String())
+	c.Set(auth.ContextUserIDKey, uuid.New())
+
+	err := h.Update(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusInternalServerError {
+		t.Fatalf("error = %v, want 500", err)
 	}
 }
 

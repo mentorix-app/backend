@@ -3,7 +3,8 @@
 #
 # Usage:
 #   ./scripts/check.sh              full suite (default)
-#   ./scripts/check.sh --ci         CI parity only (no migrate-check, integration, smoke)
+#   ./scripts/check.sh --ci         CI parity (no migrate-check, smoke; includes integration + coverage)
+#   ./scripts/check.sh --no-coverage
 #   ./scripts/check.sh --no-smoke   skip live API smoke (API need not be running)
 #   ./scripts/check.sh --no-integration
 #   ./scripts/check.sh --no-migrate-check
@@ -22,6 +23,7 @@ ci_only=0
 skip_smoke=0
 skip_integration=0
 skip_migrate_check=0
+skip_coverage=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -29,6 +31,7 @@ for arg in "$@"; do
     --no-smoke) skip_smoke=1 ;;
     --no-integration) skip_integration=1 ;;
     --no-migrate-check) skip_migrate_check=1 ;;
+    --no-coverage) skip_coverage=1 ;;
     -h|--help)
       sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -42,7 +45,6 @@ done
 
 if (( ci_only )); then
   skip_smoke=1
-  skip_integration=1
   skip_migrate_check=1
 fi
 
@@ -136,6 +138,15 @@ if (( ! skip_integration )); then
     ok
   else
     fail "store integration tests"
+  fi
+fi
+
+if (( ! skip_coverage )); then
+  step "coverage gate (85%)"
+  if ./scripts/coverage.sh --min 85; then
+    ok
+  else
+    fail "coverage gate"
   fi
 fi
 

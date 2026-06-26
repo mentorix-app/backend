@@ -11,8 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type authStore interface {
+	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash string) (uuid.UUID, error)
+	getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error)
+	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
+	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, error)
+	RevokeRefreshSession(ctx context.Context, tokenHash []byte) error
+	RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error
+	UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error)
+	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
+}
+
 type Service struct {
-	store      *Store
+	store      authStore
 	jwtSecret  []byte
 	accessTTL  time.Duration
 	refreshTTL time.Duration

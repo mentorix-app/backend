@@ -1,6 +1,8 @@
 package pgconv
 
 import (
+	"strconv"
+
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -9,7 +11,9 @@ func ToNumeric(f *float64) pgtype.Numeric {
 		return pgtype.Numeric{}
 	}
 	var n pgtype.Numeric
-	_ = n.Scan(*f)
+	if err := n.Scan(strconv.FormatFloat(*f, 'f', -1, 64)); err != nil {
+		return pgtype.Numeric{}
+	}
 	return n
 }
 

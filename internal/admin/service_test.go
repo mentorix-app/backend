@@ -39,6 +39,13 @@ func (f *fakeRoleStore) GrantRole(_ context.Context, userID uuid.UUID, role stri
 	return nil
 }
 
+func TestNewService_constructs(t *testing.T) {
+	svc := NewService(nil)
+	if svc == nil || svc.store == nil {
+		t.Fatal("expected service with store")
+	}
+}
+
 func TestService_GrantAdmin(t *testing.T) {
 	userID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	createdAt := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)

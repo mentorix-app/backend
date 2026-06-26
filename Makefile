@@ -18,6 +18,7 @@ AIR_VERSION ?= v1.61.7
 	schema-sync sqlc generate \
 	test test-integration vet fmt lint \
 	validate validate-smoke check check-ci \
+	coverage coverage-check \
 	install-tools install-migrate install-sqlc install-lint install-air
 
 help: ## Show available commands
@@ -97,6 +98,12 @@ check: ## Full local QA suite (see scripts/check.sh --help for flags)
 
 check-ci: ## CI parity checks only
 	$(SCRIPTS)/check.sh --ci
+
+coverage: ## Coverage report (unit + integration merge)
+	$(SCRIPTS)/coverage.sh
+
+coverage-check: ## Fail if merged coverage is below 85%
+	$(SCRIPTS)/coverage.sh --min 85
 
 install-tools: install-migrate install-sqlc install-lint install-air ## Install dev CLI tools via go install
 

@@ -50,6 +50,9 @@ func TestLoad_defaults(t *testing.T) {
 	if cfg.AccessTokenTTL() != 15*time.Minute {
 		t.Errorf("AccessTokenTTL = %v", cfg.AccessTokenTTL())
 	}
+	if cfg.RefreshTokenTTL() != 30*24*time.Hour {
+		t.Errorf("RefreshTokenTTL = %v", cfg.RefreshTokenTTL())
+	}
 }
 
 func TestLoad_refreshCookie(t *testing.T) {
@@ -127,5 +130,48 @@ func TestLoad_invalidAppEnv(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Fatal("expected error for invalid APP_ENV")
+	}
+}
+
+func TestLoad_sameSiteDefaults(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("REFRESH_COOKIE_SAMESITE", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.RefreshCookie.SameSite != http.SameSiteLaxMode {
+		t.Errorf("dev default SameSite = %v, want Lax", cfg.RefreshCookie.SameSite)
+	}
+
+	t.Setenv("APP_ENV", "production")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load production: %v", err)
+	}
+	if cfg.RefreshCookie.SameSite != http.SameSiteNoneMode {
+		t.Errorf("prod default SameSite = %v, want None", cfg.RefreshCookie.SameSite)
+	}
+}
+
+func TestLoad_sameSiteLaxAndNone(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("REFRESH_COOKIE_SAMESITE", "lax")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load lax: %v", err)
+	}
+	if cfg.RefreshCookie.SameSite != http.SameSiteLaxMode {
+		t.Errorf("SameSite = %v", cfg.RefreshCookie.SameSite)
+	}
+
+	t.Setenv("REFRESH_COOKIE_SAMESITE", "none")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load none: %v", err)
+	}
+	if cfg.RefreshCookie.SameSite != http.SameSiteNoneMode {
+		t.Errorf("SameSite = %v", cfg.RefreshCookie.SameSite)
 	}
 }

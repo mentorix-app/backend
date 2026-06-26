@@ -3,15 +3,18 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 
 	"mentorix-backend/internal/config"
 	httpx "mentorix-backend/internal/http"
@@ -121,11 +124,89 @@ func testAuthHandlers(svc credentialService) *Handlers {
 	}
 }
 
+func TestNewHandlers(t *testing.T) {
+	h := NewHandlers(nil, testJWTSecret, config.RefreshCookieSettings{Name: "refresh", Path: "/auth"}, time.Hour, nil)
+	if h == nil {
+		t.Fatal("expected handlers")
+	}
+}
+
+func TestHandlers_Mount_registersRoutes(t *testing.T) {
+	h := testAuthHandlers(&fakeAuthService{})
+	e := echo.New()
+	h.Mount(e)
+	found := map[string]bool{}
+	for _, r := range e.Routes() {
+		found[r.Method+" "+r.Path] = true
+	}
+	for _, key := range []string{"POST /auth/register", "POST /auth/login", "GET /auth/me"} {
+		if !found[key] {
+			t.Fatalf("missing route %s", key)
+		}
+	}
+}
+
 func assertHTTPStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
 	t.Helper()
 	if rec.Code != want {
 		t.Fatalf("status = %d, want %d; body = %s", rec.Code, want, rec.Body.String())
 	}
+}
+
+func TestRegister_rateLimited(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	limiter := NewRateLimiter(rdb, 5, time.Minute, 1, time.Minute)
+	h := &Handlers{
+		svc:        &fakeAuthService{},
+		jwtSecret:  testJWTSecret,
+		cookie:     config.RefreshCookieSettings{Name: "mentorix_refresh", Path: "/auth"},
+		refreshTTL: time.Hour,
+		limiter:    limiter,
+	}
+	e := echo.New()
+	e.POST("/auth/register", h.Register)
+
+	body := `{"email":"rate@test.com","password":"password123"}`
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assertHTTPStatus(t, rec, http.StatusTooManyRequests)
+}
+
+func TestLogin_rateLimited(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	limiter := NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	h := &Handlers{
+		svc:        &fakeAuthService{},
+		jwtSecret:  testJWTSecret,
+		cookie:     config.RefreshCookieSettings{Name: "mentorix_refresh", Path: "/auth"},
+		refreshTTL: time.Hour,
+		limiter:    limiter,
+	}
+	e := echo.New()
+	e.POST("/auth/login", h.Login)
+
+	body := `{"email":"login@test.com","password":"password123"}`
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assertHTTPStatus(t, rec, http.StatusTooManyRequests)
 }
 
 func TestRegister_invalidJSON(t *testing.T) {
@@ -343,6 +424,42 @@ func TestLogout_clearsCookie(t *testing.T) {
 	}
 	if cookies[0].MaxAge != -1 {
 		t.Fatalf("cookie MaxAge = %d, want -1", cookies[0].MaxAge)
+	}
+}
+
+func TestLogout_revokeError(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{logoutErr: errors.New("db down")})
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: h.cookie.Name, Value: "refresh-token"})
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := h.Logout(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusInternalServerError {
+		t.Fatalf("error = %v, want 500", err)
+	}
+}
+
+func TestRefresh_internalError(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{refreshErr: errors.New("db down")})
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: h.cookie.Name, Value: "refresh-token"})
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := h.Refresh(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusInternalServerError {
+		t.Fatalf("error = %v, want 500", err)
 	}
 }
 
