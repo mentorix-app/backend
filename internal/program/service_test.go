@@ -52,8 +52,13 @@ func (f *fakeProgramStore) Update(context.Context, uuid.UUID, uuid.UUID, UpdateI
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) SetStatus(context.Context, uuid.UUID, uuid.UUID, Status) (Detail, error) {
-	return f.detail, f.err
+func (f *fakeProgramStore) SetStatus(_ context.Context, _, _ uuid.UUID, status Status) (Detail, error) {
+	if f.err != nil {
+		return Detail{}, f.err
+	}
+	out := f.detail
+	out.Program.Status = status
+	return out, nil
 }
 
 func (f *fakeProgramStore) SoftDelete(context.Context, uuid.UUID, uuid.UUID) error {

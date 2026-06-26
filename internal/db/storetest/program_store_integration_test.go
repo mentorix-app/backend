@@ -7,6 +7,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
@@ -93,6 +95,14 @@ func TestProgramStore_CreateDraftAndPublish(t *testing.T) {
 	if published.Status != program.StatusPublished {
 		t.Errorf("status = %q, want published", published.Status)
 	}
+
+	archived, err := svc.Archive(ctx, trainerID, draft.ID)
+	if err != nil {
+		t.Fatalf("Archive() error = %v", err)
+	}
+	if archived.Status != program.StatusArchived {
+		t.Errorf("status = %q, want archived", archived.Status)
+	}
 }
 
 func TestProgramStore_ListFiltersByTrainer(t *testing.T) {
@@ -137,5 +147,190 @@ func TestProgramStore_ListFiltersByTrainer(t *testing.T) {
 	}
 	if len(listA.Items) == 1 && listA.Items[0].CreatedBy != trainerA {
 		t.Errorf("created_by = %v, want %v", listA.Items[0].CreatedBy, trainerA)
+	}
+}
+
+func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-lifecycle@test.com", pwHash)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+		Name:        "Row",
+		NameRu:      "Тяга",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupBack,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+
+	progStore := program.NewStore(pool)
+	draft, err := progStore.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+
+	withDay, err := progStore.AddDay(ctx, draft.ID)
+	if err != nil {
+		t.Fatalf("AddDay: %v", err)
+	}
+	if len(withDay.Days) != 2 {
+		t.Fatalf("days = %d, want 2", len(withDay.Days))
+	}
+	dayID := withDay.Days[1].ID
+
+	sets, reps := 4, 8
+	withExercise, err := progStore.AddDayExercise(ctx, draft.ID, dayID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	})
+	if err != nil {
+		t.Fatalf("AddDayExercise: %v", err)
+	}
+	itemID := withExercise.Days[1].Exercises[0].ID
+
+	newSets := 5
+	updatedExercise, err := progStore.UpdateDayExercise(ctx, draft.ID, dayID, itemID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &newSets,
+		Reps:       &reps,
+	})
+	if err != nil {
+		t.Fatalf("UpdateDayExercise: %v", err)
+	}
+	if *updatedExercise.Days[1].Exercises[0].Sets != newSets {
+		t.Fatalf("sets = %d, want %d", *updatedExercise.Days[1].Exercises[0].Sets, newSets)
+	}
+
+	withoutExercise, err := progStore.DeleteDayExercise(ctx, draft.ID, dayID, itemID)
+	if err != nil {
+		t.Fatalf("DeleteDayExercise: %v", err)
+	}
+	if len(withoutExercise.Days[1].Exercises) != 0 {
+		t.Fatalf("expected day exercise removed")
+	}
+
+	oneDay, err := progStore.DeleteDay(ctx, draft.ID, dayID)
+	if err != nil {
+		t.Fatalf("DeleteDay: %v", err)
+	}
+	if len(oneDay.Days) != 1 {
+		t.Fatalf("days = %d, want 1", len(oneDay.Days))
+	}
+
+	if err := progStore.SoftDelete(ctx, draft.ID, trainerID); err != nil {
+		t.Fatalf("SoftDelete: %v", err)
+	}
+}
+
+func TestProgramStore_ListWithFilters(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-list@test.com", pwHash)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	progStore := program.NewStore(pool)
+	draft, err := progStore.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("create draft: %v", err)
+	}
+	name := "My Program"
+	if _, err := progStore.Update(ctx, draft.ID, trainerID, program.UpdateInput{Name: &name}); err != nil {
+		t.Fatalf("update name: %v", err)
+	}
+
+	params, err := program.ParseListParams("1", "20", "created_at", "desc", "program", "draft", "", "")
+	if err != nil {
+		t.Fatalf("ParseListParams: %v", err)
+	}
+	params.CreatedBy = &trainerID
+	result, err := progStore.List(ctx, params)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if result.Pagination.Total < 1 {
+		t.Fatalf("total = %d, want at least 1", result.Pagination.Total)
+	}
+
+	category := program.CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	paramsCat, err := program.ParseListParams("1", "20", "created_at", "desc", "", "draft", string(category), string(difficulty))
+	if err != nil {
+		t.Fatalf("ParseListParams category: %v", err)
+	}
+	paramsCat.CreatedBy = &trainerID
+	if _, err := progStore.Update(ctx, draft.ID, trainerID, program.UpdateInput{
+		Category:   &category,
+		Difficulty: &difficulty,
+	}); err != nil {
+		t.Fatalf("update filters: %v", err)
+	}
+	filtered, err := progStore.List(ctx, paramsCat)
+	if err != nil {
+		t.Fatalf("List with filters: %v", err)
+	}
+	if filtered.Pagination.Total < 1 {
+		t.Fatalf("filtered total = %d", filtered.Pagination.Total)
+	}
+}
+
+func TestProgramStore_GetNotFound(t *testing.T) {
+	pool := NewPool(t)
+	store := program.NewStore(pool)
+	_, err := store.GetProgramRow(context.Background(), uuid.New())
+	if err == nil {
+		t.Fatal("expected not found")
+	}
+}
+
+func TestProgramStore_IsAdmin(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-check@test.com", pwHash)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	progStore := program.NewStore(pool)
+	isAdmin, err := progStore.IsAdmin(ctx, userID)
+	if err != nil {
+		t.Fatalf("IsAdmin() error = %v", err)
+	}
+	if isAdmin {
+		t.Fatal("trainer should not be admin yet")
+	}
+	if err := authStore.GrantRole(ctx, userID, auth.RoleAdmin); err != nil {
+		t.Fatalf("GrantRole: %v", err)
+	}
+	isAdmin, err = progStore.IsAdmin(ctx, userID)
+	if err != nil || !isAdmin {
+		t.Fatalf("IsAdmin() = %v, %v, want true", isAdmin, err)
 	}
 }

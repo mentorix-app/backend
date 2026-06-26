@@ -24,7 +24,8 @@ __debug_bin*
 
 # Code coverage profiles and other test artifacts
 *.out
-coverage.*
+/coverage.html
+/coverage.out
 *.coverprofile
 profile.cov
 

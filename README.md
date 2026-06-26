@@ -81,15 +81,25 @@ make generate       # runs sqlc (config: sqlc.yaml in repo root)
 
 ## Store integration tests
 
-Requires Docker (Testcontainers). Not run in default `go test ./...`.
+Requires Docker (Testcontainers). Not run in default `go test ./...`. **CI runs them** on every push/PR.
 
 ```bash
 make test-integration
 ```
 
+## Test coverage
+
+Merged coverage (unit tests + store integration) for `internal/**` excluding `internal/db/sqlc`. Minimum **85%** enforced in CI.
+
+```bash
+make coverage          # report only
+make coverage-check    # fail if below 85%
+./scripts/coverage.sh --html   # write coverage.html
+```
+
 ## Local QA (all checks)
 
-`make check` runs, in order: gofmt, go vet, `go test ./...`, build, sqlc/go-generate drift, golangci-lint, contract validation (`postman/validate.sh` + `internal/apicheck`), migrate-check, store integration tests, and API smoke on `http://localhost:8080`.
+`make check` runs, in order: gofmt, go vet, `go test ./...`, build, sqlc/go-generate drift, golangci-lint, contract validation (`postman/validate.sh` + `internal/apicheck`), migrate-check, store integration tests, coverage gate (85%), and API smoke on `http://localhost:8080`.
 
 **Full suite** (Docker + `.env` + API running):
 
@@ -97,7 +107,7 @@ make test-integration
 make check
 ```
 
-**CI parity** (no migrate-check, Testcontainers, or smoke):
+**CI parity** (integration + coverage; no migrate-check or smoke):
 
 ```bash
 make check-ci
@@ -107,8 +117,9 @@ make check-ci
 
 ```bash
 make check CHECK_FLAGS="--no-smoke"              # Docker OK, API not running
-make check CHECK_FLAGS="--no-integration"      # skip Testcontainers
-make check CHECK_FLAGS="--no-migrate-check"    # skip DB version check
+make check CHECK_FLAGS="--no-integration"        # skip Testcontainers
+make check CHECK_FLAGS="--no-coverage"           # skip coverage gate
+make check CHECK_FLAGS="--no-migrate-check"      # skip DB version check
 ```
 
 See `scripts/check.sh --help` for all flags.

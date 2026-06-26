@@ -21,7 +21,13 @@ jobs:
         run: go vet ./...
 
       - name: Go test
-        run: go test ./...
+        run: go test ./... -count=1
+
+      - name: Store integration tests
+        run: go test -tags integration -timeout 5m ./internal/db/storetest/... -count=1
+
+      - name: Coverage gate (85%)
+        run: ./scripts/coverage.sh --min 85
 
       - name: Go build
         run: go build -o /dev/null ./...

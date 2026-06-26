@@ -2,6 +2,7 @@ package program
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/auth"
@@ -68,8 +70,28 @@ func sampleDetail(userID, programID uuid.UUID) Detail {
 	}
 }
 
+func TestNewHandlers(t *testing.T) {
+	h := NewHandlers(&Service{store: &fakeProgramStore{}}, nil, "test-jwt-secret-at-least-32-chars")
+	if h == nil {
+		t.Fatal("expected handlers")
+	}
+}
+
 func programHandler(store programStore) *Handlers {
 	return &Handlers{svc: &Service{store: store}}
+}
+
+func TestHandlers_Mount_registersRoutes(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	h.Mount(e)
+	found := map[string]bool{}
+	for _, r := range e.Routes() {
+		found[r.Method+" "+r.Path] = true
+	}
+	if !found["GET /programs"] || !found["POST /programs"] {
+		t.Fatalf("routes missing: %v", found)
+	}
 }
 
 func programContext(e *echo.Echo, method, path, body string, userID uuid.UUID, params map[string]string) (echo.Context, *httptest.ResponseRecorder) {
@@ -502,4 +524,75 @@ func (a *archiveStore) SetStatus(_ context.Context, _ uuid.UUID, _ uuid.UUID, st
 	d := a.detail
 	d.Status = status
 	return d, nil
+}
+
+func TestHandlers_Get_mapsServiceErrors(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	tests := []struct {
+		name  string
+		store *fakeProgramStore
+		code  int
+	}{
+		{
+			name:  "not found",
+			store: &fakeProgramStore{err: pgx.ErrNoRows},
+			code:  http.StatusNotFound,
+		},
+		{
+			name: "forbidden",
+			store: &fakeProgramStore{
+				isAdmin: false,
+				program: Program{ID: programID, CreatedBy: uuid.New()},
+			},
+			code: http.StatusForbidden,
+		},
+		{
+			name: "internal",
+			store: &fakeProgramStore{
+				program: Program{ID: programID, CreatedBy: userID},
+				err:     errors.New("db down"),
+			},
+			code: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := programHandler(tt.store)
+			e := echo.New()
+			c, _ := programContext(e, http.MethodGet, "/programs/"+programID.String(), "", userID, map[string]string{"id": programID.String()})
+			err := h.Get(c)
+			assertHTTPError(t, err, tt.code)
+		})
+	}
+}
+
+func TestHandlers_Publish_mapsValidationError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	store := &fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		detail: Detail{
+			Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+			Days:    []Day{{DayNumber: 1, Exercises: []DayExercise{}}},
+		},
+	}
+	h := programHandler(store)
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/publish", "", userID, map[string]string{"id": programID.String()})
+	err := h.Publish(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
+}
+
+func TestHandlers_Archive_mapsStatusConflict(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	store := &fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+	}
+	h := programHandler(store)
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/archive", "", userID, map[string]string{"id": programID.String()})
+	err := h.Archive(c)
+	assertHTTPError(t, err, http.StatusConflict)
 }
