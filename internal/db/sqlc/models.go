@@ -19,41 +19,32 @@ type MentorixAuthIdentity struct {
 	CreatedAt    time.Time   `json:"created_at"`
 }
 
+type MentorixAuthRefreshSession struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	TokenHash []byte             `json:"token_hash"`
+	ExpiresAt time.Time          `json:"expires_at"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+	CreatedAt time.Time          `json:"created_at"`
+}
+
 type MentorixExercise struct {
-	ID              pgtype.UUID `json:"id"`
-	Name            string      `json:"name"`
-	NameRu          string      `json:"name_ru"`
-	AddedBy         pgtype.UUID `json:"added_by"`
-	ModifiedBy      pgtype.UUID `json:"modified_by"`
-	ModifiedAt      time.Time   `json:"modified_at"`
-	Equipment       *string     `json:"equipment"`
-	Type            string      `json:"type"`
-	MuscleGroup     string      `json:"muscle_group"`
-	Description     string      `json:"description"`
-	DescriptionRu   string      `json:"description_ru"`
-	Difficulty      string      `json:"difficulty"`
-	VideoUrl        string      `json:"video_url"`
-	PreviewImageUrl string      `json:"preview_image_url"`
-	CreatedAt       time.Time   `json:"created_at"`
-}
-
-type MentorixInvite struct {
-	ID               pgtype.UUID        `json:"id"`
-	TrainerUserID    pgtype.UUID        `json:"trainer_user_id"`
-	Token            string             `json:"token"`
-	ExpiresAt        time.Time          `json:"expires_at"`
-	ConsumedAt       pgtype.Timestamptz `json:"consumed_at"`
-	ConsumedByUserID pgtype.UUID        `json:"consumed_by_user_id"`
-	CreatedAt        time.Time          `json:"created_at"`
-}
-
-type MentorixLinkCode struct {
-	ID         pgtype.UUID        `json:"id"`
-	UserID     pgtype.UUID        `json:"user_id"`
-	Code       string             `json:"code"`
-	ExpiresAt  time.Time          `json:"expires_at"`
-	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
-	CreatedAt  time.Time          `json:"created_at"`
+	ID              pgtype.UUID        `json:"id"`
+	Name            string             `json:"name"`
+	NameRu          string             `json:"name_ru"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	ModifiedBy      pgtype.UUID        `json:"modified_by"`
+	ModifiedAt      time.Time          `json:"modified_at"`
+	Equipment       *string            `json:"equipment"`
+	ExerciseType    string             `json:"exercise_type"`
+	MuscleGroup     string             `json:"muscle_group"`
+	Description     string             `json:"description"`
+	DescriptionRu   string             `json:"description_ru"`
+	Difficulty      string             `json:"difficulty"`
+	VideoUrl        string             `json:"video_url"`
+	PreviewImageUrl string             `json:"preview_image_url"`
+	CreatedAt       time.Time          `json:"created_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
 }
 
 type MentorixProgram struct {
@@ -69,14 +60,18 @@ type MentorixProgram struct {
 	CreatedAt       time.Time          `json:"created_at"`
 	ModifiedAt      time.Time          `json:"modified_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	NameRu          string             `json:"name_ru"`
+	DescriptionRu   string             `json:"description_ru"`
 }
 
 type MentorixProgramDay struct {
-	ID        pgtype.UUID `json:"id"`
-	ProgramID pgtype.UUID `json:"program_id"`
-	DayNumber int32       `json:"day_number"`
-	SortOrder int32       `json:"sort_order"`
-	CreatedAt time.Time   `json:"created_at"`
+	ID         pgtype.UUID `json:"id"`
+	ProgramID  pgtype.UUID `json:"program_id"`
+	DayNumber  int32       `json:"day_number"`
+	SortOrder  int32       `json:"sort_order"`
+	CreatedAt  time.Time   `json:"created_at"`
+	ModifiedAt time.Time   `json:"modified_at"`
+	ModifiedBy pgtype.UUID `json:"modified_by"`
 }
 
 type MentorixProgramDayExercise struct {
@@ -89,34 +84,48 @@ type MentorixProgramDayExercise struct {
 	WeightKg     pgtype.Numeric `json:"weight_kg"`
 	Instruction  string         `json:"instruction"`
 	CreatedAt    time.Time      `json:"created_at"`
-}
-
-type MentorixRefreshSession struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	TokenHash []byte             `json:"token_hash"`
-	ExpiresAt time.Time          `json:"expires_at"`
-	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
-	CreatedAt time.Time          `json:"created_at"`
+	ModifiedAt   time.Time      `json:"modified_at"`
+	ModifiedBy   pgtype.UUID    `json:"modified_by"`
 }
 
 type MentorixTrainer struct {
 	UserID    pgtype.UUID `json:"user_id"`
 	CreatedAt time.Time   `json:"created_at"`
+	ID        pgtype.UUID `json:"id"`
 }
 
 type MentorixTrainerClient struct {
-	TrainerUserID pgtype.UUID        `json:"trainer_user_id"`
-	ClientUserID  pgtype.UUID        `json:"client_user_id"`
-	Status        string             `json:"status"`
-	BlockedAt     pgtype.Timestamptz `json:"blocked_at"`
-	CreatedAt     time.Time          `json:"created_at"`
+	ClientUserID pgtype.UUID        `json:"client_user_id"`
+	Status       string             `json:"status"`
+	BlockedAt    pgtype.Timestamptz `json:"blocked_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	TrainerID    pgtype.UUID        `json:"trainer_id"`
+}
+
+type MentorixTrainerInvite struct {
+	ID         pgtype.UUID        `json:"id"`
+	Token      string             `json:"token"`
+	ExpiresAt  time.Time          `json:"expires_at"`
+	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+	ConsumedBy pgtype.UUID        `json:"consumed_by"`
+	CreatedAt  time.Time          `json:"created_at"`
+	TrainerID  pgtype.UUID        `json:"trainer_id"`
 }
 
 type MentorixUser struct {
 	ID           pgtype.UUID `json:"id"`
 	PrimaryEmail *string     `json:"primary_email"`
 	CreatedAt    time.Time   `json:"created_at"`
+	DisplayName  string      `json:"display_name"`
+}
+
+type MentorixUserLinkCode struct {
+	ID         pgtype.UUID        `json:"id"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	Code       string             `json:"code"`
+	ExpiresAt  time.Time          `json:"expires_at"`
+	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt  time.Time          `json:"created_at"`
 }
 
 type MentorixUserRole struct {

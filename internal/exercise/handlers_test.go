@@ -56,7 +56,7 @@ func (f *fakeExerciseStore) Update(context.Context, uuid.UUID, uuid.UUID, Upsert
 	return f.updateEx, nil
 }
 
-func (f *fakeExerciseStore) DeleteMany(context.Context, []uuid.UUID) (int64, error) {
+func (f *fakeExerciseStore) DeleteMany(context.Context, uuid.UUID, []uuid.UUID) (int64, error) {
 	if f.deleteManyErr != nil {
 		return 0, f.deleteManyErr
 	}
@@ -432,13 +432,23 @@ func TestDeleteMany(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			e := echo.New()
 			h := testExerciseHandlers(tt.store)
-			e.DELETE("/exercises", h.DeleteMany)
 
 			req := httptest.NewRequest(http.MethodDelete, "/exercises", strings.NewReader(tt.body))
 			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 			rec := httptest.NewRecorder()
-			e.ServeHTTP(rec, req)
+			c := e.NewContext(req, rec)
+			c.Set(auth.ContextUserIDKey, uuid.New())
 
+			if err := h.DeleteMany(c); err != nil {
+				he, ok := err.(*echo.HTTPError)
+				if !ok {
+					t.Fatalf("DeleteMany: %v", err)
+				}
+				if he.Code != tt.wantStatus {
+					t.Fatalf("status = %d, want %d", he.Code, tt.wantStatus)
+				}
+				return
+			}
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
 			}

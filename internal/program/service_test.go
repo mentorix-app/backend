@@ -7,23 +7,35 @@ import (
 
 	"github.com/google/uuid"
 
+	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/exercise"
 )
 
+type fakeRoleQuerier struct {
+	isAdmin bool
+	err     error
+}
+
+func (f *fakeRoleQuerier) UserHasAnyRole(context.Context, sqlc.UserHasAnyRoleParams) (bool, error) {
+	if f.err != nil {
+		return false, f.err
+	}
+	return f.isAdmin, nil
+}
+
+func testService(store programStore, roles *fakeRoleQuerier) *Service {
+	if roles == nil {
+		roles = &fakeRoleQuerier{isAdmin: true}
+	}
+	return &Service{store: store, roles: roles}
+}
+
 type fakeProgramStore struct {
-	isAdmin      bool
 	program      Program
 	detail       Detail
 	listResult   ListResult
 	createDetail Detail
 	err          error
-}
-
-func (f *fakeProgramStore) IsAdmin(context.Context, uuid.UUID) (bool, error) {
-	if f.err != nil {
-		return false, f.err
-	}
-	return f.isAdmin, nil
 }
 
 func (f *fakeProgramStore) CreateDraft(context.Context, uuid.UUID) (Detail, error) {
@@ -73,11 +85,11 @@ func (f *fakeProgramStore) DeleteDay(context.Context, uuid.UUID, uuid.UUID) (Det
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) AddDayExercise(context.Context, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+func (f *fakeProgramStore) AddDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) UpdateDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+func (f *fakeProgramStore) UpdateDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
 	return f.detail, f.err
 }
 
@@ -97,8 +109,8 @@ func (c *capturingStore) List(_ context.Context, params ListParams) (ListResult,
 
 func TestService_List_setsCreatedByForTrainer(t *testing.T) {
 	trainerID := uuid.New()
-	store := &capturingStore{fakeProgramStore: fakeProgramStore{isAdmin: false}}
-	svc := &Service{store: store}
+	store := &capturingStore{}
+	svc := testService(store, &fakeRoleQuerier{isAdmin: false})
 
 	if _, err := svc.List(context.Background(), trainerID, ListParams{}); err != nil {
 		t.Fatalf("List() error = %v", err)
@@ -111,10 +123,9 @@ func TestService_List_setsCreatedByForTrainer(t *testing.T) {
 func TestService_Get_forbiddenForOtherTrainer(t *testing.T) {
 	ownerID := uuid.New()
 	otherID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
-		isAdmin: false,
+	svc := testService(&fakeProgramStore{
 		program: Program{CreatedBy: ownerID},
-	}}
+	}, &fakeRoleQuerier{isAdmin: false})
 
 	_, err := svc.Get(context.Background(), otherID, uuid.New())
 	if err != ErrForbidden {
@@ -130,8 +141,7 @@ func TestService_Publish_invalidTransitionFromPublished(t *testing.T) {
 	sets := 3
 	reps := 10
 
-	svc := &Service{store: &fakeProgramStore{
-		isAdmin: false,
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
 		detail: Detail{
 			Program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished, Name: "Program", Category: &category, Difficulty: &difficulty},
@@ -144,7 +154,7 @@ func TestService_Publish_invalidTransitionFromPublished(t *testing.T) {
 				}},
 			}},
 		},
-	}}
+	}, nil)
 
 	_, err := svc.Publish(context.Background(), userID, programID)
 	if err != ErrInvalidStatusTransition {
@@ -155,13 +165,13 @@ func TestService_Publish_invalidTransitionFromPublished(t *testing.T) {
 func TestService_Publish_validationError(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail: Detail{
 			Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 			Days:    []Day{{DayNumber: 1, Exercises: []DayExercise{}}},
 		},
-	}}
+	}, nil)
 
 	_, err := svc.Publish(context.Background(), userID, programID)
 	if err == nil || err == ErrInvalidStatusTransition {
@@ -173,9 +183,9 @@ func TestService_Delete_idempotentWhenAlreadyDeleted(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	deleted := time.Now().UTC()
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, DeletedAt: &deleted},
-	}}
+	}, nil)
 
 	if err := svc.Delete(context.Background(), userID, programID); err != nil {
 		t.Fatalf("Delete() error = %v, want nil", err)

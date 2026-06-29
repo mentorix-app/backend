@@ -10,46 +10,60 @@ RETURNING id;
 
 -- name: GetProgramByID :one
 SELECT
-  id, created_by, modified_by, status, name, description, category, difficulty,
-  preview_image_url, created_at, modified_at, deleted_at
-FROM mentorix.programs
-WHERE id = $1;
+  p.id, p.created_by, p.modified_by, p.status, p.name, p.name_ru, p.description, p.description_ru,
+  p.category, p.difficulty, p.preview_image_url, p.created_at, p.modified_at, p.deleted_at,
+  COALESCE(u.display_name, '') AS created_by_name
+FROM mentorix.programs p
+JOIN mentorix.users u ON u.id = p.created_by
+WHERE p.id = $1;
 
 -- name: CountPrograms :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.programs
 WHERE deleted_at IS NULL
   AND (sqlc.narg('filter_created_by')::uuid IS NULL OR created_by = sqlc.narg('filter_created_by'))
-  AND (sqlc.narg('q_pattern')::text IS NULL OR name ILIKE sqlc.narg('q_pattern') ESCAPE '\')
+  AND (
+    sqlc.narg('q_pattern')::text IS NULL
+    OR name ILIKE sqlc.narg('q_pattern') ESCAPE '\'
+    OR name_ru ILIKE sqlc.narg('q_pattern') ESCAPE '\'
+  )
   AND (sqlc.narg('filter_statuses')::text[] IS NULL OR status = ANY(sqlc.narg('filter_statuses')))
   AND (sqlc.narg('filter_category')::text IS NULL OR category = sqlc.narg('filter_category'))
   AND (sqlc.narg('filter_difficulty')::text IS NULL OR difficulty = sqlc.narg('filter_difficulty'));
 
 -- name: ListPrograms :many
 SELECT
-  id, created_by, modified_by, status, name, description, category, difficulty,
-  preview_image_url, created_at, modified_at, deleted_at
-FROM mentorix.programs
-WHERE deleted_at IS NULL
-  AND (sqlc.narg('filter_created_by')::uuid IS NULL OR created_by = sqlc.narg('filter_created_by'))
-  AND (sqlc.narg('q_pattern')::text IS NULL OR name ILIKE sqlc.narg('q_pattern') ESCAPE '\')
-  AND (sqlc.narg('filter_statuses')::text[] IS NULL OR status = ANY(sqlc.narg('filter_statuses')))
-  AND (sqlc.narg('filter_category')::text IS NULL OR category = sqlc.narg('filter_category'))
-  AND (sqlc.narg('filter_difficulty')::text IS NULL OR difficulty = sqlc.narg('filter_difficulty'))
+  p.id, p.created_by, p.modified_by, p.status, p.name, p.name_ru, p.description, p.description_ru,
+  p.category, p.difficulty, p.preview_image_url, p.created_at, p.modified_at, p.deleted_at,
+  COALESCE(u.display_name, '') AS created_by_name
+FROM mentorix.programs p
+JOIN mentorix.users u ON u.id = p.created_by
+WHERE p.deleted_at IS NULL
+  AND (sqlc.narg('filter_created_by')::uuid IS NULL OR p.created_by = sqlc.narg('filter_created_by'))
+  AND (
+    sqlc.narg('q_pattern')::text IS NULL
+    OR p.name ILIKE sqlc.narg('q_pattern') ESCAPE '\'
+    OR p.name_ru ILIKE sqlc.narg('q_pattern') ESCAPE '\'
+  )
+  AND (sqlc.narg('filter_statuses')::text[] IS NULL OR p.status = ANY(sqlc.narg('filter_statuses')))
+  AND (sqlc.narg('filter_category')::text IS NULL OR p.category = sqlc.narg('filter_category'))
+  AND (sqlc.narg('filter_difficulty')::text IS NULL OR p.difficulty = sqlc.narg('filter_difficulty'))
 ORDER BY
-  CASE WHEN sqlc.arg('sort_by') = 'name' AND sqlc.arg('sort_order') = 'asc' THEN name END ASC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'name' AND sqlc.arg('sort_order') = 'desc' THEN name END DESC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'created_at' AND sqlc.arg('sort_order') = 'asc' THEN created_at END ASC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'created_at' AND sqlc.arg('sort_order') = 'desc' THEN created_at END DESC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'modified_at' AND sqlc.arg('sort_order') = 'asc' THEN modified_at END ASC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'modified_at' AND sqlc.arg('sort_order') = 'desc' THEN modified_at END DESC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'status' AND sqlc.arg('sort_order') = 'asc' THEN status END ASC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'status' AND sqlc.arg('sort_order') = 'desc' THEN status END DESC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'category' AND sqlc.arg('sort_order') = 'asc' THEN category END ASC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'category' AND sqlc.arg('sort_order') = 'desc' THEN category END DESC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'difficulty' AND sqlc.arg('sort_order') = 'asc' THEN difficulty END ASC NULLS LAST,
-  CASE WHEN sqlc.arg('sort_by') = 'difficulty' AND sqlc.arg('sort_order') = 'desc' THEN difficulty END DESC NULLS LAST,
-  id ASC
+  CASE WHEN sqlc.arg('sort_by') = 'name' AND sqlc.arg('sort_order') = 'asc' THEN p.name END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'name' AND sqlc.arg('sort_order') = 'desc' THEN p.name END DESC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'name_ru' AND sqlc.arg('sort_order') = 'asc' THEN p.name_ru END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'name_ru' AND sqlc.arg('sort_order') = 'desc' THEN p.name_ru END DESC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'created_at' AND sqlc.arg('sort_order') = 'asc' THEN p.created_at END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'created_at' AND sqlc.arg('sort_order') = 'desc' THEN p.created_at END DESC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'modified_at' AND sqlc.arg('sort_order') = 'asc' THEN p.modified_at END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'modified_at' AND sqlc.arg('sort_order') = 'desc' THEN p.modified_at END DESC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'status' AND sqlc.arg('sort_order') = 'asc' THEN p.status END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'status' AND sqlc.arg('sort_order') = 'desc' THEN p.status END DESC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'category' AND sqlc.arg('sort_order') = 'asc' THEN p.category END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'category' AND sqlc.arg('sort_order') = 'desc' THEN p.category END DESC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'difficulty' AND sqlc.arg('sort_order') = 'asc' THEN p.difficulty END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'difficulty' AND sqlc.arg('sort_order') = 'desc' THEN p.difficulty END DESC NULLS LAST,
+  p.id ASC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: UpdateProgram :execrows
@@ -57,7 +71,9 @@ UPDATE mentorix.programs SET
   modified_by = sqlc.arg('modified_by'),
   modified_at = sqlc.arg('modified_at'),
   name = COALESCE(sqlc.narg('name'), name),
+  name_ru = COALESCE(sqlc.narg('name_ru'), name_ru),
   description = COALESCE(sqlc.narg('description'), description),
+  description_ru = COALESCE(sqlc.narg('description_ru'), description_ru),
   category = COALESCE(sqlc.narg('category'), category),
   difficulty = COALESCE(sqlc.narg('difficulty'), difficulty),
   preview_image_url = COALESCE(sqlc.narg('preview_image_url'), preview_image_url)
@@ -100,7 +116,7 @@ SELECT EXISTS(
 
 -- name: ExerciseExists :one
 SELECT EXISTS(
-  SELECT 1 FROM mentorix.exercises WHERE id = $1
+  SELECT 1 FROM mentorix.exercises WHERE id = $1 AND deleted_at IS NULL
 ) AS ok;
 
 -- name: ListProgramDays :many
@@ -133,8 +149,9 @@ WHERE program_day_id = $1;
 
 -- name: InsertDayExercise :exec
 INSERT INTO mentorix.program_day_exercises (
-  program_day_id, exercise_id, sort_order, sets, reps, weight_kg, instruction
-) VALUES ($1, $2, $3, $4, $5, $6, $7);
+  program_day_id, exercise_id, sort_order, sets, reps, weight_kg, instruction,
+  modified_at, modified_by
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
 
 -- name: UpdateDayExercise :execrows
 UPDATE mentorix.program_day_exercises SET
@@ -142,7 +159,9 @@ UPDATE mentorix.program_day_exercises SET
   sets = $4,
   reps = $5,
   weight_kg = $6,
-  instruction = $7
+  instruction = $7,
+  modified_at = $8,
+  modified_by = $9
 WHERE id = $1 AND program_day_id = $2;
 
 -- name: DeleteDayExercise :execrows

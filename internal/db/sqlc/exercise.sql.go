@@ -15,12 +15,12 @@ import (
 const countExercises = `-- name: CountExercises :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.exercises
-WHERE
-  ($1::text IS NULL OR (
+WHERE deleted_at IS NULL
+  AND ($1::text IS NULL OR (
     name ILIKE $1 ESCAPE '\'
     OR name_ru ILIKE $1 ESCAPE '\'
   ))
-  AND ($2::text IS NULL OR type = $2)
+  AND ($2::text IS NULL OR exercise_type = $2)
   AND ($3::text IS NULL OR muscle_group = $3)
   AND ($4::text IS NULL OR difficulty = $4)
   AND (
@@ -58,8 +58,8 @@ func (q *Queries) CountExercises(ctx context.Context, arg CountExercisesParams) 
 
 const createExercise = `-- name: CreateExercise :one
 INSERT INTO mentorix.exercises (
-  name, name_ru, added_by, modified_by, modified_at,
-  equipment, type, muscle_group, description, description_ru,
+  name, name_ru, created_by, modified_by, modified_at,
+  equipment, exercise_type, muscle_group, description, description_ru,
   difficulty, video_url, preview_image_url
 ) VALUES (
   $1, $2, $3, $4, $5,
@@ -67,19 +67,19 @@ INSERT INTO mentorix.exercises (
   $11, $12, $13
 )
 RETURNING
-  id, name, name_ru, added_by, modified_by, modified_at, created_at,
-  equipment, type, muscle_group, description, description_ru,
+  id, name, name_ru, created_by, modified_by, modified_at, created_at,
+  equipment, exercise_type, muscle_group, description, description_ru,
   difficulty, video_url, preview_image_url
 `
 
 type CreateExerciseParams struct {
 	Name            string      `json:"name"`
 	NameRu          string      `json:"name_ru"`
-	AddedBy         pgtype.UUID `json:"added_by"`
+	CreatedBy       pgtype.UUID `json:"created_by"`
 	ModifiedBy      pgtype.UUID `json:"modified_by"`
 	ModifiedAt      time.Time   `json:"modified_at"`
 	Equipment       *string     `json:"equipment"`
-	Type            string      `json:"type"`
+	ExerciseType    string      `json:"exercise_type"`
 	MuscleGroup     string      `json:"muscle_group"`
 	Description     string      `json:"description"`
 	DescriptionRu   string      `json:"description_ru"`
@@ -92,12 +92,12 @@ type CreateExerciseRow struct {
 	ID              pgtype.UUID `json:"id"`
 	Name            string      `json:"name"`
 	NameRu          string      `json:"name_ru"`
-	AddedBy         pgtype.UUID `json:"added_by"`
+	CreatedBy       pgtype.UUID `json:"created_by"`
 	ModifiedBy      pgtype.UUID `json:"modified_by"`
 	ModifiedAt      time.Time   `json:"modified_at"`
 	CreatedAt       time.Time   `json:"created_at"`
 	Equipment       *string     `json:"equipment"`
-	Type            string      `json:"type"`
+	ExerciseType    string      `json:"exercise_type"`
 	MuscleGroup     string      `json:"muscle_group"`
 	Description     string      `json:"description"`
 	DescriptionRu   string      `json:"description_ru"`
@@ -110,11 +110,11 @@ func (q *Queries) CreateExercise(ctx context.Context, arg CreateExerciseParams) 
 	row := q.db.QueryRow(ctx, createExercise,
 		arg.Name,
 		arg.NameRu,
-		arg.AddedBy,
+		arg.CreatedBy,
 		arg.ModifiedBy,
 		arg.ModifiedAt,
 		arg.Equipment,
-		arg.Type,
+		arg.ExerciseType,
 		arg.MuscleGroup,
 		arg.Description,
 		arg.DescriptionRu,
@@ -127,12 +127,12 @@ func (q *Queries) CreateExercise(ctx context.Context, arg CreateExerciseParams) 
 		&i.ID,
 		&i.Name,
 		&i.NameRu,
-		&i.AddedBy,
+		&i.CreatedBy,
 		&i.ModifiedBy,
 		&i.ModifiedAt,
 		&i.CreatedAt,
 		&i.Equipment,
-		&i.Type,
+		&i.ExerciseType,
 		&i.MuscleGroup,
 		&i.Description,
 		&i.DescriptionRu,
@@ -143,44 +143,34 @@ func (q *Queries) CreateExercise(ctx context.Context, arg CreateExerciseParams) 
 	return i, err
 }
 
-const deleteExercises = `-- name: DeleteExercises :execrows
-DELETE FROM mentorix.exercises
-WHERE id = ANY($1::uuid[])
-`
-
-func (q *Queries) DeleteExercises(ctx context.Context, dollar_1 []pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteExercises, dollar_1)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const getExerciseByID = `-- name: GetExerciseByID :one
 SELECT
-  id, name, name_ru, added_by, modified_by, modified_at, created_at,
-  equipment, type, muscle_group, description, description_ru,
-  difficulty, video_url, preview_image_url
-FROM mentorix.exercises
-WHERE id = $1
+  e.id, e.name, e.name_ru, e.created_by, e.modified_by, e.modified_at, e.created_at,
+  e.equipment, e.exercise_type, e.muscle_group, e.description, e.description_ru,
+  e.difficulty, e.video_url, e.preview_image_url,
+  COALESCE(u.display_name, '') AS created_by_name
+FROM mentorix.exercises e
+JOIN mentorix.users u ON u.id = e.created_by
+WHERE e.id = $1 AND e.deleted_at IS NULL
 `
 
 type GetExerciseByIDRow struct {
 	ID              pgtype.UUID `json:"id"`
 	Name            string      `json:"name"`
 	NameRu          string      `json:"name_ru"`
-	AddedBy         pgtype.UUID `json:"added_by"`
+	CreatedBy       pgtype.UUID `json:"created_by"`
 	ModifiedBy      pgtype.UUID `json:"modified_by"`
 	ModifiedAt      time.Time   `json:"modified_at"`
 	CreatedAt       time.Time   `json:"created_at"`
 	Equipment       *string     `json:"equipment"`
-	Type            string      `json:"type"`
+	ExerciseType    string      `json:"exercise_type"`
 	MuscleGroup     string      `json:"muscle_group"`
 	Description     string      `json:"description"`
 	DescriptionRu   string      `json:"description_ru"`
 	Difficulty      string      `json:"difficulty"`
 	VideoUrl        string      `json:"video_url"`
 	PreviewImageUrl string      `json:"preview_image_url"`
+	CreatedByName   string      `json:"created_by_name"`
 }
 
 func (q *Queries) GetExerciseByID(ctx context.Context, id pgtype.UUID) (GetExerciseByIDRow, error) {
@@ -190,62 +180,67 @@ func (q *Queries) GetExerciseByID(ctx context.Context, id pgtype.UUID) (GetExerc
 		&i.ID,
 		&i.Name,
 		&i.NameRu,
-		&i.AddedBy,
+		&i.CreatedBy,
 		&i.ModifiedBy,
 		&i.ModifiedAt,
 		&i.CreatedAt,
 		&i.Equipment,
-		&i.Type,
+		&i.ExerciseType,
 		&i.MuscleGroup,
 		&i.Description,
 		&i.DescriptionRu,
 		&i.Difficulty,
 		&i.VideoUrl,
 		&i.PreviewImageUrl,
+		&i.CreatedByName,
 	)
 	return i, err
 }
 
 const listExercises = `-- name: ListExercises :many
 SELECT
-  id, name, name_ru, added_by, modified_by, modified_at, created_at,
-  equipment, type, muscle_group, description, description_ru,
-  difficulty, video_url, preview_image_url
-FROM mentorix.exercises
-WHERE
-  ($1::text IS NULL OR (
-    name ILIKE $1 ESCAPE '\'
-    OR name_ru ILIKE $1 ESCAPE '\'
+  e.id, e.name, e.name_ru, e.created_by, e.modified_by, e.modified_at, e.created_at,
+  e.equipment, e.exercise_type, e.muscle_group, e.description, e.description_ru,
+  e.difficulty, e.video_url, e.preview_image_url,
+  COALESCE(u.display_name, '') AS created_by_name
+FROM mentorix.exercises e
+JOIN mentorix.users u ON u.id = e.created_by
+WHERE e.deleted_at IS NULL
+  AND ($1::text IS NULL OR (
+    e.name ILIKE $1 ESCAPE '\'
+    OR e.name_ru ILIKE $1 ESCAPE '\'
   ))
-  AND ($2::text IS NULL OR type = $2)
-  AND ($3::text IS NULL OR muscle_group = $3)
-  AND ($4::text IS NULL OR difficulty = $4)
+  AND ($2::text IS NULL OR e.exercise_type = $2)
+  AND ($3::text IS NULL OR e.muscle_group = $3)
+  AND ($4::text IS NULL OR e.difficulty = $4)
   AND (
     $5::boolean IS NOT TRUE
-    OR equipment IS NULL
+    OR e.equipment IS NULL
   )
   AND (
     $6::text IS NULL
-    OR equipment = $6
+    OR e.equipment = $6
   )
 ORDER BY
-  CASE WHEN $7 = 'name' AND $8 = 'asc' THEN name END ASC,
-  CASE WHEN $7 = 'name' AND $8 = 'desc' THEN name END DESC,
-  CASE WHEN $7 = 'name_ru' AND $8 = 'asc' THEN name_ru END ASC,
-  CASE WHEN $7 = 'name_ru' AND $8 = 'desc' THEN name_ru END DESC,
-  CASE WHEN $7 = 'created_at' AND $8 = 'asc' THEN created_at END ASC,
-  CASE WHEN $7 = 'created_at' AND $8 = 'desc' THEN created_at END DESC,
-  CASE WHEN $7 = 'modified_at' AND $8 = 'asc' THEN modified_at END ASC,
-  CASE WHEN $7 = 'modified_at' AND $8 = 'desc' THEN modified_at END DESC,
-  CASE WHEN $7 = 'difficulty' AND $8 = 'asc' THEN difficulty END ASC,
-  CASE WHEN $7 = 'difficulty' AND $8 = 'desc' THEN difficulty END DESC,
-  CASE WHEN $7 = 'type' AND $8 = 'asc' THEN type END ASC,
-  CASE WHEN $7 = 'type' AND $8 = 'desc' THEN type END DESC,
-  CASE WHEN $7 = 'muscle_group' AND $8 = 'asc' THEN muscle_group END ASC,
-  CASE WHEN $7 = 'muscle_group' AND $8 = 'desc' THEN muscle_group END DESC,
-  CASE WHEN $7 = 'equipment' AND $8 = 'asc' THEN equipment END ASC,
-  CASE WHEN $7 = 'equipment' AND $8 = 'desc' THEN equipment END DESC,
-  id ASC
+  CASE WHEN $7 = 'name' AND $8 = 'asc' THEN e.name END ASC,
+  CASE WHEN $7 = 'name' AND $8 = 'desc' THEN e.name END DESC,
+  CASE WHEN $7 = 'name_ru' AND $8 = 'asc' THEN e.name_ru END ASC,
+  CASE WHEN $7 = 'name_ru' AND $8 = 'desc' THEN e.name_ru END DESC,
+  CASE WHEN $7 = 'created_at' AND $8 = 'asc' THEN e.created_at END ASC,
+  CASE WHEN $7 = 'created_at' AND $8 = 'desc' THEN e.created_at END DESC,
+  CASE WHEN $7 = 'modified_at' AND $8 = 'asc' THEN e.modified_at END ASC,
+  CASE WHEN $7 = 'modified_at' AND $8 = 'desc' THEN e.modified_at END DESC,
+  CASE WHEN $7 = 'difficulty' AND $8 = 'asc' THEN e.difficulty END ASC,
+  CASE WHEN $7 = 'difficulty' AND $8 = 'desc' THEN e.difficulty END DESC,
+  CASE WHEN $7 = 'type' AND $8 = 'asc' THEN e.exercise_type END ASC,
+  CASE WHEN $7 = 'type' AND $8 = 'desc' THEN e.exercise_type END DESC,
+  CASE WHEN $7 = 'exercise_type' AND $8 = 'asc' THEN e.exercise_type END ASC,
+  CASE WHEN $7 = 'exercise_type' AND $8 = 'desc' THEN e.exercise_type END DESC,
+  CASE WHEN $7 = 'muscle_group' AND $8 = 'asc' THEN e.muscle_group END ASC,
+  CASE WHEN $7 = 'muscle_group' AND $8 = 'desc' THEN e.muscle_group END DESC,
+  CASE WHEN $7 = 'equipment' AND $8 = 'asc' THEN e.equipment END ASC,
+  CASE WHEN $7 = 'equipment' AND $8 = 'desc' THEN e.equipment END DESC,
+  e.id ASC
 LIMIT $10 OFFSET $9
 `
 
@@ -266,18 +261,19 @@ type ListExercisesRow struct {
 	ID              pgtype.UUID `json:"id"`
 	Name            string      `json:"name"`
 	NameRu          string      `json:"name_ru"`
-	AddedBy         pgtype.UUID `json:"added_by"`
+	CreatedBy       pgtype.UUID `json:"created_by"`
 	ModifiedBy      pgtype.UUID `json:"modified_by"`
 	ModifiedAt      time.Time   `json:"modified_at"`
 	CreatedAt       time.Time   `json:"created_at"`
 	Equipment       *string     `json:"equipment"`
-	Type            string      `json:"type"`
+	ExerciseType    string      `json:"exercise_type"`
 	MuscleGroup     string      `json:"muscle_group"`
 	Description     string      `json:"description"`
 	DescriptionRu   string      `json:"description_ru"`
 	Difficulty      string      `json:"difficulty"`
 	VideoUrl        string      `json:"video_url"`
 	PreviewImageUrl string      `json:"preview_image_url"`
+	CreatedByName   string      `json:"created_by_name"`
 }
 
 func (q *Queries) ListExercises(ctx context.Context, arg ListExercisesParams) ([]ListExercisesRow, error) {
@@ -304,18 +300,19 @@ func (q *Queries) ListExercises(ctx context.Context, arg ListExercisesParams) ([
 			&i.ID,
 			&i.Name,
 			&i.NameRu,
-			&i.AddedBy,
+			&i.CreatedBy,
 			&i.ModifiedBy,
 			&i.ModifiedAt,
 			&i.CreatedAt,
 			&i.Equipment,
-			&i.Type,
+			&i.ExerciseType,
 			&i.MuscleGroup,
 			&i.Description,
 			&i.DescriptionRu,
 			&i.Difficulty,
 			&i.VideoUrl,
 			&i.PreviewImageUrl,
+			&i.CreatedByName,
 		); err != nil {
 			return nil, err
 		}
@@ -327,6 +324,28 @@ func (q *Queries) ListExercises(ctx context.Context, arg ListExercisesParams) ([
 	return items, nil
 }
 
+const softDeleteExercises = `-- name: SoftDeleteExercises :execrows
+UPDATE mentorix.exercises SET
+  deleted_at = $2,
+  modified_at = $2,
+  modified_by = $3
+WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+`
+
+type SoftDeleteExercisesParams struct {
+	Column1    []pgtype.UUID      `json:"column_1"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+	ModifiedBy pgtype.UUID        `json:"modified_by"`
+}
+
+func (q *Queries) SoftDeleteExercises(ctx context.Context, arg SoftDeleteExercisesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteExercises, arg.Column1, arg.DeletedAt, arg.ModifiedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateExercise = `-- name: UpdateExercise :execrows
 UPDATE mentorix.exercises SET
   name = $2,
@@ -334,14 +353,14 @@ UPDATE mentorix.exercises SET
   modified_by = $4,
   modified_at = $5,
   equipment = $6,
-  type = $7,
+  exercise_type = $7,
   muscle_group = $8,
   description = $9,
   description_ru = $10,
   difficulty = $11,
   video_url = $12,
   preview_image_url = $13
-WHERE id = $1
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 type UpdateExerciseParams struct {
@@ -351,7 +370,7 @@ type UpdateExerciseParams struct {
 	ModifiedBy      pgtype.UUID `json:"modified_by"`
 	ModifiedAt      time.Time   `json:"modified_at"`
 	Equipment       *string     `json:"equipment"`
-	Type            string      `json:"type"`
+	ExerciseType    string      `json:"exercise_type"`
 	MuscleGroup     string      `json:"muscle_group"`
 	Description     string      `json:"description"`
 	DescriptionRu   string      `json:"description_ru"`
@@ -368,7 +387,7 @@ func (q *Queries) UpdateExercise(ctx context.Context, arg UpdateExerciseParams) 
 		arg.ModifiedBy,
 		arg.ModifiedAt,
 		arg.Equipment,
-		arg.Type,
+		arg.ExerciseType,
 		arg.MuscleGroup,
 		arg.Description,
 		arg.DescriptionRu,

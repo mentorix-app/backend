@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 )
@@ -23,17 +22,6 @@ type Store struct {
 
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool, q: sqlc.New(pool)}
-}
-
-func (s *Store) IsAdmin(ctx context.Context, userID uuid.UUID) (bool, error) {
-	ok, err := s.q.UserHasAnyRole(ctx, sqlc.UserHasAnyRoleParams{
-		UserID: pgconv.ToPGUUID(userID),
-		Roles:  []string{auth.RoleAdmin},
-	})
-	if err != nil {
-		return false, fmt.Errorf("check admin role: %w", err)
-	}
-	return ok, nil
 }
 
 func (s *Store) CreateDraft(ctx context.Context, userID uuid.UUID) (Detail, error) {
@@ -96,7 +84,7 @@ func (s *Store) List(ctx context.Context, params ListParams) (ListResult, error)
 
 	items := make([]Program, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, programFromRow(row))
+		items = append(items, programFromListRow(row))
 	}
 
 	return ListResult{
@@ -113,7 +101,7 @@ func (s *Store) GetProgramRow(ctx context.Context, id uuid.UUID) (Program, error
 		}
 		return Program{}, fmt.Errorf("get program: %w", err)
 	}
-	return programFromRow(row), nil
+	return programFromGetRow(row), nil
 }
 
 func (s *Store) GetDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
@@ -186,7 +174,9 @@ func (s *Store) Update(ctx context.Context, id, userID uuid.UUID, in UpdateInput
 		ModifiedBy:      pgconv.ToPGUUID(userID),
 		ModifiedAt:      time.Now().UTC(),
 		Name:            in.Name,
+		NameRu:          in.NameRu,
 		Description:     in.Description,
+		DescriptionRu:   in.DescriptionRu,
 		Category:        category,
 		Difficulty:      difficulty,
 		PreviewImageUrl: in.PreviewImageURL,
@@ -282,7 +272,7 @@ func (s *Store) ExerciseExists(ctx context.Context, exerciseID uuid.UUID) (bool,
 	return ok, nil
 }
 
-func (s *Store) AddDayExercise(ctx context.Context, programID, dayID uuid.UUID, in DayExerciseInput) (Detail, error) {
+func (s *Store) AddDayExercise(ctx context.Context, userID, programID, dayID uuid.UUID, in DayExerciseInput) (Detail, error) {
 	ok, err := s.DayBelongsToProgram(ctx, programID, dayID)
 	if err != nil {
 		return Detail{}, err
@@ -305,13 +295,13 @@ func (s *Store) AddDayExercise(ctx context.Context, programID, dayID uuid.UUID, 
 		return Detail{}, fmt.Errorf("next exercise sort: %w", err)
 	}
 
-	if err := s.q.InsertDayExercise(ctx, dayExerciseInsertParams(dayPG, nextSort, in)); err != nil {
+	if err := s.q.InsertDayExercise(ctx, dayExerciseInsertParams(dayPG, nextSort, userID, in)); err != nil {
 		return Detail{}, fmt.Errorf("insert day exercise: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) UpdateDayExercise(ctx context.Context, programID, dayID, itemID uuid.UUID, in DayExerciseInput) (Detail, error) {
+func (s *Store) UpdateDayExercise(ctx context.Context, userID, programID, dayID, itemID uuid.UUID, in DayExerciseInput) (Detail, error) {
 	ok, err := s.DayBelongsToProgram(ctx, programID, dayID)
 	if err != nil {
 		return Detail{}, err
@@ -328,6 +318,7 @@ func (s *Store) UpdateDayExercise(ctx context.Context, programID, dayID, itemID 
 		return Detail{}, fmt.Errorf("%w: exercise not found", ErrValidation)
 	}
 
+	now := time.Now().UTC()
 	rows, err := s.q.UpdateDayExercise(ctx, sqlc.UpdateDayExerciseParams{
 		ID:           pgconv.ToPGUUID(itemID),
 		ProgramDayID: pgconv.ToPGUUID(dayID),
@@ -336,6 +327,8 @@ func (s *Store) UpdateDayExercise(ctx context.Context, programID, dayID, itemID 
 		Reps:         intPtrToInt32(in.Reps),
 		WeightKg:     pgconv.ToNumeric(in.WeightKg),
 		Instruction:  instructionString(in.Instruction),
+		ModifiedAt:   now,
+		ModifiedBy:   pgconv.ToPGUUID(userID),
 	})
 	if err != nil {
 		return Detail{}, fmt.Errorf("update day exercise: %w", err)
@@ -409,36 +402,65 @@ func listFilterParams(params ListParams) sqlc.CountProgramsParams {
 	}
 }
 
-func programFromRow(row sqlc.MentorixProgram) Program {
-	var category *Category
-	if row.Category != nil {
-		c := Category(*row.Category)
-		category = &c
+func programFromFields(
+	id, createdBy, modifiedBy pgtype.UUID,
+	createdByName, status, name, nameRu, description, descriptionRu, previewImageURL string,
+	category, difficulty *string,
+	createdAt, modifiedAt time.Time,
+	deletedAt pgtype.Timestamptz,
+) Program {
+	var cat *Category
+	if category != nil {
+		c := Category(*category)
+		cat = &c
 	}
-	var difficulty *Difficulty
-	if row.Difficulty != nil {
-		d := Difficulty(*row.Difficulty)
-		difficulty = &d
+	var diff *Difficulty
+	if difficulty != nil {
+		d := Difficulty(*difficulty)
+		diff = &d
 	}
-	var deletedAt *time.Time
-	if row.DeletedAt.Valid {
-		t := row.DeletedAt.Time.UTC()
-		deletedAt = &t
+	var deleted *time.Time
+	if deletedAt.Valid {
+		t := deletedAt.Time.UTC()
+		deleted = &t
 	}
 	return Program{
-		ID:              pgconv.FromPGUUID(row.ID),
-		CreatedBy:       pgconv.FromPGUUID(row.CreatedBy),
-		ModifiedBy:      pgconv.FromPGUUID(row.ModifiedBy),
-		Status:          Status(row.Status),
-		Name:            row.Name,
-		Description:     row.Description,
-		Category:        category,
-		Difficulty:      difficulty,
-		PreviewImageURL: row.PreviewImageUrl,
-		CreatedAt:       row.CreatedAt.UTC(),
-		ModifiedAt:      row.ModifiedAt.UTC(),
-		DeletedAt:       deletedAt,
+		ID:              pgconv.FromPGUUID(id),
+		CreatedBy:       pgconv.FromPGUUID(createdBy),
+		CreatedByName:   createdByName,
+		ModifiedBy:      pgconv.FromPGUUID(modifiedBy),
+		Status:          Status(status),
+		Name:            name,
+		NameRu:          nameRu,
+		Description:     description,
+		DescriptionRu:   descriptionRu,
+		Category:        cat,
+		Difficulty:      diff,
+		PreviewImageURL: previewImageURL,
+		CreatedAt:       createdAt.UTC(),
+		ModifiedAt:      modifiedAt.UTC(),
+		DeletedAt:       deleted,
 	}
+}
+
+func programFromGetRow(row sqlc.GetProgramByIDRow) Program {
+	return programFromFields(
+		row.ID, row.CreatedBy, row.ModifiedBy,
+		row.CreatedByName, row.Status, row.Name, row.NameRu, row.Description, row.DescriptionRu, row.PreviewImageUrl,
+		row.Category, row.Difficulty,
+		row.CreatedAt, row.ModifiedAt,
+		row.DeletedAt,
+	)
+}
+
+func programFromListRow(row sqlc.ListProgramsRow) Program {
+	return programFromFields(
+		row.ID, row.CreatedBy, row.ModifiedBy,
+		row.CreatedByName, row.Status, row.Name, row.NameRu, row.Description, row.DescriptionRu, row.PreviewImageUrl,
+		row.Category, row.Difficulty,
+		row.CreatedAt, row.ModifiedAt,
+		row.DeletedAt,
+	)
 }
 
 func dayExerciseFromRow(row sqlc.ListDayExercisesRow) DayExercise {
@@ -456,7 +478,8 @@ func dayExerciseFromRow(row sqlc.ListDayExercisesRow) DayExercise {
 	}
 }
 
-func dayExerciseInsertParams(dayPG pgtype.UUID, sort int32, in DayExerciseInput) sqlc.InsertDayExerciseParams {
+func dayExerciseInsertParams(dayPG pgtype.UUID, sort int32, userID uuid.UUID, in DayExerciseInput) sqlc.InsertDayExerciseParams {
+	now := time.Now().UTC()
 	return sqlc.InsertDayExerciseParams{
 		ProgramDayID: dayPG,
 		ExerciseID:   pgconv.ToPGUUID(in.ExerciseID),
@@ -465,6 +488,8 @@ func dayExerciseInsertParams(dayPG pgtype.UUID, sort int32, in DayExerciseInput)
 		Reps:         intPtrToInt32(in.Reps),
 		WeightKg:     pgconv.ToNumeric(in.WeightKg),
 		Instruction:  instructionString(in.Instruction),
+		ModifiedAt:   now,
+		ModifiedBy:   pgconv.ToPGUUID(userID),
 	}
 }
 

@@ -33,7 +33,7 @@ type fakeAuthService struct {
 	profileErr     error
 }
 
-func (f *fakeAuthService) RegisterTrainer(_ context.Context, email, _ string) (IssuedAuth, error) {
+func (f *fakeAuthService) RegisterTrainer(_ context.Context, email, _, _ string) (IssuedAuth, error) {
 	if f.registerErr != nil {
 		return IssuedAuth{}, f.registerErr
 	}
@@ -114,6 +114,15 @@ func (f *fakeAuthService) UserProfile(_ context.Context, _ uuid.UUID) (UserProfi
 	return f.profile, nil
 }
 
+func (f *fakeAuthService) UpdateProfileName(_ context.Context, _ uuid.UUID, name string) (UserProfile, error) {
+	if f.profileErr != nil {
+		return UserProfile{}, f.profileErr
+	}
+	out := f.profile
+	out.Name = name
+	return out, nil
+}
+
 func testAuthHandlers(svc credentialService) *Handlers {
 	return &Handlers{
 		svc:        svc,
@@ -139,7 +148,7 @@ func TestHandlers_Mount_registersRoutes(t *testing.T) {
 	for _, r := range e.Routes() {
 		found[r.Method+" "+r.Path] = true
 	}
-	for _, key := range []string{"POST /auth/register", "POST /auth/login", "GET /auth/me"} {
+	for _, key := range []string{"POST /auth/register", "POST /auth/login", "GET /auth/me", "PATCH /auth/me"} {
 		if !found[key] {
 			t.Fatalf("missing route %s", key)
 		}
@@ -545,5 +554,89 @@ func TestMe_success(t *testing.T) {
 	}
 	if resp.UserID != userID.String() || resp.Email != "trainer@test.com" {
 		t.Fatalf("resp = %+v", resp)
+	}
+}
+
+func TestUpdateMe_missingUserInContext(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	req := httptest.NewRequest(http.MethodPatch, "/auth/me", strings.NewReader(`{"name":"Coach"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := h.UpdateMe(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusInternalServerError {
+		t.Fatalf("error = %v, want 500", err)
+	}
+}
+
+func TestUpdateMe_invalidJSON(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	req := httptest.NewRequest(http.MethodPatch, "/auth/me", strings.NewReader("not-json"))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, uuid.New())
+
+	err := h.UpdateMe(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("error = %v, want 400", err)
+	}
+}
+
+func TestUpdateMe_notFound(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{profileErr: pgx.ErrNoRows})
+	req := httptest.NewRequest(http.MethodPatch, "/auth/me", strings.NewReader(`{"name":"Coach"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, uuid.New())
+
+	err := h.UpdateMe(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusNotFound {
+		t.Fatalf("error = %v, want 404", err)
+	}
+}
+
+func TestUpdateMe_success(t *testing.T) {
+	userID := uuid.New()
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{
+		profile: UserProfile{
+			Email: "trainer@test.com",
+			Roles: []string{RoleTrainer},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPatch, "/auth/me", strings.NewReader(`{"name":"Coach"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, userID)
+
+	if err := h.UpdateMe(c); err != nil {
+		t.Fatalf("UpdateMe: %v", err)
+	}
+	assertHTTPStatus(t, rec, http.StatusOK)
+	var resp MeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Name != "Coach" {
+		t.Fatalf("name = %q, want Coach", resp.Name)
 	}
 }

@@ -23,7 +23,7 @@ var allowedSortColumns = map[string]string{
 	"created_at":   "created_at",
 	"modified_at":  "modified_at",
 	"difficulty":   "difficulty",
-	"type":         "type",
+	"type":         "exercise_type",
 	"muscle_group": "muscle_group",
 	"equipment":    "equipment",
 }

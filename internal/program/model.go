@@ -41,10 +41,13 @@ type Difficulty = exercise.Difficulty
 type Program struct {
 	ID              uuid.UUID   `json:"id"`
 	CreatedBy       uuid.UUID   `json:"created_by"`
+	CreatedByName   string      `json:"created_by_name"`
 	ModifiedBy      uuid.UUID   `json:"modified_by"`
 	Status          Status      `json:"status"`
 	Name            string      `json:"name"`
+	NameRu          string      `json:"name_ru"`
 	Description     string      `json:"description"`
+	DescriptionRu   string      `json:"description_ru"`
 	Category        *Category   `json:"category,omitempty"`
 	Difficulty      *Difficulty `json:"difficulty,omitempty"`
 	PreviewImageURL string      `json:"preview_image_url"`
@@ -81,7 +84,9 @@ type Detail struct {
 
 type UpdateInput struct {
 	Name            *string
+	NameRu          *string
 	Description     *string
+	DescriptionRu   *string
 	Category        *Category
 	Difficulty      *Difficulty
 	PreviewImageURL *string

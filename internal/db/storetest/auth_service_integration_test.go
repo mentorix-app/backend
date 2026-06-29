@@ -19,7 +19,7 @@ func TestAuthService_RegisterLoginRefreshLogout(t *testing.T) {
 	email := "auth-svc@test.com"
 	password := "password123"
 
-	registered, err := svc.RegisterTrainer(ctx, email, password)
+	registered, err := svc.RegisterTrainer(ctx, email, password, "Auth User")
 	if err != nil {
 		t.Fatalf("RegisterTrainer() error = %v", err)
 	}
@@ -57,6 +57,17 @@ func TestAuthService_RegisterLoginRefreshLogout(t *testing.T) {
 	if profile.Email != email {
 		t.Errorf("email = %q, want %q", profile.Email, email)
 	}
+	if profile.Name != "Auth User" {
+		t.Errorf("name = %q, want %q", profile.Name, "Auth User")
+	}
+
+	updated, err := svc.UpdateProfileName(ctx, registered.UserID, "Renamed")
+	if err != nil {
+		t.Fatalf("UpdateProfileName() error = %v", err)
+	}
+	if updated.Name != "Renamed" {
+		t.Errorf("updated name = %q, want %q", updated.Name, "Renamed")
+	}
 }
 
 func TestAuthService_LoginWrongPassword(t *testing.T) {
@@ -66,7 +77,7 @@ func TestAuthService_LoginWrongPassword(t *testing.T) {
 	svc := auth.NewService(pool, jwtSecret, 15*time.Minute, 30*24*time.Hour)
 
 	email := "wrong-pw@test.com"
-	if _, err := svc.RegisterTrainer(ctx, email, "password123"); err != nil {
+	if _, err := svc.RegisterTrainer(ctx, email, "password123", ""); err != nil {
 		t.Fatalf("RegisterTrainer() error = %v", err)
 	}
 	if _, err := svc.Login(ctx, email, "wrong-password"); err == nil {

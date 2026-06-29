@@ -154,6 +154,10 @@ func (h *Handlers) Update(c echo.Context) error {
 }
 
 func (h *Handlers) DeleteMany(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
 	var body deleteManyBody
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
@@ -176,7 +180,7 @@ func (h *Handlers) DeleteMany(c echo.Context) error {
 		ids = append(ids, id)
 	}
 
-	count, err := h.svc.DeleteMany(c.Request().Context(), ids)
+	count, err := h.svc.DeleteMany(c.Request().Context(), uid, ids)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "delete failed")
 	}

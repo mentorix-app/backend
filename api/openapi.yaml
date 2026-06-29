@@ -62,7 +62,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AuthCredentials"
+              $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
           description: Registered
@@ -171,6 +171,31 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: User not found
+    patch:
+      tags: [auth]
+      summary: Update current user profile name
+      operationId: updateMe
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MePatchRequest"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: User not found
 
   /admin/users/{user_id}/roles/admin:
     post:
@@ -254,6 +279,9 @@ paths:
     post:
       tags: [exercises]
       summary: Create exercise (admin only)
+      description: >
+        Shared catalog write. Any user with the `admin` role may create exercises.
+        `created_by` records the acting admin; other admins may update or delete the entry later.
       operationId: createExercise
       security:
         - bearerAuth: []
@@ -281,8 +309,10 @@ paths:
       tags: [exercises]
       summary: Delete exercises by IDs (admin only)
       description: >
-        Idempotent batch delete. Removes existing exercises matching the given IDs.
-        `deleted_count` may be less than the number of IDs if some were not found.
+        Idempotent batch soft-delete. Sets `deleted_at` on existing exercises matching the given IDs.
+        Any user with the `admin` role may delete exercises created by other admins.
+        Soft-deleted exercises are hidden from list/get and cannot be added to programs.
+        `deleted_count` may be less than the number of IDs if some were not found or already deleted.
         Duplicate IDs in the request are deduplicated before delete.
       operationId: deleteExercises
       security:
@@ -333,6 +363,9 @@ paths:
     put:
       tags: [exercises]
       summary: Update exercise (admin only)
+      description: >
+        Any user with the `admin` role may update any exercise in the shared catalog,
+        including entries created by other admins.
       operationId: updateExercise
       security:
         - bearerAuth: []
@@ -364,7 +397,7 @@ paths:
       summary: List programs with pagination, sort, search, and filters
       description: >
         Trainers see own programs; admins see all. Soft-deleted programs are excluded.
-        Search matches program name (ILIKE). Filter by status (comma-separated), category, difficulty.
+        Search matches program name and name_ru (ILIKE). Filter by status (comma-separated), category, difficulty.
       operationId: listPrograms
       security:
         - bearerAuth: []
@@ -377,7 +410,7 @@ paths:
           in: query
           schema:
             type: string
-          description: Search in program name (ILIKE)
+          description: Search in program name and name_ru (ILIKE)
         - name: status
           in: query
           schema:
@@ -409,7 +442,7 @@ paths:
       tags: [programs]
       summary: Create draft program with day 1
       description: >
-        Creates a program in `draft` status with empty `name`, `description`, and `preview_image_url`,
+        Creates a program in `draft` status with empty `name`, `name_ru`, `description`, `description_ru`, and `preview_image_url`,
         and auto-creates day 1. Step-1 fields can be filled later via PATCH.
       operationId: createProgram
       security:
@@ -448,6 +481,8 @@ paths:
     get:
       tags: [programs]
       summary: Get program with days and exercises
+      description: >
+        Owner (`created_by`) or any user with the `admin` role may read the program.
       operationId: getProgram
       security:
         - bearerAuth: []
@@ -461,7 +496,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program not found
 
@@ -470,6 +505,7 @@ paths:
       summary: Update program fields (step 1)
       description: >
         Partial update for wizard step 1. All fields are optional.
+        Owner (`created_by`) or any user with the `admin` role may update the program.
         Empty `name` is allowed while the program is in `draft`; publish requires a non-empty trimmed name.
       operationId: updateProgram
       security:
@@ -492,13 +528,15 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program not found
 
     delete:
       tags: [programs]
       summary: Soft-delete program
+      description: >
+        Owner (`created_by`) or any user with the `admin` role may soft-delete the program.
       operationId: deleteProgram
       security:
         - bearerAuth: []
@@ -508,7 +546,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program not found
 
@@ -533,7 +571,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program not found
         "409":
@@ -558,7 +596,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program not found
         "409":
@@ -583,7 +621,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program not found
 
@@ -607,7 +645,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program or day not found
 
@@ -639,7 +677,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program or day not found
 
@@ -672,7 +710,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program, day, or exercise item not found
 
@@ -692,7 +730,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden
+          description: Forbidden (not owner and not admin)
         "404":
           description: Program, day, or exercise item not found
 
@@ -790,7 +828,7 @@ components:
       in: query
       schema:
         type: string
-        enum: [name, created_at, modified_at, status, category, difficulty]
+        enum: [name, name_ru, created_at, modified_at, status, category, difficulty]
         default: created_at
 
   responses:
@@ -835,6 +873,29 @@ components:
           minLength: 8
           maxLength: 72
 
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+        name:
+          type: string
+          description: Optional display name; defaults to empty string
+
+    MePatchRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Display name; empty string clears the name
+
     TokenResponse:
       type: object
       required: [access_token, token_type, expires_at, user_id, email]
@@ -856,7 +917,7 @@ components:
 
     MeResponse:
       type: object
-      required: [user_id, email, created_at, roles]
+      required: [user_id, email, name, created_at, roles]
       properties:
         user_id:
           type: string
@@ -864,6 +925,8 @@ components:
         email:
           type: string
           format: email
+        name:
+          type: string
         created_at:
           type: string
           format: date-time
@@ -923,7 +986,8 @@ components:
         - id
         - name
         - name_ru
-        - added_by
+        - created_by
+        - created_by_name
         - modified_by
         - modified_at
         - created_at
@@ -942,9 +1006,11 @@ components:
           type: string
         name_ru:
           type: string
-        added_by:
+        created_by:
           type: string
           format: uuid
+        created_by_name:
+          type: string
         modified_by:
           type: string
           format: uuid
@@ -1067,10 +1133,13 @@ components:
       required:
         - id
         - created_by
+        - created_by_name
         - modified_by
         - status
         - name
+        - name_ru
         - description
+        - description_ru
         - preview_image_url
         - created_at
         - modified_at
@@ -1081,6 +1150,8 @@ components:
         created_by:
           type: string
           format: uuid
+        created_by_name:
+          type: string
         modified_by:
           type: string
           format: uuid
@@ -1088,7 +1159,11 @@ components:
           $ref: "#/components/schemas/ProgramStatus"
         name:
           type: string
+        name_ru:
+          type: string
         description:
+          type: string
+        description_ru:
           type: string
         category:
           $ref: "#/components/schemas/ProgramCategory"
@@ -1197,7 +1272,11 @@ components:
       properties:
         name:
           type: string
+        name_ru:
+          type: string
         description:
+          type: string
+        description_ru:
           type: string
         category:
           $ref: "#/components/schemas/ProgramCategory"

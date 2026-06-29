@@ -45,7 +45,9 @@ func (h *Handlers) Mount(e *echo.Echo) {
 
 type patchBody struct {
 	Name            *string              `json:"name"`
+	NameRu          *string              `json:"name_ru"`
 	Description     *string              `json:"description"`
+	DescriptionRu   *string              `json:"description_ru"`
 	Category        *Category            `json:"category"`
 	Difficulty      *exercise.Difficulty `json:"difficulty"`
 	PreviewImageURL *string              `json:"preview_image_url"`
@@ -59,7 +61,9 @@ func (b patchBody) toInput() UpdateInput {
 	}
 	return UpdateInput{
 		Name:            b.Name,
+		NameRu:          b.NameRu,
 		Description:     b.Description,
+		DescriptionRu:   b.DescriptionRu,
 		Category:        b.Category,
 		Difficulty:      diff,
 		PreviewImageURL: b.PreviewImageURL,

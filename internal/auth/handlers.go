@@ -16,12 +16,13 @@ import (
 )
 
 type credentialService interface {
-	RegisterTrainer(ctx context.Context, email, password string) (IssuedAuth, error)
+	RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error)
 	Login(ctx context.Context, email, password string) (IssuedAuth, error)
 	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
 	Logout(ctx context.Context, refreshPlain string) error
 	LogoutAll(ctx context.Context, userID uuid.UUID) error
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
+	UpdateProfileName(ctx context.Context, userID uuid.UUID, name string) (UserProfile, error)
 }
 
 type Handlers struct {
@@ -49,6 +50,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	e.POST("/auth/logout", h.Logout)
 	g := e.Group("", JWTMiddleware(h.jwtSecret))
 	g.GET("/auth/me", h.Me)
+	g.PATCH("/auth/me", h.UpdateMe)
 	g.POST("/auth/logout-all", h.LogoutAll)
 }
 
@@ -98,7 +100,7 @@ func (h *Handlers) Register(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
 	}
-	var body AuthCredentials
+	var body RegisterRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -113,7 +115,7 @@ func (h *Handlers) Register(c echo.Context) error {
 	if err := ValidatePassword(body.Password); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	issued, err := h.svc.RegisterTrainer(c.Request().Context(), email, body.Password)
+	issued, err := h.svc.RegisterTrainer(c.Request().Context(), email, body.Password, body.Name)
 	if err != nil {
 		if errors.Is(err, ErrEmailTaken) {
 			return echo.NewHTTPError(http.StatusConflict, ErrEmailTaken.Error())
@@ -214,10 +216,34 @@ func (h *Handlers) Me(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
-	return c.JSON(http.StatusOK, MeResponse{
+	return c.JSON(http.StatusOK, meResponse(uid, profile))
+}
+
+func (h *Handlers) UpdateMe(c echo.Context) error {
+	uid, ok := UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	var body MePatchRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	profile, err := h.svc.UpdateProfileName(c.Request().Context(), uid, body.Name)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	return c.JSON(http.StatusOK, meResponse(uid, profile))
+}
+
+func meResponse(uid uuid.UUID, profile UserProfile) MeResponse {
+	return MeResponse{
 		UserID:    uid.String(),
 		Email:     profile.Email,
+		Name:      profile.Name,
 		CreatedAt: profile.CreatedAt,
 		Roles:     profile.Roles,
-	})
+	}
 }

@@ -14,7 +14,7 @@ import (
 func TestService_Create(t *testing.T) {
 	userID := uuid.New()
 	want := Detail{Program: Program{ID: uuid.New(), Status: StatusDraft}}
-	svc := &Service{store: &fakeProgramStore{createDetail: want}}
+	svc := testService(&fakeProgramStore{createDetail: want}, nil)
 	got, err := svc.Create(context.Background(), userID)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -28,10 +28,9 @@ func TestService_Update_forbiddenForOtherTrainer(t *testing.T) {
 	ownerID := uuid.New()
 	otherID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
-		isAdmin: false,
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: ownerID, Status: StatusDraft},
-	}}
+	}, &fakeRoleQuerier{isAdmin: false})
 	_, err := svc.Update(context.Background(), otherID, programID, UpdateInput{})
 	if !errors.Is(err, ErrForbidden) {
 		t.Fatalf("Update() error = %v, want ErrForbidden", err)
@@ -41,10 +40,10 @@ func TestService_Update_forbiddenForOtherTrainer(t *testing.T) {
 func TestService_Archive_fromPublished(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
 		detail:  Detail{Program: Program{ID: programID, Status: StatusArchived}},
-	}}
+	}, nil)
 	got, err := svc.Archive(context.Background(), userID, programID)
 	if err != nil {
 		t.Fatalf("Archive() error = %v", err)
@@ -58,10 +57,10 @@ func TestService_AddDay_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	want := Detail{Program: Program{ID: programID, Status: StatusDraft}}
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail:  want,
-	}}
+	}, nil)
 	got, err := svc.AddDay(context.Background(), userID, programID)
 	if err != nil {
 		t.Fatalf("AddDay() error = %v", err)
@@ -75,11 +74,10 @@ func TestService_Get_adminAccess(t *testing.T) {
 	ownerID := uuid.New()
 	adminID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
-		isAdmin: true,
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: ownerID},
 		detail:  Detail{Program: Program{ID: programID, CreatedBy: ownerID}},
-	}}
+	}, &fakeRoleQuerier{isAdmin: true})
 	got, err := svc.Get(context.Background(), adminID, programID)
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
@@ -89,12 +87,42 @@ func TestService_Get_adminAccess(t *testing.T) {
 	}
 }
 
+func TestService_Update_adminCanUpdateOtherUsersProgram(t *testing.T) {
+	ownerID := uuid.New()
+	adminID := uuid.New()
+	programID := uuid.New()
+	name := "Admin edit"
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: ownerID, Status: StatusDraft},
+		detail:  Detail{Program: Program{ID: programID, CreatedBy: ownerID, Name: name}},
+	}, &fakeRoleQuerier{isAdmin: true})
+	got, err := svc.Update(context.Background(), adminID, programID, UpdateInput{Name: &name})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	if got.Name != name {
+		t.Errorf("name = %q", got.Name)
+	}
+}
+
+func TestService_Delete_adminCanDeleteOtherUsersProgram(t *testing.T) {
+	ownerID := uuid.New()
+	adminID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: ownerID, Status: StatusDraft},
+	}, &fakeRoleQuerier{isAdmin: true})
+	if err := svc.Delete(context.Background(), adminID, programID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+}
+
 func TestService_Delete_softDeletesDraft(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
-	}}
+	}, nil)
 	if err := svc.Delete(context.Background(), userID, programID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
@@ -107,7 +135,7 @@ func TestService_Publish_success(t *testing.T) {
 	difficulty := exercise.DifficultyBeginner
 	sets := 3
 	reps := 10
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail: Detail{
 			Program: Program{
@@ -123,7 +151,7 @@ func TestService_Publish_success(t *testing.T) {
 				}},
 			}},
 		},
-	}}
+	}, nil)
 	got, err := svc.Publish(context.Background(), userID, programID)
 	if err != nil {
 		t.Fatalf("Publish() error = %v", err)
@@ -136,10 +164,10 @@ func TestService_Publish_success(t *testing.T) {
 func TestService_Archive_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
 		detail:  Detail{Program: Program{ID: programID, Status: StatusArchived}},
-	}}
+	}, nil)
 	got, err := svc.Archive(context.Background(), userID, programID)
 	if err != nil {
 		t.Fatalf("Archive() error = %v", err)
@@ -153,10 +181,10 @@ func TestService_Update_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	name := "Updated"
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail:  Detail{Program: Program{ID: programID, Name: name}},
-	}}
+	}, nil)
 	got, err := svc.Update(context.Background(), userID, programID, UpdateInput{Name: &name})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
@@ -167,7 +195,7 @@ func TestService_Update_success(t *testing.T) {
 }
 
 func TestService_Get_notFound(t *testing.T) {
-	svc := &Service{store: &fakeProgramStore{err: pgx.ErrNoRows}}
+	svc := testService(&fakeProgramStore{err: pgx.ErrNoRows}, nil)
 	_, err := svc.Get(context.Background(), uuid.New(), uuid.New())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get() error = %v, want ErrNotFound", err)
@@ -175,7 +203,7 @@ func TestService_Get_notFound(t *testing.T) {
 }
 
 func TestService_Delete_notFound(t *testing.T) {
-	svc := &Service{store: &fakeProgramStore{err: pgx.ErrNoRows}}
+	svc := testService(&fakeProgramStore{err: pgx.ErrNoRows}, nil)
 	err := svc.Delete(context.Background(), uuid.New(), uuid.New())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Delete() error = %v, want ErrNotFound", err)
@@ -183,7 +211,7 @@ func TestService_Delete_notFound(t *testing.T) {
 }
 
 func TestService_Publish_notFound(t *testing.T) {
-	svc := &Service{store: &fakeProgramStore{err: pgx.ErrNoRows}}
+	svc := testService(&fakeProgramStore{err: pgx.ErrNoRows}, nil)
 	_, err := svc.Publish(context.Background(), uuid.New(), uuid.New())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Publish() error = %v, want ErrNotFound", err)
@@ -193,9 +221,9 @@ func TestService_Publish_notFound(t *testing.T) {
 func TestService_Archive_invalidTransition(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
-	}}
+	}, nil)
 	_, err := svc.Archive(context.Background(), userID, programID)
 	if !errors.Is(err, ErrInvalidStatusTransition) {
 		t.Fatalf("Archive() error = %v, want ErrInvalidStatusTransition", err)
@@ -213,7 +241,7 @@ func TestService_dayExerciseOperations(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail:  detail,
 	}
-	svc := &Service{store: store}
+	svc := testService(store, nil)
 	in := DayExerciseInput{ExerciseID: uuid.New(), Sets: &sets, Reps: &reps}
 
 	if _, err := svc.AddDayExercise(context.Background(), userID, programID, dayID, in); err != nil {
@@ -233,9 +261,9 @@ func TestService_dayExerciseOperations(t *testing.T) {
 func TestService_AddDayExercise_validationError(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &fakeProgramStore{
+	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
-	}}
+	}, nil)
 	_, err := svc.AddDayExercise(context.Background(), userID, programID, uuid.New(), DayExerciseInput{})
 	if err == nil {
 		t.Fatal("expected validation error")
@@ -254,12 +282,12 @@ func (d *deleteDayErrStore) DeleteDay(context.Context, uuid.UUID, uuid.UUID) (De
 func TestService_DeleteDay_notFound(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := &Service{store: &deleteDayErrStore{
+	svc := testService(&deleteDayErrStore{
 		fakeProgramStore: fakeProgramStore{
 			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		},
 		deleteDayErr: pgx.ErrNoRows,
-	}}
+	}, nil)
 	_, err := svc.DeleteDay(context.Background(), userID, programID, uuid.New())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("DeleteDay() error = %v, want ErrNotFound", err)

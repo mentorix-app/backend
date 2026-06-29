@@ -35,6 +35,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 type userResponse struct {
 	UserID    string    `json:"user_id"`
 	Email     string    `json:"email"`
+	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 	Roles     []string  `json:"roles"`
 }
@@ -54,6 +55,7 @@ func (h *Handlers) GrantAdmin(c echo.Context) error {
 	return c.JSON(http.StatusOK, userResponse{
 		UserID:    targetUserID.String(),
 		Email:     profile.Email,
+		Name:      profile.Name,
 		CreatedAt: profile.CreatedAt,
 		Roles:     profile.Roles,
 	})

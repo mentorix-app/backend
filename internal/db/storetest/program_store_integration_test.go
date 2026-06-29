@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"mentorix-backend/internal/auth"
+	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
 )
@@ -23,7 +24,7 @@ func TestProgramStore_CreateDraftAndPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-store@test.com", pwHash)
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-store@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register trainer: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestProgramStore_CreateDraftAndPublish(t *testing.T) {
 
 	dayID := draft.Days[0].ID
 	sets, reps := 3, 10
-	withExercise, err := progStore.AddDayExercise(ctx, draft.ID, dayID, program.DayExerciseInput{
+	withExercise, err := progStore.AddDayExercise(ctx, trainerID, draft.ID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -114,11 +115,11 @@ func TestProgramStore_ListFiltersByTrainer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	trainerA, err := authStore.RegisterTrainerEmailPassword(ctx, "trainer-a@test.com", pwHash)
+	trainerA, err := authStore.RegisterTrainerEmailPassword(ctx, "trainer-a@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register trainer A: %v", err)
 	}
-	trainerB, err := authStore.RegisterTrainerEmailPassword(ctx, "trainer-b@test.com", pwHash)
+	trainerB, err := authStore.RegisterTrainerEmailPassword(ctx, "trainer-b@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register trainer B: %v", err)
 	}
@@ -159,7 +160,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-lifecycle@test.com", pwHash)
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-lifecycle@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -192,7 +193,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	dayID := withDay.Days[1].ID
 
 	sets, reps := 4, 8
-	withExercise, err := progStore.AddDayExercise(ctx, draft.ID, dayID, program.DayExerciseInput{
+	withExercise, err := progStore.AddDayExercise(ctx, trainerID, draft.ID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -203,7 +204,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	itemID := withExercise.Days[1].Exercises[0].ID
 
 	newSets := 5
-	updatedExercise, err := progStore.UpdateDayExercise(ctx, draft.ID, dayID, itemID, program.DayExerciseInput{
+	updatedExercise, err := progStore.UpdateDayExercise(ctx, trainerID, draft.ID, dayID, itemID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &newSets,
 		Reps:       &reps,
@@ -245,7 +246,7 @@ func TestProgramStore_ListWithFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-list@test.com", pwHash)
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-list@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -304,7 +305,7 @@ func TestProgramStore_GetNotFound(t *testing.T) {
 	}
 }
 
-func TestProgramStore_IsAdmin(t *testing.T) {
+func TestAuthUserIsAdmin_integration(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
@@ -313,15 +314,15 @@ func TestProgramStore_IsAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-check@test.com", pwHash)
+	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-check@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
 
-	progStore := program.NewStore(pool)
-	isAdmin, err := progStore.IsAdmin(ctx, userID)
+	q := sqlc.New(pool)
+	isAdmin, err := auth.UserIsAdmin(ctx, q, userID)
 	if err != nil {
-		t.Fatalf("IsAdmin() error = %v", err)
+		t.Fatalf("UserIsAdmin() error = %v", err)
 	}
 	if isAdmin {
 		t.Fatal("trainer should not be admin yet")
@@ -329,8 +330,44 @@ func TestProgramStore_IsAdmin(t *testing.T) {
 	if err := authStore.GrantRole(ctx, userID, auth.RoleAdmin); err != nil {
 		t.Fatalf("GrantRole: %v", err)
 	}
-	isAdmin, err = progStore.IsAdmin(ctx, userID)
+	isAdmin, err = auth.UserIsAdmin(ctx, q, userID)
 	if err != nil || !isAdmin {
-		t.Fatalf("IsAdmin() = %v, %v, want true", isAdmin, err)
+		t.Fatalf("UserIsAdmin() = %v, %v, want true", isAdmin, err)
+	}
+}
+
+func TestProgramService_adminMutatesOtherUsersProgram(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	ownerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-owner@test.com", pwHash, "Owner")
+	if err != nil {
+		t.Fatalf("register owner: %v", err)
+	}
+	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-admin@test.com", pwHash, "Admin")
+	if err != nil {
+		t.Fatalf("register admin: %v", err)
+	}
+	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
+		t.Fatalf("grant admin: %v", err)
+	}
+
+	svc := program.NewService(pool)
+	draft, err := svc.Create(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	name := "Edited by admin"
+	if _, err := svc.Update(ctx, adminID, draft.ID, program.UpdateInput{Name: &name}); err != nil {
+		t.Fatalf("Update() by admin error = %v", err)
+	}
+	if err := svc.Delete(ctx, adminID, draft.ID); err != nil {
+		t.Fatalf("Delete() by admin error = %v", err)
 	}
 }

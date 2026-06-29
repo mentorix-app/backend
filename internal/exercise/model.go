@@ -72,7 +72,8 @@ type Exercise struct {
 	ID              uuid.UUID    `json:"id"`
 	Name            string       `json:"name"`
 	NameRu          string       `json:"name_ru"`
-	AddedBy         uuid.UUID    `json:"added_by"`
+	CreatedBy       uuid.UUID    `json:"created_by"`
+	CreatedByName   string       `json:"created_by_name"`
 	ModifiedBy      uuid.UUID    `json:"modified_by"`
 	ModifiedAt      time.Time    `json:"modified_at"`
 	CreatedAt       time.Time    `json:"created_at"`

@@ -26,7 +26,7 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool, q: sqlc.New(pool)}
 }
 
-func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash string) (uuid.UUID, error) {
+func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("begin tx: %w", err)
@@ -35,7 +35,10 @@ func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwor
 
 	qtx := s.q.WithTx(tx)
 
-	userPG, err := qtx.InsertUser(ctx, &email)
+	userPG, err := qtx.InsertUser(ctx, sqlc.InsertUserParams{
+		PrimaryEmail: &email,
+		DisplayName:  displayName,
+	})
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("insert user: %w", err)
 	}
@@ -85,6 +88,7 @@ func (s *Store) UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string,
 
 type UserProfile struct {
 	Email     string
+	Name      string
 	CreatedAt time.Time
 	Roles     []string
 }
@@ -105,9 +109,24 @@ func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile,
 
 	return UserProfile{
 		Email:     row.PrimaryEmail,
+		Name:      row.DisplayName,
 		CreatedAt: row.CreatedAt.UTC(),
 		Roles:     roles,
 	}, nil
+}
+
+func (s *Store) UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error {
+	rows, err := s.q.UpdateUserDisplayName(ctx, sqlc.UpdateUserDisplayNameParams{
+		ID:          pgconv.ToPGUUID(userID),
+		DisplayName: displayName,
+	})
+	if err != nil {
+		return fmt.Errorf("update display name: %w", err)
+	}
+	if rows == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func (s *Store) UserRoles(ctx context.Context, userID uuid.UUID) ([]string, error) {

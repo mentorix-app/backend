@@ -76,7 +76,7 @@ func (s *Store) Create(ctx context.Context, userID uuid.UUID, in UpsertInput) (E
 	if err != nil {
 		return Exercise{}, fmt.Errorf("insert exercise: %w", err)
 	}
-	return exerciseFromCreateRow(row), nil
+	return s.GetByID(ctx, pgconv.FromPGUUID(row.ID))
 }
 
 func (s *Store) Update(ctx context.Context, id, userID uuid.UUID, in UpsertInput) (Exercise, error) {
@@ -89,7 +89,7 @@ func (s *Store) Update(ctx context.Context, id, userID uuid.UUID, in UpsertInput
 		ModifiedBy:      params.ModifiedBy,
 		ModifiedAt:      params.ModifiedAt,
 		Equipment:       params.Equipment,
-		Type:            params.Type,
+		ExerciseType:    params.ExerciseType,
 		MuscleGroup:     params.MuscleGroup,
 		Description:     params.Description,
 		DescriptionRu:   params.DescriptionRu,
@@ -106,10 +106,15 @@ func (s *Store) Update(ctx context.Context, id, userID uuid.UUID, in UpsertInput
 	return s.GetByID(ctx, id)
 }
 
-func (s *Store) DeleteMany(ctx context.Context, ids []uuid.UUID) (int64, error) {
-	n, err := s.q.DeleteExercises(ctx, pgconv.UUIDSlice(ids))
+func (s *Store) DeleteMany(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	now := time.Now().UTC()
+	n, err := s.q.SoftDeleteExercises(ctx, sqlc.SoftDeleteExercisesParams{
+		Column1:    pgconv.UUIDSlice(ids),
+		DeletedAt:  pgtype.Timestamptz{Time: now, Valid: true},
+		ModifiedBy: pgconv.ToPGUUID(userID),
+	})
 	if err != nil {
-		return 0, fmt.Errorf("delete exercises: %w", err)
+		return 0, fmt.Errorf("soft delete exercises: %w", err)
 	}
 	return n, nil
 }
@@ -171,11 +176,11 @@ func upsertParams(userID uuid.UUID, now time.Time, in UpsertInput) sqlc.CreateEx
 	return sqlc.CreateExerciseParams{
 		Name:            in.Name,
 		NameRu:          in.NameRu,
-		AddedBy:         userPG,
+		CreatedBy:       userPG,
 		ModifiedBy:      userPG,
 		ModifiedAt:      now,
 		Equipment:       equipment,
-		Type:            string(in.Type),
+		ExerciseType:    string(in.Type),
 		MuscleGroup:     string(in.MuscleGroup),
 		Description:     in.Description,
 		DescriptionRu:   in.DescriptionRu,
@@ -186,11 +191,11 @@ func upsertParams(userID uuid.UUID, now time.Time, in UpsertInput) sqlc.CreateEx
 }
 
 func exerciseFromFields(
-	id, addedBy, modifiedBy pgtype.UUID,
-	name, nameRu string,
+	id, createdBy, modifiedBy pgtype.UUID,
+	name, nameRu, createdByName string,
 	modifiedAt, createdAt time.Time,
 	equipment *string,
-	typ, muscleGroup, description, descriptionRu, difficulty, videoURL, previewImageURL string,
+	exerciseType, muscleGroup, description, descriptionRu, difficulty, videoURL, previewImageURL string,
 ) Exercise {
 	var eq *Equipment
 	if equipment != nil {
@@ -201,12 +206,13 @@ func exerciseFromFields(
 		ID:              pgconv.FromPGUUID(id),
 		Name:            name,
 		NameRu:          nameRu,
-		AddedBy:         pgconv.FromPGUUID(addedBy),
+		CreatedBy:       pgconv.FromPGUUID(createdBy),
+		CreatedByName:   createdByName,
 		ModifiedBy:      pgconv.FromPGUUID(modifiedBy),
 		ModifiedAt:      modifiedAt.UTC(),
 		CreatedAt:       createdAt.UTC(),
 		Equipment:       eq,
-		Type:            ExerciseType(typ),
+		Type:            ExerciseType(exerciseType),
 		MuscleGroup:     MuscleGroup(muscleGroup),
 		Description:     description,
 		DescriptionRu:   descriptionRu,
@@ -218,19 +224,10 @@ func exerciseFromFields(
 
 func exerciseFromGetRow(row sqlc.GetExerciseByIDRow) Exercise {
 	return exerciseFromFields(
-		row.ID, row.AddedBy, row.ModifiedBy,
-		row.Name, row.NameRu, row.ModifiedAt, row.CreatedAt,
-		row.Equipment, row.Type, row.MuscleGroup,
-		row.Description, row.DescriptionRu, row.Difficulty,
-		row.VideoUrl, row.PreviewImageUrl,
-	)
-}
-
-func exerciseFromCreateRow(row sqlc.CreateExerciseRow) Exercise {
-	return exerciseFromFields(
-		row.ID, row.AddedBy, row.ModifiedBy,
-		row.Name, row.NameRu, row.ModifiedAt, row.CreatedAt,
-		row.Equipment, row.Type, row.MuscleGroup,
+		row.ID, row.CreatedBy, row.ModifiedBy,
+		row.Name, row.NameRu, row.CreatedByName,
+		row.ModifiedAt, row.CreatedAt,
+		row.Equipment, row.ExerciseType, row.MuscleGroup,
 		row.Description, row.DescriptionRu, row.Difficulty,
 		row.VideoUrl, row.PreviewImageUrl,
 	)
@@ -238,9 +235,10 @@ func exerciseFromCreateRow(row sqlc.CreateExerciseRow) Exercise {
 
 func exerciseFromListRow(row sqlc.ListExercisesRow) Exercise {
 	return exerciseFromFields(
-		row.ID, row.AddedBy, row.ModifiedBy,
-		row.Name, row.NameRu, row.ModifiedAt, row.CreatedAt,
-		row.Equipment, row.Type, row.MuscleGroup,
+		row.ID, row.CreatedBy, row.ModifiedBy,
+		row.Name, row.NameRu, row.CreatedByName,
+		row.ModifiedAt, row.CreatedAt,
+		row.Equipment, row.ExerciseType, row.MuscleGroup,
 		row.Description, row.DescriptionRu, row.Difficulty,
 		row.VideoUrl, row.PreviewImageUrl,
 	)

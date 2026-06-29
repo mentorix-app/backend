@@ -25,7 +25,7 @@ func TestAuthStore_RegisterTrainerEmailPassword(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	userID, err := store.RegisterTrainerEmailPassword(ctx, email, hash)
+	userID, err := store.RegisterTrainerEmailPassword(ctx, email, hash, "Viktor")
 	if err != nil {
 		t.Fatalf("RegisterTrainerEmailPassword() error = %v", err)
 	}
@@ -52,7 +52,11 @@ func TestAuthStore_RegisterTrainerEmailPassword(t *testing.T) {
 		t.Errorf("primary email = %q, want %q", primary, email)
 	}
 
-	_, err = store.RegisterTrainerEmailPassword(ctx, email, hash)
+	if profile.Name != "Viktor" {
+		t.Errorf("name = %q, want %q", profile.Name, "Viktor")
+	}
+
+	_, err = store.RegisterTrainerEmailPassword(ctx, email, hash, "")
 	if !errors.Is(err, auth.ErrEmailTaken) {
 		t.Errorf("duplicate register error = %v, want ErrEmailTaken", err)
 	}
@@ -67,7 +71,7 @@ func TestAuthStore_RotateRefreshSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := store.RegisterTrainerEmailPassword(ctx, "rotate@test.com", hash)
+	userID, err := store.RegisterTrainerEmailPassword(ctx, "rotate@test.com", hash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}

@@ -82,10 +82,10 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\",\n  \"name\": \"Test Trainer\"\n}"
             },
             "url": "{{base_url}}/auth/register",
-            "description": "Source: `internal/auth/handlers.go` → Register\n\nBody: email, password (min 8 chars)\n201: access_token, token_type, expires_at, user_id, email + Set-Cookie mentorix_refresh\n400: invalid email/password\n409: email already registered\n429: rate limit"
+            "description": "Source: `internal/auth/handlers.go` → Register\n\nBody: email, password (min 8 chars), optional name\n201: access_token, token_type, expires_at, user_id, email + Set-Cookie mentorix_refresh\n400: invalid email/password\n409: email already registered\n429: rate limit"
           },
           "response": []
         },
@@ -182,7 +182,25 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/auth/me",
-            "description": "Source: `internal/auth/handlers.go` → Me\n\nHeader: Authorization: Bearer <access_token>\n200: user_id, email, created_at, roles"
+            "description": "Source: `internal/auth/handlers.go` → Me\n\nHeader: Authorization: Bearer <access_token>\n200: user_id, email, name, created_at, roles"
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /auth/me",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Trainer\"\n}"
+            },
+            "url": "{{base_url}}/auth/me",
+            "description": "Source: `internal/auth/handlers.go` → UpdateMe\n\nBody: name (string, may be empty)\n200: user_id, email, name, created_at, roles"
           },
           "response": []
         },
@@ -504,7 +522,7 @@
               "raw": "{\n  \"ids\": [\"{{exercise_id}}\"]\n}"
             },
             "url": "{{base_url}}/exercises",
-            "description": "Source: `internal/exercise/handlers.go` → DeleteMany\n\nBearer + role admin\nBody: { ids: uuid[] } (min 1)\n200: { deleted_count: number }\n400: empty ids, invalid uuid\n403: admin role required"
+            "description": "Source: `internal/exercise/handlers.go` → DeleteMany\n\nBearer + role admin\nBody: { ids: uuid[] } (min 1)\nSoft-delete (deleted_at); hidden from list/get\n200: { deleted_count: number }\n400: empty ids, invalid uuid\n403: admin role required"
           },
           "response": []
         }
@@ -550,7 +568,7 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/programs?page=1&limit=20&sort_by=created_at&sort_order=desc",
-            "description": "Source: `internal/program/handlers.go` → List\n\nBearer + trainer|admin\n\nQuery:\n- page, limit (max 100)\n- sort_by: name|created_at|modified_at|status|category|difficulty\n- sort_order: asc|desc\n- q: search by name\n- status: draft,published,archived (comma-separated)\n- category, difficulty\n\nSoft-deleted programs are never returned.\n\n200: {items: Program[], pagination}"
+            "description": "Source: `internal/program/handlers.go` → List\n\nBearer + trainer|admin\n\nQuery:\n- page, limit (max 100)\n- sort_by: name|name_ru|created_at|modified_at|status|category|difficulty\n- sort_order: asc|desc\n- q: search by name/name_ru\n- status: draft,published,archived (comma-separated)\n- category, difficulty\n\nSoft-deleted programs are never returned.\n\n200: {items: Program[], pagination}"
           },
           "response": []
         },
@@ -691,7 +709,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Набор массы — база\",\n  \"description\": \"8-недельная программа\",\n  \"category\": \"muscle_gain\",\n  \"difficulty\": \"beginner\",\n  \"preview_image_url\": \"\"\n}"
+              "raw": "{\n  \"name\": \"Mass gain — basics\",\n  \"name_ru\": \"Набор массы — база\",\n  \"description\": \"8-week program\",\n  \"description_ru\": \"8-недельная программа\",\n  \"category\": \"muscle_gain\",\n  \"difficulty\": \"beginner\",\n  \"preview_image_url\": \"\"\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}",
             "description": "Шаг 1 wizard — поля опциональны в draft"

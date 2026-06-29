@@ -37,7 +37,7 @@ func (q *Queries) GetEmailPasswordIdentity(ctx context.Context, arg GetEmailPass
 
 const getRefreshSessionUserForUpdate = `-- name: GetRefreshSessionUserForUpdate :one
 SELECT user_id
-FROM mentorix.refresh_sessions
+FROM mentorix.auth_refresh_sessions
 WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()
 FOR UPDATE
 `
@@ -50,20 +50,24 @@ func (q *Queries) GetRefreshSessionUserForUpdate(ctx context.Context, tokenHash 
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT COALESCE(primary_email, '') AS primary_email, created_at
+SELECT
+  COALESCE(primary_email, '') AS primary_email,
+  display_name,
+  created_at
 FROM mentorix.users
 WHERE id = $1
 `
 
 type GetUserByIDRow struct {
 	PrimaryEmail string    `json:"primary_email"`
+	DisplayName  string    `json:"display_name"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
 	var i GetUserByIDRow
-	err := row.Scan(&i.PrimaryEmail, &i.CreatedAt)
+	err := row.Scan(&i.PrimaryEmail, &i.DisplayName, &i.CreatedAt)
 	return i, err
 }
 
@@ -106,7 +110,7 @@ func (q *Queries) InsertAuthIdentity(ctx context.Context, arg InsertAuthIdentity
 }
 
 const insertRefreshSession = `-- name: InsertRefreshSession :exec
-INSERT INTO mentorix.refresh_sessions (user_id, token_hash, expires_at)
+INSERT INTO mentorix.auth_refresh_sessions (user_id, token_hash, expires_at)
 VALUES ($1, $2, $3)
 `
 
@@ -132,13 +136,18 @@ func (q *Queries) InsertTrainer(ctx context.Context, userID pgtype.UUID) error {
 }
 
 const insertUser = `-- name: InsertUser :one
-INSERT INTO mentorix.users (primary_email)
-VALUES ($1)
+INSERT INTO mentorix.users (primary_email, display_name)
+VALUES ($1, $2)
 RETURNING id
 `
 
-func (q *Queries) InsertUser(ctx context.Context, primaryEmail *string) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, insertUser, primaryEmail)
+type InsertUserParams struct {
+	PrimaryEmail *string `json:"primary_email"`
+	DisplayName  string  `json:"display_name"`
+}
+
+func (q *Queries) InsertUser(ctx context.Context, arg InsertUserParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, insertUser, arg.PrimaryEmail, arg.DisplayName)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -187,7 +196,7 @@ func (q *Queries) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]stri
 }
 
 const revokeAllUserRefreshSessions = `-- name: RevokeAllUserRefreshSessions :exec
-UPDATE mentorix.refresh_sessions
+UPDATE mentorix.auth_refresh_sessions
 SET revoked_at = now()
 WHERE user_id = $1 AND revoked_at IS NULL
 `
@@ -198,7 +207,7 @@ func (q *Queries) RevokeAllUserRefreshSessions(ctx context.Context, userID pgtyp
 }
 
 const revokeRefreshSessionByHash = `-- name: RevokeRefreshSessionByHash :exec
-UPDATE mentorix.refresh_sessions
+UPDATE mentorix.auth_refresh_sessions
 SET revoked_at = now()
 WHERE token_hash = $1
 `
@@ -206,4 +215,23 @@ WHERE token_hash = $1
 func (q *Queries) RevokeRefreshSessionByHash(ctx context.Context, tokenHash []byte) error {
 	_, err := q.db.Exec(ctx, revokeRefreshSessionByHash, tokenHash)
 	return err
+}
+
+const updateUserDisplayName = `-- name: UpdateUserDisplayName :execrows
+UPDATE mentorix.users
+SET display_name = $2
+WHERE id = $1
+`
+
+type UpdateUserDisplayNameParams struct {
+	ID          pgtype.UUID `json:"id"`
+	DisplayName string      `json:"display_name"`
+}
+
+func (q *Queries) UpdateUserDisplayName(ctx context.Context, arg UpdateUserDisplayNameParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUserDisplayName, arg.ID, arg.DisplayName)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

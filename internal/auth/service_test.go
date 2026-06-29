@@ -11,22 +11,23 @@ import (
 )
 
 type fakeAuthStore struct {
-	registerUserID uuid.UUID
-	registerErr    error
-	identity       emailIdentityRow
-	identityErr    error
-	insertSession  error
-	rotateUserID   uuid.UUID
-	rotateErr      error
-	primaryEmail   string
-	primaryErr     error
-	profile        UserProfile
-	profileErr     error
-	revokeErr      error
-	revokeAllErr   error
+	registerUserID       uuid.UUID
+	registerErr          error
+	identity             emailIdentityRow
+	identityErr          error
+	insertSession        error
+	rotateUserID         uuid.UUID
+	rotateErr            error
+	primaryEmail         string
+	primaryErr           error
+	profile              UserProfile
+	profileErr           error
+	updateDisplayNameErr error
+	revokeErr            error
+	revokeAllErr         error
 }
 
-func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _ string) (uuid.UUID, error) {
+func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _, _ string) (uuid.UUID, error) {
 	if f.registerErr != nil {
 		return uuid.Nil, f.registerErr
 	}
@@ -76,6 +77,14 @@ func (f *fakeAuthStore) UserProfile(context.Context, uuid.UUID) (UserProfile, er
 	return f.profile, f.profileErr
 }
 
+func (f *fakeAuthStore) UpdateUserDisplayName(_ context.Context, _ uuid.UUID, name string) error {
+	if f.updateDisplayNameErr != nil {
+		return f.updateDisplayNameErr
+	}
+	f.profile.Name = name
+	return nil
+}
+
 func testAuthService(store authStore) *Service {
 	return &Service{
 		store:      store,
@@ -87,7 +96,7 @@ func testAuthService(store authStore) *Service {
 
 func TestService_RegisterTrainer(t *testing.T) {
 	svc := testAuthService(&fakeAuthStore{})
-	issued, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123")
+	issued, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123", "Trainer")
 	if err != nil {
 		t.Fatalf("RegisterTrainer() error = %v", err)
 	}
@@ -101,7 +110,7 @@ func TestService_RegisterTrainer(t *testing.T) {
 
 func TestService_RegisterTrainer_weakPassword(t *testing.T) {
 	svc := testAuthService(&fakeAuthStore{})
-	_, err := svc.RegisterTrainer(context.Background(), "a@b.com", "short")
+	_, err := svc.RegisterTrainer(context.Background(), "a@b.com", "short", "")
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
@@ -242,9 +251,37 @@ func TestService_UserPrimaryEmail_error(t *testing.T) {
 	}
 }
 
+func TestService_UpdateProfileName(t *testing.T) {
+	want := UserProfile{Email: "a@b.com", Roles: []string{RoleTrainer}}
+	svc := testAuthService(&fakeAuthStore{profile: want})
+	got, err := svc.UpdateProfileName(context.Background(), uuid.New(), "  Coach  ")
+	if err != nil {
+		t.Fatalf("UpdateProfileName() error = %v", err)
+	}
+	if got.Name != "Coach" {
+		t.Errorf("name = %q, want Coach", got.Name)
+	}
+}
+
+func TestService_UpdateProfileName_updateError(t *testing.T) {
+	svc := testAuthService(&fakeAuthStore{updateDisplayNameErr: pgx.ErrNoRows})
+	_, err := svc.UpdateProfileName(context.Background(), uuid.New(), "Coach")
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("UpdateProfileName() error = %v, want ErrNoRows", err)
+	}
+}
+
+func TestService_UpdateProfileName_profileError(t *testing.T) {
+	svc := testAuthService(&fakeAuthStore{profileErr: errors.New("db down")})
+	_, err := svc.UpdateProfileName(context.Background(), uuid.New(), "Coach")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestService_RegisterTrainer_storeError(t *testing.T) {
 	svc := testAuthService(&fakeAuthStore{registerErr: errors.New("db down")})
-	_, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123")
+	_, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123", "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -252,7 +289,7 @@ func TestService_RegisterTrainer_storeError(t *testing.T) {
 
 func TestService_RegisterTrainer_insertSessionError(t *testing.T) {
 	svc := testAuthService(&fakeAuthStore{insertSession: errors.New("db down")})
-	_, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123")
+	_, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123", "")
 	if err == nil {
 		t.Fatal("expected error")
 	}

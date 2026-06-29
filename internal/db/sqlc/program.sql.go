@@ -17,7 +17,11 @@ SELECT COUNT(*)::int AS total
 FROM mentorix.programs
 WHERE deleted_at IS NULL
   AND ($1::uuid IS NULL OR created_by = $1)
-  AND ($2::text IS NULL OR name ILIKE $2 ESCAPE '\')
+  AND (
+    $2::text IS NULL
+    OR name ILIKE $2 ESCAPE '\'
+    OR name_ru ILIKE $2 ESCAPE '\'
+  )
   AND ($3::text[] IS NULL OR status = ANY($3))
   AND ($4::text IS NULL OR category = $4)
   AND ($5::text IS NULL OR difficulty = $5)
@@ -101,7 +105,7 @@ func (q *Queries) DeleteProgramDay(ctx context.Context, arg DeleteProgramDayPara
 
 const exerciseExists = `-- name: ExerciseExists :one
 SELECT EXISTS(
-  SELECT 1 FROM mentorix.exercises WHERE id = $1
+  SELECT 1 FROM mentorix.exercises WHERE id = $1 AND deleted_at IS NULL
 ) AS ok
 `
 
@@ -114,36 +118,60 @@ func (q *Queries) ExerciseExists(ctx context.Context, id pgtype.UUID) (bool, err
 
 const getProgramByID = `-- name: GetProgramByID :one
 SELECT
-  id, created_by, modified_by, status, name, description, category, difficulty,
-  preview_image_url, created_at, modified_at, deleted_at
-FROM mentorix.programs
-WHERE id = $1
+  p.id, p.created_by, p.modified_by, p.status, p.name, p.name_ru, p.description, p.description_ru,
+  p.category, p.difficulty, p.preview_image_url, p.created_at, p.modified_at, p.deleted_at,
+  COALESCE(u.display_name, '') AS created_by_name
+FROM mentorix.programs p
+JOIN mentorix.users u ON u.id = p.created_by
+WHERE p.id = $1
 `
 
-func (q *Queries) GetProgramByID(ctx context.Context, id pgtype.UUID) (MentorixProgram, error) {
+type GetProgramByIDRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	ModifiedBy      pgtype.UUID        `json:"modified_by"`
+	Status          string             `json:"status"`
+	Name            string             `json:"name"`
+	NameRu          string             `json:"name_ru"`
+	Description     string             `json:"description"`
+	DescriptionRu   string             `json:"description_ru"`
+	Category        *string            `json:"category"`
+	Difficulty      *string            `json:"difficulty"`
+	PreviewImageUrl string             `json:"preview_image_url"`
+	CreatedAt       time.Time          `json:"created_at"`
+	ModifiedAt      time.Time          `json:"modified_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	CreatedByName   string             `json:"created_by_name"`
+}
+
+func (q *Queries) GetProgramByID(ctx context.Context, id pgtype.UUID) (GetProgramByIDRow, error) {
 	row := q.db.QueryRow(ctx, getProgramByID, id)
-	var i MentorixProgram
+	var i GetProgramByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.CreatedBy,
 		&i.ModifiedBy,
 		&i.Status,
 		&i.Name,
+		&i.NameRu,
 		&i.Description,
+		&i.DescriptionRu,
 		&i.Category,
 		&i.Difficulty,
 		&i.PreviewImageUrl,
 		&i.CreatedAt,
 		&i.ModifiedAt,
 		&i.DeletedAt,
+		&i.CreatedByName,
 	)
 	return i, err
 }
 
 const insertDayExercise = `-- name: InsertDayExercise :exec
 INSERT INTO mentorix.program_day_exercises (
-  program_day_id, exercise_id, sort_order, sets, reps, weight_kg, instruction
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
+  program_day_id, exercise_id, sort_order, sets, reps, weight_kg, instruction,
+  modified_at, modified_by
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type InsertDayExerciseParams struct {
@@ -154,6 +182,8 @@ type InsertDayExerciseParams struct {
 	Reps         *int32         `json:"reps"`
 	WeightKg     pgtype.Numeric `json:"weight_kg"`
 	Instruction  string         `json:"instruction"`
+	ModifiedAt   time.Time      `json:"modified_at"`
+	ModifiedBy   pgtype.UUID    `json:"modified_by"`
 }
 
 func (q *Queries) InsertDayExercise(ctx context.Context, arg InsertDayExerciseParams) error {
@@ -165,6 +195,8 @@ func (q *Queries) InsertDayExercise(ctx context.Context, arg InsertDayExercisePa
 		arg.Reps,
 		arg.WeightKg,
 		arg.Instruction,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
 	)
 	return err
 }
@@ -326,29 +358,37 @@ func (q *Queries) ListProgramDays(ctx context.Context, programID pgtype.UUID) ([
 
 const listPrograms = `-- name: ListPrograms :many
 SELECT
-  id, created_by, modified_by, status, name, description, category, difficulty,
-  preview_image_url, created_at, modified_at, deleted_at
-FROM mentorix.programs
-WHERE deleted_at IS NULL
-  AND ($1::uuid IS NULL OR created_by = $1)
-  AND ($2::text IS NULL OR name ILIKE $2 ESCAPE '\')
-  AND ($3::text[] IS NULL OR status = ANY($3))
-  AND ($4::text IS NULL OR category = $4)
-  AND ($5::text IS NULL OR difficulty = $5)
+  p.id, p.created_by, p.modified_by, p.status, p.name, p.name_ru, p.description, p.description_ru,
+  p.category, p.difficulty, p.preview_image_url, p.created_at, p.modified_at, p.deleted_at,
+  COALESCE(u.display_name, '') AS created_by_name
+FROM mentorix.programs p
+JOIN mentorix.users u ON u.id = p.created_by
+WHERE p.deleted_at IS NULL
+  AND ($1::uuid IS NULL OR p.created_by = $1)
+  AND (
+    $2::text IS NULL
+    OR p.name ILIKE $2 ESCAPE '\'
+    OR p.name_ru ILIKE $2 ESCAPE '\'
+  )
+  AND ($3::text[] IS NULL OR p.status = ANY($3))
+  AND ($4::text IS NULL OR p.category = $4)
+  AND ($5::text IS NULL OR p.difficulty = $5)
 ORDER BY
-  CASE WHEN $6 = 'name' AND $7 = 'asc' THEN name END ASC NULLS LAST,
-  CASE WHEN $6 = 'name' AND $7 = 'desc' THEN name END DESC NULLS LAST,
-  CASE WHEN $6 = 'created_at' AND $7 = 'asc' THEN created_at END ASC NULLS LAST,
-  CASE WHEN $6 = 'created_at' AND $7 = 'desc' THEN created_at END DESC NULLS LAST,
-  CASE WHEN $6 = 'modified_at' AND $7 = 'asc' THEN modified_at END ASC NULLS LAST,
-  CASE WHEN $6 = 'modified_at' AND $7 = 'desc' THEN modified_at END DESC NULLS LAST,
-  CASE WHEN $6 = 'status' AND $7 = 'asc' THEN status END ASC NULLS LAST,
-  CASE WHEN $6 = 'status' AND $7 = 'desc' THEN status END DESC NULLS LAST,
-  CASE WHEN $6 = 'category' AND $7 = 'asc' THEN category END ASC NULLS LAST,
-  CASE WHEN $6 = 'category' AND $7 = 'desc' THEN category END DESC NULLS LAST,
-  CASE WHEN $6 = 'difficulty' AND $7 = 'asc' THEN difficulty END ASC NULLS LAST,
-  CASE WHEN $6 = 'difficulty' AND $7 = 'desc' THEN difficulty END DESC NULLS LAST,
-  id ASC
+  CASE WHEN $6 = 'name' AND $7 = 'asc' THEN p.name END ASC NULLS LAST,
+  CASE WHEN $6 = 'name' AND $7 = 'desc' THEN p.name END DESC NULLS LAST,
+  CASE WHEN $6 = 'name_ru' AND $7 = 'asc' THEN p.name_ru END ASC NULLS LAST,
+  CASE WHEN $6 = 'name_ru' AND $7 = 'desc' THEN p.name_ru END DESC NULLS LAST,
+  CASE WHEN $6 = 'created_at' AND $7 = 'asc' THEN p.created_at END ASC NULLS LAST,
+  CASE WHEN $6 = 'created_at' AND $7 = 'desc' THEN p.created_at END DESC NULLS LAST,
+  CASE WHEN $6 = 'modified_at' AND $7 = 'asc' THEN p.modified_at END ASC NULLS LAST,
+  CASE WHEN $6 = 'modified_at' AND $7 = 'desc' THEN p.modified_at END DESC NULLS LAST,
+  CASE WHEN $6 = 'status' AND $7 = 'asc' THEN p.status END ASC NULLS LAST,
+  CASE WHEN $6 = 'status' AND $7 = 'desc' THEN p.status END DESC NULLS LAST,
+  CASE WHEN $6 = 'category' AND $7 = 'asc' THEN p.category END ASC NULLS LAST,
+  CASE WHEN $6 = 'category' AND $7 = 'desc' THEN p.category END DESC NULLS LAST,
+  CASE WHEN $6 = 'difficulty' AND $7 = 'asc' THEN p.difficulty END ASC NULLS LAST,
+  CASE WHEN $6 = 'difficulty' AND $7 = 'desc' THEN p.difficulty END DESC NULLS LAST,
+  p.id ASC
 LIMIT $9 OFFSET $8
 `
 
@@ -364,7 +404,25 @@ type ListProgramsParams struct {
 	Limit            int32       `json:"limit"`
 }
 
-func (q *Queries) ListPrograms(ctx context.Context, arg ListProgramsParams) ([]MentorixProgram, error) {
+type ListProgramsRow struct {
+	ID              pgtype.UUID        `json:"id"`
+	CreatedBy       pgtype.UUID        `json:"created_by"`
+	ModifiedBy      pgtype.UUID        `json:"modified_by"`
+	Status          string             `json:"status"`
+	Name            string             `json:"name"`
+	NameRu          string             `json:"name_ru"`
+	Description     string             `json:"description"`
+	DescriptionRu   string             `json:"description_ru"`
+	Category        *string            `json:"category"`
+	Difficulty      *string            `json:"difficulty"`
+	PreviewImageUrl string             `json:"preview_image_url"`
+	CreatedAt       time.Time          `json:"created_at"`
+	ModifiedAt      time.Time          `json:"modified_at"`
+	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	CreatedByName   string             `json:"created_by_name"`
+}
+
+func (q *Queries) ListPrograms(ctx context.Context, arg ListProgramsParams) ([]ListProgramsRow, error) {
 	rows, err := q.db.Query(ctx, listPrograms,
 		arg.FilterCreatedBy,
 		arg.QPattern,
@@ -380,22 +438,25 @@ func (q *Queries) ListPrograms(ctx context.Context, arg ListProgramsParams) ([]M
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MentorixProgram{}
+	items := []ListProgramsRow{}
 	for rows.Next() {
-		var i MentorixProgram
+		var i ListProgramsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.CreatedBy,
 			&i.ModifiedBy,
 			&i.Status,
 			&i.Name,
+			&i.NameRu,
 			&i.Description,
+			&i.DescriptionRu,
 			&i.Category,
 			&i.Difficulty,
 			&i.PreviewImageUrl,
 			&i.CreatedAt,
 			&i.ModifiedAt,
 			&i.DeletedAt,
+			&i.CreatedByName,
 		); err != nil {
 			return nil, err
 		}
@@ -496,7 +557,9 @@ UPDATE mentorix.program_day_exercises SET
   sets = $4,
   reps = $5,
   weight_kg = $6,
-  instruction = $7
+  instruction = $7,
+  modified_at = $8,
+  modified_by = $9
 WHERE id = $1 AND program_day_id = $2
 `
 
@@ -508,6 +571,8 @@ type UpdateDayExerciseParams struct {
 	Reps         *int32         `json:"reps"`
 	WeightKg     pgtype.Numeric `json:"weight_kg"`
 	Instruction  string         `json:"instruction"`
+	ModifiedAt   time.Time      `json:"modified_at"`
+	ModifiedBy   pgtype.UUID    `json:"modified_by"`
 }
 
 func (q *Queries) UpdateDayExercise(ctx context.Context, arg UpdateDayExerciseParams) (int64, error) {
@@ -519,6 +584,8 @@ func (q *Queries) UpdateDayExercise(ctx context.Context, arg UpdateDayExercisePa
 		arg.Reps,
 		arg.WeightKg,
 		arg.Instruction,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
 	)
 	if err != nil {
 		return 0, err
@@ -531,18 +598,22 @@ UPDATE mentorix.programs SET
   modified_by = $1,
   modified_at = $2,
   name = COALESCE($3, name),
-  description = COALESCE($4, description),
-  category = COALESCE($5, category),
-  difficulty = COALESCE($6, difficulty),
-  preview_image_url = COALESCE($7, preview_image_url)
-WHERE id = $8 AND deleted_at IS NULL
+  name_ru = COALESCE($4, name_ru),
+  description = COALESCE($5, description),
+  description_ru = COALESCE($6, description_ru),
+  category = COALESCE($7, category),
+  difficulty = COALESCE($8, difficulty),
+  preview_image_url = COALESCE($9, preview_image_url)
+WHERE id = $10 AND deleted_at IS NULL
 `
 
 type UpdateProgramParams struct {
 	ModifiedBy      pgtype.UUID `json:"modified_by"`
 	ModifiedAt      time.Time   `json:"modified_at"`
 	Name            *string     `json:"name"`
+	NameRu          *string     `json:"name_ru"`
 	Description     *string     `json:"description"`
+	DescriptionRu   *string     `json:"description_ru"`
 	Category        *string     `json:"category"`
 	Difficulty      *string     `json:"difficulty"`
 	PreviewImageUrl *string     `json:"preview_image_url"`
@@ -554,7 +625,9 @@ func (q *Queries) UpdateProgram(ctx context.Context, arg UpdateProgramParams) (i
 		arg.ModifiedBy,
 		arg.ModifiedAt,
 		arg.Name,
+		arg.NameRu,
 		arg.Description,
+		arg.DescriptionRu,
 		arg.Category,
 		arg.Difficulty,
 		arg.PreviewImageUrl,

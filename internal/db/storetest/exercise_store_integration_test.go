@@ -28,7 +28,7 @@ func TestExerciseStore_CreateAndList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-store@test.com", pwHash)
+	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-store@test.com", pwHash, "Exercise Admin")
 	if err != nil {
 		t.Fatalf("register trainer: %v", err)
 	}
@@ -46,6 +46,9 @@ func TestExerciseStore_CreateAndList(t *testing.T) {
 	}
 	if created.Name != "Back Squat" {
 		t.Errorf("name = %q, want Back Squat", created.Name)
+	}
+	if created.CreatedByName != "Exercise Admin" {
+		t.Errorf("created_by_name = %q, want Exercise Admin", created.CreatedByName)
 	}
 
 	params, err := exercise.ParseListParams("1", "20", "name", "asc", "squat", "", "", "", "")
@@ -80,7 +83,7 @@ func TestExerciseStore_GetUpdateDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-crud@test.com", pwHash)
+	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-crud@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -120,12 +123,17 @@ func TestExerciseStore_GetUpdateDelete(t *testing.T) {
 		t.Errorf("updated name = %q", updated.Name)
 	}
 
-	n, err := store.DeleteMany(ctx, []uuid.UUID{created.ID})
+	n, err := store.DeleteMany(ctx, userID, []uuid.UUID{created.ID})
 	if err != nil {
 		t.Fatalf("DeleteMany() error = %v", err)
 	}
 	if n != 1 {
 		t.Errorf("deleted = %d, want 1", n)
+	}
+
+	_, err = store.GetByID(ctx, created.ID)
+	if err == nil {
+		t.Fatal("GetByID() after soft delete: expected not found")
 	}
 }
 
@@ -147,7 +155,7 @@ func TestExerciseStore_ListWithFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-filter@test.com", pwHash)
+	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-filter@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -176,6 +184,62 @@ func TestExerciseStore_ListWithFilters(t *testing.T) {
 	}
 	if result.Pagination.Total < 1 {
 		t.Fatalf("total = %d, want at least 1", result.Pagination.Total)
+	}
+}
+
+func TestExerciseService_adminMutatesOtherUsersExercise(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	ownerID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-owner@test.com", pwHash, "Owner")
+	if err != nil {
+		t.Fatalf("register owner: %v", err)
+	}
+	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-admin@test.com", pwHash, "Admin")
+	if err != nil {
+		t.Fatalf("register admin: %v", err)
+	}
+	if err := authStore.GrantRole(ctx, ownerID, auth.RoleAdmin); err != nil {
+		t.Fatalf("grant admin owner: %v", err)
+	}
+	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
+		t.Fatalf("grant admin: %v", err)
+	}
+
+	svc := exercise.NewService(pool)
+	created, err := svc.Create(ctx, ownerID, exercise.UpsertInput{
+		Name:        "Lunge",
+		NameRu:      "Выпад",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupLegs,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	updatedName := "Walking Lunge"
+	if _, err := svc.Update(ctx, created.ID, adminID, exercise.UpsertInput{
+		Name:        updatedName,
+		NameRu:      created.NameRu,
+		Type:        created.Type,
+		MuscleGroup: created.MuscleGroup,
+		Difficulty:  created.Difficulty,
+	}); err != nil {
+		t.Fatalf("Update() by other admin error = %v", err)
+	}
+
+	n, err := svc.DeleteMany(ctx, adminID, []uuid.UUID{created.ID})
+	if err != nil {
+		t.Fatalf("DeleteMany() by other admin error = %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("deleted_count = %d, want 1", n)
 	}
 }
 

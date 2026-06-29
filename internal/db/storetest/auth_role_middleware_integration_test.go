@@ -20,7 +20,7 @@ func TestTrainerMiddleware_allowsRegisteredTrainer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(ctx, "middleware-trainer@test.com", hash)
+	userID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(ctx, "middleware-trainer@test.com", hash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestAdminMiddleware_deniesTrainerWithoutAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(ctx, "middleware-no-admin@test.com", hash)
+	userID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(ctx, "middleware-no-admin@test.com", hash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}

@@ -7,10 +7,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"mentorix-backend/internal/auth"
+	"mentorix-backend/internal/db/sqlc"
 )
 
 type programStore interface {
-	IsAdmin(ctx context.Context, userID uuid.UUID) (bool, error)
 	CreateDraft(ctx context.Context, userID uuid.UUID) (Detail, error)
 	List(ctx context.Context, params ListParams) (ListResult, error)
 	GetProgramRow(ctx context.Context, id uuid.UUID) (Program, error)
@@ -20,17 +22,21 @@ type programStore interface {
 	SoftDelete(ctx context.Context, id, userID uuid.UUID) error
 	AddDay(ctx context.Context, programID uuid.UUID) (Detail, error)
 	DeleteDay(ctx context.Context, programID, dayID uuid.UUID) (Detail, error)
-	AddDayExercise(ctx context.Context, programID, dayID uuid.UUID, in DayExerciseInput) (Detail, error)
-	UpdateDayExercise(ctx context.Context, programID, dayID, itemID uuid.UUID, in DayExerciseInput) (Detail, error)
+	AddDayExercise(ctx context.Context, userID, programID, dayID uuid.UUID, in DayExerciseInput) (Detail, error)
+	UpdateDayExercise(ctx context.Context, userID, programID, dayID, itemID uuid.UUID, in DayExerciseInput) (Detail, error)
 	DeleteDayExercise(ctx context.Context, programID, dayID, itemID uuid.UUID) (Detail, error)
 }
 
 type Service struct {
 	store programStore
+	roles auth.RoleQuerier
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{store: NewStore(pool)}
+	return &Service{
+		store: NewStore(pool),
+		roles: sqlc.New(pool),
+	}
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID) (Detail, error) {
@@ -38,7 +44,7 @@ func (s *Service) Create(ctx context.Context, userID uuid.UUID) (Detail, error) 
 }
 
 func (s *Service) List(ctx context.Context, userID uuid.UUID, params ListParams) (ListResult, error) {
-	isAdmin, err := s.store.IsAdmin(ctx, userID)
+	isAdmin, err := auth.UserIsAdmin(ctx, s.roles, userID)
 	if err != nil {
 		return ListResult{}, err
 	}
@@ -190,7 +196,7 @@ func (s *Service) AddDayExercise(ctx context.Context, userID, programID, dayID u
 	if err := s.ensureMutable(ctx, userID, programID); err != nil {
 		return Detail{}, err
 	}
-	d, err := s.store.AddDayExercise(ctx, programID, dayID, in)
+	d, err := s.store.AddDayExercise(ctx, userID, programID, dayID, in)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound
@@ -207,7 +213,7 @@ func (s *Service) UpdateDayExercise(ctx context.Context, userID, programID, dayI
 	if err := s.ensureMutable(ctx, userID, programID); err != nil {
 		return Detail{}, err
 	}
-	d, err := s.store.UpdateDayExercise(ctx, programID, dayID, itemID, in)
+	d, err := s.store.UpdateDayExercise(ctx, userID, programID, dayID, itemID, in)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound
@@ -250,15 +256,9 @@ func (s *Service) ensureMutable(ctx context.Context, userID, programID uuid.UUID
 }
 
 func (s *Service) ensureOwnerOrAdmin(ctx context.Context, userID, ownerID uuid.UUID) error {
-	if userID == ownerID {
-		return nil
-	}
-	isAdmin, err := s.store.IsAdmin(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if !isAdmin {
+	err := auth.EnsureOwnerOrAdmin(ctx, s.roles, userID, ownerID)
+	if errors.Is(err, auth.ErrForbidden) {
 		return ErrForbidden
 	}
-	return nil
+	return err
 }

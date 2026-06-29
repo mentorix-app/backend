@@ -20,7 +20,7 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-day@test.com", pwHash)
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-day@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestProgramService_ListAndArchive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-list@test.com", pwHash)
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-list@test.com", pwHash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}

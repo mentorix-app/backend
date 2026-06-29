@@ -12,7 +12,7 @@ type exerciseStore interface {
 	GetByID(ctx context.Context, id uuid.UUID) (Exercise, error)
 	Create(ctx context.Context, userID uuid.UUID, in UpsertInput) (Exercise, error)
 	Update(ctx context.Context, id, userID uuid.UUID, in UpsertInput) (Exercise, error)
-	DeleteMany(ctx context.Context, ids []uuid.UUID) (int64, error)
+	DeleteMany(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error)
 }
 
 type Service struct {
@@ -45,6 +45,6 @@ func (s *Service) Update(ctx context.Context, id, userID uuid.UUID, in UpsertInp
 	return s.store.Update(ctx, id, userID, in)
 }
 
-func (s *Service) DeleteMany(ctx context.Context, ids []uuid.UUID) (int64, error) {
-	return s.store.DeleteMany(ctx, ids)
+func (s *Service) DeleteMany(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (int64, error) {
+	return s.store.DeleteMany(ctx, userID, ids)
 }

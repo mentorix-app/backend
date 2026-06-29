@@ -20,6 +20,7 @@ const (
 
 var allowedSortColumns = map[string]string{
 	"name":        "name",
+	"name_ru":     "name_ru",
 	"created_at":  "created_at",
 	"modified_at": "modified_at",
 	"status":      "status",

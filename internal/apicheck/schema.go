@@ -23,6 +23,8 @@ func schemaBindings() []schemaBinding {
 		}{})},
 		{name: "ReadyResponse", typ: reflect.TypeOf(health.ReadyResponse{})},
 		{name: "AuthCredentials", typ: reflect.TypeOf(auth.AuthCredentials{})},
+		{name: "RegisterRequest", typ: reflect.TypeOf(auth.RegisterRequest{})},
+		{name: "MePatchRequest", typ: reflect.TypeOf(auth.MePatchRequest{})},
 		{name: "TokenResponse", typ: reflect.TypeOf(auth.TokenResponse{})},
 		{name: "MeResponse", typ: reflect.TypeOf(auth.MeResponse{})},
 		{name: "ExerciseListResponse", typ: reflect.TypeOf(exercise.ListResult{})},
@@ -53,7 +55,9 @@ func schemaBindings() []schemaBinding {
 		{name: "ProgramListResponse", typ: reflect.TypeOf(program.ListResult{})},
 		{name: "ProgramPatch", typ: reflect.TypeOf(struct {
 			Name            *string              `json:"name"`
+			NameRu          *string              `json:"name_ru"`
 			Description     *string              `json:"description"`
+			DescriptionRu   *string              `json:"description_ru"`
 			Category        *program.Category    `json:"category"`
 			Difficulty      *exercise.Difficulty `json:"difficulty"`
 			PreviewImageURL *string              `json:"preview_image_url"`

@@ -35,7 +35,7 @@ func (s *stubExerciseStore) Update(context.Context, uuid.UUID, uuid.UUID, Upsert
 	return s.update, s.updateErr
 }
 
-func (s *stubExerciseStore) DeleteMany(context.Context, []uuid.UUID) (int64, error) {
+func (s *stubExerciseStore) DeleteMany(context.Context, uuid.UUID, []uuid.UUID) (int64, error) {
 	return 0, nil
 }
 

@@ -27,8 +27,12 @@ func (s *listProgramStore) List(_ context.Context, params ListParams) (ListResul
 	return ListResult{Items: []Program{}}, nil
 }
 
-func (s *listProgramStore) IsAdmin(context.Context, uuid.UUID) (bool, error) {
-	return true, nil
+func programHandler(store programStore) *Handlers {
+	return programHandlerWithRoles(store, &fakeRoleQuerier{isAdmin: true})
+}
+
+func programHandlerWithRoles(store programStore, roles *fakeRoleQuerier) *Handlers {
+	return &Handlers{svc: &Service{store: store, roles: roles}}
 }
 
 func publishableDetail(userID, programID uuid.UUID) Detail {
@@ -71,14 +75,10 @@ func sampleDetail(userID, programID uuid.UUID) Detail {
 }
 
 func TestNewHandlers(t *testing.T) {
-	h := NewHandlers(&Service{store: &fakeProgramStore{}}, nil, "test-jwt-secret-at-least-32-chars")
+	h := NewHandlers(testService(&fakeProgramStore{}, nil), nil, "test-jwt-secret-at-least-32-chars")
 	if h == nil {
 		t.Fatal("expected handlers")
 	}
-}
-
-func programHandler(store programStore) *Handlers {
-	return &Handlers{svc: &Service{store: store}}
 }
 
 func TestHandlers_Mount_registersRoutes(t *testing.T) {
@@ -239,8 +239,8 @@ func TestHandlers_Get_forbidden(t *testing.T) {
 	otherID := uuid.New()
 	programID := uuid.New()
 	detail := sampleDetail(ownerID, programID)
-	store := &fakeProgramStore{program: detail.Program, detail: detail, isAdmin: false}
-	h := programHandler(store)
+	store := &fakeProgramStore{program: detail.Program, detail: detail}
+	h := programHandlerWithRoles(store, &fakeRoleQuerier{isAdmin: false})
 
 	e := echo.New()
 	c, _ := programContext(e, http.MethodGet, "/programs/"+programID.String(), "", otherID, map[string]string{"id": programID.String()})
@@ -532,6 +532,7 @@ func TestHandlers_Get_mapsServiceErrors(t *testing.T) {
 	tests := []struct {
 		name  string
 		store *fakeProgramStore
+		roles *fakeRoleQuerier
 		code  int
 	}{
 		{
@@ -542,10 +543,10 @@ func TestHandlers_Get_mapsServiceErrors(t *testing.T) {
 		{
 			name: "forbidden",
 			store: &fakeProgramStore{
-				isAdmin: false,
 				program: Program{ID: programID, CreatedBy: uuid.New()},
 			},
-			code: http.StatusForbidden,
+			roles: &fakeRoleQuerier{isAdmin: false},
+			code:  http.StatusForbidden,
 		},
 		{
 			name: "internal",
@@ -558,7 +559,11 @@ func TestHandlers_Get_mapsServiceErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := programHandler(tt.store)
+			roles := tt.roles
+			if roles == nil {
+				roles = &fakeRoleQuerier{isAdmin: true}
+			}
+			h := programHandlerWithRoles(tt.store, roles)
 			e := echo.New()
 			c, _ := programContext(e, http.MethodGet, "/programs/"+programID.String(), "", userID, map[string]string{"id": programID.String()})
 			err := h.Get(c)

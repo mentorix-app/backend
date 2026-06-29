@@ -29,7 +29,7 @@ func (s *deleteManyStore) Update(context.Context, uuid.UUID, uuid.UUID, UpsertIn
 	panic("not implemented")
 }
 
-func (s *deleteManyStore) DeleteMany(context.Context, []uuid.UUID) (int64, error) {
+func (s *deleteManyStore) DeleteMany(context.Context, uuid.UUID, []uuid.UUID) (int64, error) {
 	if s.err != nil {
 		return 0, s.err
 	}
@@ -39,7 +39,7 @@ func (s *deleteManyStore) DeleteMany(context.Context, []uuid.UUID) (int64, error
 func TestService_DeleteMany(t *testing.T) {
 	t.Run("returns count", func(t *testing.T) {
 		svc := &Service{store: &deleteManyStore{count: 5}}
-		count, err := svc.DeleteMany(context.Background(), []uuid.UUID{uuid.New()})
+		count, err := svc.DeleteMany(context.Background(), uuid.New(), []uuid.UUID{uuid.New()})
 		if err != nil {
 			t.Fatalf("DeleteMany: %v", err)
 		}
@@ -51,7 +51,7 @@ func TestService_DeleteMany(t *testing.T) {
 	t.Run("propagates error", func(t *testing.T) {
 		want := errors.New("delete failed")
 		svc := &Service{store: &deleteManyStore{err: want}}
-		_, err := svc.DeleteMany(context.Background(), []uuid.UUID{uuid.New()})
+		_, err := svc.DeleteMany(context.Background(), uuid.New(), []uuid.UUID{uuid.New()})
 		if !errors.Is(err, want) {
 			t.Fatalf("err = %v, want %v", err, want)
 		}

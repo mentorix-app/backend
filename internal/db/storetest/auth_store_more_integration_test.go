@@ -19,7 +19,7 @@ func TestAuthStore_RevokeAndGrantRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := store.RegisterTrainerEmailPassword(ctx, "grant@test.com", hash)
+	userID, err := store.RegisterTrainerEmailPassword(ctx, "grant@test.com", hash, "")
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}

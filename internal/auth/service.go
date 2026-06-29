@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,7 +13,7 @@ import (
 )
 
 type authStore interface {
-	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash string) (uuid.UUID, error)
+	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error)
 	getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error)
 	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
 	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, error)
@@ -20,6 +21,7 @@ type authStore interface {
 	RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error
 	UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error)
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
+	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
 }
 
 type Service struct {
@@ -46,7 +48,11 @@ func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time
 	}
 }
 
-func (s *Service) RegisterTrainer(ctx context.Context, email, password string) (IssuedAuth, error) {
+func normalizeDisplayName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func (s *Service) RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error) {
 	var out IssuedAuth
 	if err := ValidatePassword(password); err != nil {
 		return out, err
@@ -55,7 +61,7 @@ func (s *Service) RegisterTrainer(ctx context.Context, email, password string) (
 	if err != nil {
 		return out, fmt.Errorf("hash password: %w", err)
 	}
-	userID, err := s.store.RegisterTrainerEmailPassword(ctx, email, hash)
+	userID, err := s.store.RegisterTrainerEmailPassword(ctx, email, hash, normalizeDisplayName(name))
 	if err != nil {
 		return out, err
 	}
@@ -165,5 +171,12 @@ func (s *Service) UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (strin
 }
 
 func (s *Service) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
+	return s.store.UserProfile(ctx, userID)
+}
+
+func (s *Service) UpdateProfileName(ctx context.Context, userID uuid.UUID, name string) (UserProfile, error) {
+	if err := s.store.UpdateUserDisplayName(ctx, userID, normalizeDisplayName(name)); err != nil {
+		return UserProfile{}, err
+	}
 	return s.store.UserProfile(ctx, userID)
 }
