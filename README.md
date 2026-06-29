@@ -108,7 +108,7 @@ make test-integration
 
 ## Test coverage
 
-Merged coverage (unit tests + store integration) for `internal/**` excluding `internal/db/sqlc`. Minimum **85%** enforced in CI.
+Merged coverage (unit tests + store integration) for `internal/**` excluding `internal/db/sqlc` and `internal/seed`. Minimum **85%** enforced in CI.
 
 ```bash
 make coverage          # report only

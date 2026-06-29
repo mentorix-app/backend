@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measure test coverage for internal packages (excludes internal/db/sqlc and cmd/api).
+# Measure test coverage for internal packages (excludes internal/db/sqlc, internal/seed, cmd/api).
 #
 # Usage:
 #   ./scripts/coverage.sh              report only
@@ -44,7 +44,7 @@ trap 'rm -rf "$tmp"' EXIT
 packages=()
 while IFS= read -r pkg; do
   packages+=("$pkg")
-done < <(go list ./internal/... | grep -v '/sqlc$')
+done < <(go list ./internal/... | grep -v '/sqlc$' | grep -v '/seed$')
 if ((${#packages[@]} == 0)); then
   echo "No packages to measure" >&2
   exit 1
