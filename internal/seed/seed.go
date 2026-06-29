@@ -78,6 +78,9 @@ func ensureUser(ctx context.Context, authStore *auth.Store, q *sqlc.Queries) (uu
 		return uuid.Nil, false, fmt.Errorf("lookup user: %w", err)
 	}
 	userID = pgconv.FromPGUUID(row.UserID)
+	if err := authStore.UpdateUserDisplayName(ctx, userID, DevDisplayName); err != nil {
+		return uuid.Nil, false, fmt.Errorf("update display name: %w", err)
+	}
 	if err := authStore.GrantRole(ctx, userID, auth.RoleAdmin); err != nil {
 		return uuid.Nil, false, fmt.Errorf("grant admin: %w", err)
 	}
