@@ -13,7 +13,7 @@ SQLC_VERSION ?= v1.29.0
 LINT_VERSION ?= v1.62.2
 AIR_VERSION ?= v1.61.7
 
-.PHONY: help dev run build setup docker-up docker-down \
+.PHONY: help dev run build setup seed docker-up docker-down \
 	migrate migrate-down migrate-version migrate-check \
 	schema-sync sqlc generate \
 	test test-integration vet fmt lint \
@@ -35,6 +35,9 @@ run: ## Run API once (go run)
 build: ## Build API binary to bin/api
 	@mkdir -p bin
 	go build -o bin/api ./cmd/api
+
+seed: ## Seed database from .env DATABASE_URL (remote: SEED_CONFIRM=yes)
+	go run ./cmd/seed
 
 setup: docker-up ## First-time local setup: compose, .env, migrations
 	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example")

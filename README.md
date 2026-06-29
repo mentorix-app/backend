@@ -35,15 +35,15 @@ Check:
 Import from `postman/`:
 
 - `mentorix-backend.postman_collection.json`
-- `mentorix-local.postman_environment.json` — local API (`password123` for `trainer@test.com` is in the file)
-- `mentorix-render-dev.postman_environment.json` — Render dev URL; **`user_password` is empty in git**
+- `mentorix-local.postman_environment.json` — local API (`dev-trainer@test.com` / `Password123`)
+- `mentorix-render-dev.postman_environment.json` — Render dev URL (same dev account credentials)
 
 For **Render dev**, after import set in Postman → Environments → **Mentorix Render Dev**:
 
-- `user_email` — your account on that deployment (default in file: `dev-trainer@test.com`)
-- `user_password` — your password (**not** stored in the repository; set once in Postman on your machine)
+- `user_email` — `dev-trainer@test.com` (default in file)
+- `user_password` — `Password123` (dev-only; run `make seed` on that database first)
 
-Do not re-export the Render environment into git with a filled password.
+Do not use these credentials in production.
 
 Select environment, then: Login → Me → List exercises.
 
@@ -65,6 +65,25 @@ make migrate-down          # default N=1; e.g. make migrate-down N=2
 make migrate-version
 make migrate-check         # verify DB matches latest migration in repo
 ```
+
+### Dev seed data
+
+After migrations, load the shared dev account, ~30 exercises, and ~20 programs (idempotent):
+
+```bash
+make seed
+```
+
+Credentials (local and Render dev): `dev-trainer@test.com` / `Password123`.
+
+For a **remote** database (e.g. Render External `DATABASE_URL` in `.env`):
+
+```bash
+make migrate
+SEED_CONFIRM=yes make seed
+```
+
+Restore localhost `DATABASE_URL` in `.env` when done.
 
 After changing Compose Postgres credentials, run `docker compose down -v` and update `DATABASE_URL` in `.env`.
 

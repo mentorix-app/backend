@@ -66,7 +66,7 @@ BASE="http://localhost:8080"
 if curl -sf "$BASE/health" > /dev/null 2>&1; then
   echo "  GET /health OK"
   curl -sf "$BASE/health/ready" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status') in ('ready','not_ready','no_dependencies_configured'); print('  GET /health/ready OK:', d['status'])"
-  TOKEN=$(curl -sf -X POST "$BASE/auth/login" -H "Content-Type: application/json" -d '{"email":"trainer@test.com","password":"password123"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
+  TOKEN=$(curl -sf -X POST "$BASE/auth/login" -H "Content-Type: application/json" -d '{"email":"dev-trainer@test.com","password":"Password123"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
   if [ -n "$TOKEN" ]; then
     echo "  POST /auth/login OK"
     curl -sf -H "Authorization: Bearer $TOKEN" "$BASE/auth/me" | python3 -c "import sys,json; d=json.load(sys.stdin); print('  GET /auth/me OK: roles=', d.get('roles'))"
