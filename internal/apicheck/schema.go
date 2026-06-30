@@ -49,6 +49,7 @@ func schemaBindings() []schemaBinding {
 			PreviewImageURL string                `json:"preview_image_url"`
 		}{})},
 		{name: "Program", typ: reflect.TypeOf(program.Program{})},
+		{name: "ProgramWeek", typ: reflect.TypeOf(program.Week{})},
 		{name: "ProgramDayExercise", typ: reflect.TypeOf(program.DayExercise{})},
 		{name: "ProgramDay", typ: reflect.TypeOf(program.Day{})},
 		{name: "ProgramDetail", typ: reflect.TypeOf(program.Detail{})},
@@ -61,6 +62,18 @@ func schemaBindings() []schemaBinding {
 			Category        *program.Category    `json:"category"`
 			Difficulty      *exercise.Difficulty `json:"difficulty"`
 			PreviewImageURL *string              `json:"preview_image_url"`
+		}{})},
+		{name: "ProgramWeeksReorder", typ: reflect.TypeOf(struct {
+			WeekIDs []string `json:"week_ids"`
+		}{})},
+		{name: "ProgramDaysReorder", typ: reflect.TypeOf(struct {
+			DayIDs []string `json:"day_ids"`
+		}{})},
+		{name: "ProgramWeekExercisesReorder", typ: reflect.TypeOf(struct {
+			Days []struct {
+				DayID           string   `json:"day_id"`
+				ExerciseItemIDs []string `json:"exercise_item_ids"`
+			} `json:"days"`
 		}{})},
 		{name: "ProgramDayExerciseUpsert", typ: reflect.TypeOf(struct {
 			ExerciseID  string   `json:"exercise_id"`

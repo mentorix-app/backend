@@ -16,7 +16,13 @@ var (
 	ErrForbidden               = errors.New("forbidden")
 	ErrNotFound                = errors.New("program not found")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
+	ErrLastWeek                = errors.New("cannot delete the last week")
+	ErrLastDay                 = errors.New("cannot delete the last day in week")
+	ErrMaxDaysPerWeek          = errors.New("week cannot have more than 7 days")
+	ErrInvalidReorder          = errors.New("invalid reorder")
 )
+
+const DefaultWeekDays = 7
 
 type Status string
 
@@ -69,6 +75,14 @@ type DayExercise struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
+type Week struct {
+	ID         uuid.UUID `json:"id"`
+	WeekNumber int       `json:"week_number"`
+	SortOrder  int       `json:"sort_order"`
+	Days       []Day     `json:"days"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type Day struct {
 	ID        uuid.UUID     `json:"id"`
 	DayNumber int           `json:"day_number"`
@@ -79,7 +93,7 @@ type Day struct {
 
 type Detail struct {
 	Program
-	Days []Day `json:"days"`
+	Weeks []Week `json:"weeks"`
 }
 
 type UpdateInput struct {
@@ -98,6 +112,11 @@ type DayExerciseInput struct {
 	Reps        *int
 	WeightKg    *float64
 	Instruction *string
+}
+
+type WeekExerciseReorderDay struct {
+	DayID           uuid.UUID
+	ExerciseItemIDs []uuid.UUID
 }
 
 func (s Status) valid() bool {
@@ -168,22 +187,29 @@ func validatePublishDetail(d Detail) error {
 	if d.Difficulty == nil {
 		return fmt.Errorf("%w: difficulty is required", ErrValidation)
 	}
-	if len(d.Days) == 0 {
-		return fmt.Errorf("%w: at least one day is required", ErrValidation)
+	if len(d.Weeks) == 0 {
+		return fmt.Errorf("%w: at least one week is required", ErrValidation)
 	}
-	for _, day := range d.Days {
-		if len(day.Exercises) == 0 {
-			return fmt.Errorf("%w: day %d must have at least one exercise", ErrValidation, day.DayNumber)
+	for _, week := range d.Weeks {
+		hasTrainingDay := false
+		for _, day := range week.Days {
+			if len(day.Exercises) == 0 {
+				continue
+			}
+			hasTrainingDay = true
+			for _, ex := range day.Exercises {
+				in := DayExerciseInput{
+					ExerciseID: ex.ExerciseID,
+					Sets:       ex.Sets,
+					Reps:       ex.Reps,
+				}
+				if err := in.ValidatePublish(); err != nil {
+					return err
+				}
+			}
 		}
-		for _, ex := range day.Exercises {
-			in := DayExerciseInput{
-				ExerciseID: ex.ExerciseID,
-				Sets:       ex.Sets,
-				Reps:       ex.Reps,
-			}
-			if err := in.ValidatePublish(); err != nil {
-				return err
-			}
+		if !hasTrainingDay {
+			return fmt.Errorf("%w: week %d must have at least one day with exercises", ErrValidation, week.WeekNumber)
 		}
 	}
 	return nil

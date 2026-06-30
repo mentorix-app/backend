@@ -66,12 +66,15 @@ func TestValidatePublishDetail(t *testing.T) {
 
 	d := Detail{
 		Program: Program{Name: "Test", Category: &category, Difficulty: &difficulty},
-		Days: []Day{{
-			DayNumber: 1,
-			Exercises: []DayExercise{{
-				ExerciseID: uuid.New(),
-				Sets:       &sets,
-				Reps:       &reps,
+		Weeks: []Week{{
+			WeekNumber: 1,
+			Days: []Day{{
+				DayNumber: 1,
+				Exercises: []DayExercise{{
+					ExerciseID: uuid.New(),
+					Sets:       &sets,
+					Reps:       &reps,
+				}},
 			}},
 		}},
 	}

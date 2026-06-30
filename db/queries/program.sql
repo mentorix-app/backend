@@ -3,9 +3,14 @@ INSERT INTO mentorix.programs (created_by, modified_by, status, modified_at)
 VALUES ($1, $1, $2, $3)
 RETURNING id;
 
+-- name: InsertProgramWeek :one
+INSERT INTO mentorix.program_weeks (program_id, week_number, sort_order, modified_at, modified_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id;
+
 -- name: InsertProgramDay :one
-INSERT INTO mentorix.program_days (program_id, day_number, sort_order)
-VALUES ($1, $2, $3)
+INSERT INTO mentorix.program_days (program_id, week_id, day_number, sort_order)
+VALUES ($1, $2, $3, $4)
 RETURNING id;
 
 -- name: GetProgramByID :one
@@ -93,20 +98,48 @@ UPDATE mentorix.programs SET
   modified_at = $2
 WHERE id = $1 AND deleted_at IS NULL;
 
--- name: NextProgramDayNumbers :one
+-- name: NextProgramWeekNumbers :one
+SELECT
+  COALESCE(MAX(week_number), 0) + 1::int AS next_week_number,
+  COALESCE(MAX(sort_order), 0) + 1::int AS next_sort_order
+FROM mentorix.program_weeks
+WHERE program_id = $1;
+
+-- name: ListProgramWeeks :many
+SELECT id, week_number, sort_order, created_at
+FROM mentorix.program_weeks
+WHERE program_id = $1
+ORDER BY sort_order ASC, week_number ASC;
+
+-- name: CountProgramWeeks :one
+SELECT COUNT(*)::int AS count
+FROM mentorix.program_weeks
+WHERE program_id = $1;
+
+-- name: DeleteProgramWeek :execrows
+DELETE FROM mentorix.program_weeks
+WHERE id = $1 AND program_id = $2;
+
+-- name: WeekBelongsToProgram :one
+SELECT EXISTS(
+  SELECT 1 FROM mentorix.program_weeks
+  WHERE id = $1 AND program_id = $2
+) AS ok;
+
+-- name: NextProgramDayNumbersForWeek :one
 SELECT
   COALESCE(MAX(day_number), 0) + 1::int AS next_day_number,
   COALESCE(MAX(sort_order), 0) + 1::int AS next_sort_order
 FROM mentorix.program_days
-WHERE program_id = $1;
+WHERE week_id = $1;
 
 -- name: InsertProgramDayAuto :exec
-INSERT INTO mentorix.program_days (program_id, day_number, sort_order)
-VALUES ($1, $2, $3);
+INSERT INTO mentorix.program_days (program_id, week_id, day_number, sort_order)
+VALUES ($1, $2, $3, $4);
 
 -- name: DeleteProgramDay :execrows
 DELETE FROM mentorix.program_days
-WHERE id = $1 AND program_id = $2;
+WHERE id = $1 AND program_id = $2 AND week_id = $3;
 
 -- name: DayBelongsToProgram :one
 SELECT EXISTS(
@@ -114,15 +147,26 @@ SELECT EXISTS(
   WHERE id = $1 AND program_id = $2
 ) AS ok;
 
+-- name: DayBelongsToWeek :one
+SELECT EXISTS(
+  SELECT 1 FROM mentorix.program_days
+  WHERE id = $1 AND week_id = $2 AND program_id = $3
+) AS ok;
+
+-- name: CountProgramDaysForWeek :one
+SELECT COUNT(*)::int AS count
+FROM mentorix.program_days
+WHERE week_id = $1;
+
 -- name: ExerciseExists :one
 SELECT EXISTS(
   SELECT 1 FROM mentorix.exercises WHERE id = $1 AND deleted_at IS NULL
 ) AS ok;
 
--- name: ListProgramDays :many
+-- name: ListProgramDaysForWeek :many
 SELECT id, day_number, sort_order, created_at
 FROM mentorix.program_days
-WHERE program_id = $1
+WHERE week_id = $1
 ORDER BY sort_order ASC, day_number ASC;
 
 -- name: ListDayExercises :many
@@ -167,3 +211,41 @@ WHERE id = $1 AND program_day_id = $2;
 -- name: DeleteDayExercise :execrows
 DELETE FROM mentorix.program_day_exercises
 WHERE id = $1 AND program_day_id = $2;
+
+-- name: UpdateProgramWeekOrder :exec
+UPDATE mentorix.program_weeks SET
+  sort_order = $3,
+  week_number = $4
+WHERE id = $1 AND program_id = $2;
+
+-- name: UpdateProgramDayOrder :exec
+UPDATE mentorix.program_days SET
+  sort_order = $3,
+  day_number = $4
+WHERE id = $1 AND week_id = $2;
+
+-- name: UpdateDayExercisePlacement :exec
+UPDATE mentorix.program_day_exercises SET
+  program_day_id = $2,
+  sort_order = $3,
+  modified_at = $4,
+  modified_by = $5
+WHERE id = $1;
+
+-- name: ListExerciseItemsByWeek :many
+SELECT pde.id, pde.program_day_id
+FROM mentorix.program_day_exercises pde
+JOIN mentorix.program_days pd ON pd.id = pde.program_day_id
+WHERE pd.week_id = $1;
+
+-- name: ListProgramWeekIDs :many
+SELECT id
+FROM mentorix.program_weeks
+WHERE program_id = $1
+ORDER BY sort_order ASC, week_number ASC;
+
+-- name: ListProgramDayIDsForWeek :many
+SELECT id
+FROM mentorix.program_days
+WHERE week_id = $1
+ORDER BY sort_order ASC, day_number ASC;

@@ -77,23 +77,43 @@ func (f *fakeProgramStore) SoftDelete(context.Context, uuid.UUID, uuid.UUID) err
 	return f.err
 }
 
-func (f *fakeProgramStore) AddDay(context.Context, uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) AddWeek(context.Context, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) DeleteDay(context.Context, uuid.UUID, uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) DeleteWeek(context.Context, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) AddDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+func (f *fakeProgramStore) AddDay(context.Context, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) UpdateDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+func (f *fakeProgramStore) DeleteDay(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) DeleteDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) AddDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) UpdateDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) DeleteDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) ReorderWeeks(context.Context, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) ReorderDays(context.Context, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) ReorderWeekExercises(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []WeekExerciseReorderDay) (Detail, error) {
 	return f.detail, f.err
 }
 
@@ -133,6 +153,18 @@ func TestService_Get_forbiddenForOtherTrainer(t *testing.T) {
 	}
 }
 
+func publishableWeek(dayExercises []DayExercise) Week {
+	return Week{
+		WeekNumber: 1,
+		SortOrder:  1,
+		Days: []Day{{
+			DayNumber: 1,
+			SortOrder: 1,
+			Exercises: dayExercises,
+		}},
+	}
+}
+
 func TestService_Publish_invalidTransitionFromPublished(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
@@ -145,14 +177,11 @@ func TestService_Publish_invalidTransitionFromPublished(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
 		detail: Detail{
 			Program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished, Name: "Program", Category: &category, Difficulty: &difficulty},
-			Days: []Day{{
-				DayNumber: 1,
-				Exercises: []DayExercise{{
-					ExerciseID: uuid.New(),
-					Sets:       &sets,
-					Reps:       &reps,
-				}},
-			}},
+			Weeks: []Week{publishableWeek([]DayExercise{{
+				ExerciseID: uuid.New(),
+				Sets:       &sets,
+				Reps:       &reps,
+			}})},
 		},
 	}, nil)
 
@@ -169,7 +198,7 @@ func TestService_Publish_validationError(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail: Detail{
 			Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
-			Days:    []Day{{DayNumber: 1, Exercises: []DayExercise{}}},
+			Weeks:   []Week{publishableWeek([]DayExercise{})},
 		},
 	}, nil)
 

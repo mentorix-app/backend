@@ -12,6 +12,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countProgramDaysForWeek = `-- name: CountProgramDaysForWeek :one
+SELECT COUNT(*)::int AS count
+FROM mentorix.program_days
+WHERE week_id = $1
+`
+
+func (q *Queries) CountProgramDaysForWeek(ctx context.Context, weekID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countProgramDaysForWeek, weekID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countProgramWeeks = `-- name: CountProgramWeeks :one
+SELECT COUNT(*)::int AS count
+FROM mentorix.program_weeks
+WHERE program_id = $1
+`
+
+func (q *Queries) CountProgramWeeks(ctx context.Context, programID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, countProgramWeeks, programID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countPrograms = `-- name: CountPrograms :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.programs
@@ -67,6 +93,26 @@ func (q *Queries) DayBelongsToProgram(ctx context.Context, arg DayBelongsToProgr
 	return ok, err
 }
 
+const dayBelongsToWeek = `-- name: DayBelongsToWeek :one
+SELECT EXISTS(
+  SELECT 1 FROM mentorix.program_days
+  WHERE id = $1 AND week_id = $2 AND program_id = $3
+) AS ok
+`
+
+type DayBelongsToWeekParams struct {
+	ID        pgtype.UUID `json:"id"`
+	WeekID    pgtype.UUID `json:"week_id"`
+	ProgramID pgtype.UUID `json:"program_id"`
+}
+
+func (q *Queries) DayBelongsToWeek(ctx context.Context, arg DayBelongsToWeekParams) (bool, error) {
+	row := q.db.QueryRow(ctx, dayBelongsToWeek, arg.ID, arg.WeekID, arg.ProgramID)
+	var ok bool
+	err := row.Scan(&ok)
+	return ok, err
+}
+
 const deleteDayExercise = `-- name: DeleteDayExercise :execrows
 DELETE FROM mentorix.program_day_exercises
 WHERE id = $1 AND program_day_id = $2
@@ -87,16 +133,35 @@ func (q *Queries) DeleteDayExercise(ctx context.Context, arg DeleteDayExercisePa
 
 const deleteProgramDay = `-- name: DeleteProgramDay :execrows
 DELETE FROM mentorix.program_days
-WHERE id = $1 AND program_id = $2
+WHERE id = $1 AND program_id = $2 AND week_id = $3
 `
 
 type DeleteProgramDayParams struct {
 	ID        pgtype.UUID `json:"id"`
 	ProgramID pgtype.UUID `json:"program_id"`
+	WeekID    pgtype.UUID `json:"week_id"`
 }
 
 func (q *Queries) DeleteProgramDay(ctx context.Context, arg DeleteProgramDayParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteProgramDay, arg.ID, arg.ProgramID)
+	result, err := q.db.Exec(ctx, deleteProgramDay, arg.ID, arg.ProgramID, arg.WeekID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteProgramWeek = `-- name: DeleteProgramWeek :execrows
+DELETE FROM mentorix.program_weeks
+WHERE id = $1 AND program_id = $2
+`
+
+type DeleteProgramWeekParams struct {
+	ID        pgtype.UUID `json:"id"`
+	ProgramID pgtype.UUID `json:"program_id"`
+}
+
+func (q *Queries) DeleteProgramWeek(ctx context.Context, arg DeleteProgramWeekParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProgramWeek, arg.ID, arg.ProgramID)
 	if err != nil {
 		return 0, err
 	}
@@ -202,37 +267,49 @@ func (q *Queries) InsertDayExercise(ctx context.Context, arg InsertDayExercisePa
 }
 
 const insertProgramDay = `-- name: InsertProgramDay :one
-INSERT INTO mentorix.program_days (program_id, day_number, sort_order)
-VALUES ($1, $2, $3)
+INSERT INTO mentorix.program_days (program_id, week_id, day_number, sort_order)
+VALUES ($1, $2, $3, $4)
 RETURNING id
 `
 
 type InsertProgramDayParams struct {
 	ProgramID pgtype.UUID `json:"program_id"`
+	WeekID    pgtype.UUID `json:"week_id"`
 	DayNumber int32       `json:"day_number"`
 	SortOrder int32       `json:"sort_order"`
 }
 
 func (q *Queries) InsertProgramDay(ctx context.Context, arg InsertProgramDayParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, insertProgramDay, arg.ProgramID, arg.DayNumber, arg.SortOrder)
+	row := q.db.QueryRow(ctx, insertProgramDay,
+		arg.ProgramID,
+		arg.WeekID,
+		arg.DayNumber,
+		arg.SortOrder,
+	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
 }
 
 const insertProgramDayAuto = `-- name: InsertProgramDayAuto :exec
-INSERT INTO mentorix.program_days (program_id, day_number, sort_order)
-VALUES ($1, $2, $3)
+INSERT INTO mentorix.program_days (program_id, week_id, day_number, sort_order)
+VALUES ($1, $2, $3, $4)
 `
 
 type InsertProgramDayAutoParams struct {
 	ProgramID pgtype.UUID `json:"program_id"`
+	WeekID    pgtype.UUID `json:"week_id"`
 	DayNumber int32       `json:"day_number"`
 	SortOrder int32       `json:"sort_order"`
 }
 
 func (q *Queries) InsertProgramDayAuto(ctx context.Context, arg InsertProgramDayAutoParams) error {
-	_, err := q.db.Exec(ctx, insertProgramDayAuto, arg.ProgramID, arg.DayNumber, arg.SortOrder)
+	_, err := q.db.Exec(ctx, insertProgramDayAuto,
+		arg.ProgramID,
+		arg.WeekID,
+		arg.DayNumber,
+		arg.SortOrder,
+	)
 	return err
 }
 
@@ -250,6 +327,33 @@ type InsertProgramDraftParams struct {
 
 func (q *Queries) InsertProgramDraft(ctx context.Context, arg InsertProgramDraftParams) (pgtype.UUID, error) {
 	row := q.db.QueryRow(ctx, insertProgramDraft, arg.CreatedBy, arg.Status, arg.ModifiedAt)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertProgramWeek = `-- name: InsertProgramWeek :one
+INSERT INTO mentorix.program_weeks (program_id, week_number, sort_order, modified_at, modified_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id
+`
+
+type InsertProgramWeekParams struct {
+	ProgramID  pgtype.UUID `json:"program_id"`
+	WeekNumber int32       `json:"week_number"`
+	SortOrder  int32       `json:"sort_order"`
+	ModifiedAt time.Time   `json:"modified_at"`
+	ModifiedBy pgtype.UUID `json:"modified_by"`
+}
+
+func (q *Queries) InsertProgramWeek(ctx context.Context, arg InsertProgramWeekParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, insertProgramWeek,
+		arg.ProgramID,
+		arg.WeekNumber,
+		arg.SortOrder,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
+	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
@@ -317,32 +421,157 @@ func (q *Queries) ListDayExercises(ctx context.Context, programDayID pgtype.UUID
 	return items, nil
 }
 
-const listProgramDays = `-- name: ListProgramDays :many
-SELECT id, day_number, sort_order, created_at
+const listExerciseItemsByWeek = `-- name: ListExerciseItemsByWeek :many
+SELECT pde.id, pde.program_day_id
+FROM mentorix.program_day_exercises pde
+JOIN mentorix.program_days pd ON pd.id = pde.program_day_id
+WHERE pd.week_id = $1
+`
+
+type ListExerciseItemsByWeekRow struct {
+	ID           pgtype.UUID `json:"id"`
+	ProgramDayID pgtype.UUID `json:"program_day_id"`
+}
+
+func (q *Queries) ListExerciseItemsByWeek(ctx context.Context, weekID pgtype.UUID) ([]ListExerciseItemsByWeekRow, error) {
+	rows, err := q.db.Query(ctx, listExerciseItemsByWeek, weekID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExerciseItemsByWeekRow{}
+	for rows.Next() {
+		var i ListExerciseItemsByWeekRow
+		if err := rows.Scan(&i.ID, &i.ProgramDayID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramDayIDsForWeek = `-- name: ListProgramDayIDsForWeek :many
+SELECT id
 FROM mentorix.program_days
-WHERE program_id = $1
+WHERE week_id = $1
 ORDER BY sort_order ASC, day_number ASC
 `
 
-type ListProgramDaysRow struct {
+func (q *Queries) ListProgramDayIDsForWeek(ctx context.Context, weekID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listProgramDayIDsForWeek, weekID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramDaysForWeek = `-- name: ListProgramDaysForWeek :many
+SELECT id, day_number, sort_order, created_at
+FROM mentorix.program_days
+WHERE week_id = $1
+ORDER BY sort_order ASC, day_number ASC
+`
+
+type ListProgramDaysForWeekRow struct {
 	ID        pgtype.UUID `json:"id"`
 	DayNumber int32       `json:"day_number"`
 	SortOrder int32       `json:"sort_order"`
 	CreatedAt time.Time   `json:"created_at"`
 }
 
-func (q *Queries) ListProgramDays(ctx context.Context, programID pgtype.UUID) ([]ListProgramDaysRow, error) {
-	rows, err := q.db.Query(ctx, listProgramDays, programID)
+func (q *Queries) ListProgramDaysForWeek(ctx context.Context, weekID pgtype.UUID) ([]ListProgramDaysForWeekRow, error) {
+	rows, err := q.db.Query(ctx, listProgramDaysForWeek, weekID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListProgramDaysRow{}
+	items := []ListProgramDaysForWeekRow{}
 	for rows.Next() {
-		var i ListProgramDaysRow
+		var i ListProgramDaysForWeekRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.DayNumber,
+			&i.SortOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramWeekIDs = `-- name: ListProgramWeekIDs :many
+SELECT id
+FROM mentorix.program_weeks
+WHERE program_id = $1
+ORDER BY sort_order ASC, week_number ASC
+`
+
+func (q *Queries) ListProgramWeekIDs(ctx context.Context, programID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listProgramWeekIDs, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramWeeks = `-- name: ListProgramWeeks :many
+SELECT id, week_number, sort_order, created_at
+FROM mentorix.program_weeks
+WHERE program_id = $1
+ORDER BY sort_order ASC, week_number ASC
+`
+
+type ListProgramWeeksRow struct {
+	ID         pgtype.UUID `json:"id"`
+	WeekNumber int32       `json:"week_number"`
+	SortOrder  int32       `json:"sort_order"`
+	CreatedAt  time.Time   `json:"created_at"`
+}
+
+func (q *Queries) ListProgramWeeks(ctx context.Context, programID pgtype.UUID) ([]ListProgramWeeksRow, error) {
+	rows, err := q.db.Query(ctx, listProgramWeeks, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProgramWeeksRow{}
+	for rows.Next() {
+		var i ListProgramWeeksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WeekNumber,
 			&i.SortOrder,
 			&i.CreatedAt,
 		); err != nil {
@@ -481,23 +710,43 @@ func (q *Queries) NextDayExerciseSort(ctx context.Context, programDayID pgtype.U
 	return next_sort, err
 }
 
-const nextProgramDayNumbers = `-- name: NextProgramDayNumbers :one
+const nextProgramDayNumbersForWeek = `-- name: NextProgramDayNumbersForWeek :one
 SELECT
   COALESCE(MAX(day_number), 0) + 1::int AS next_day_number,
   COALESCE(MAX(sort_order), 0) + 1::int AS next_sort_order
 FROM mentorix.program_days
-WHERE program_id = $1
+WHERE week_id = $1
 `
 
-type NextProgramDayNumbersRow struct {
+type NextProgramDayNumbersForWeekRow struct {
 	NextDayNumber int32 `json:"next_day_number"`
 	NextSortOrder int32 `json:"next_sort_order"`
 }
 
-func (q *Queries) NextProgramDayNumbers(ctx context.Context, programID pgtype.UUID) (NextProgramDayNumbersRow, error) {
-	row := q.db.QueryRow(ctx, nextProgramDayNumbers, programID)
-	var i NextProgramDayNumbersRow
+func (q *Queries) NextProgramDayNumbersForWeek(ctx context.Context, weekID pgtype.UUID) (NextProgramDayNumbersForWeekRow, error) {
+	row := q.db.QueryRow(ctx, nextProgramDayNumbersForWeek, weekID)
+	var i NextProgramDayNumbersForWeekRow
 	err := row.Scan(&i.NextDayNumber, &i.NextSortOrder)
+	return i, err
+}
+
+const nextProgramWeekNumbers = `-- name: NextProgramWeekNumbers :one
+SELECT
+  COALESCE(MAX(week_number), 0) + 1::int AS next_week_number,
+  COALESCE(MAX(sort_order), 0) + 1::int AS next_sort_order
+FROM mentorix.program_weeks
+WHERE program_id = $1
+`
+
+type NextProgramWeekNumbersRow struct {
+	NextWeekNumber int32 `json:"next_week_number"`
+	NextSortOrder  int32 `json:"next_sort_order"`
+}
+
+func (q *Queries) NextProgramWeekNumbers(ctx context.Context, programID pgtype.UUID) (NextProgramWeekNumbersRow, error) {
+	row := q.db.QueryRow(ctx, nextProgramWeekNumbers, programID)
+	var i NextProgramWeekNumbersRow
+	err := row.Scan(&i.NextWeekNumber, &i.NextSortOrder)
 	return i, err
 }
 
@@ -593,6 +842,34 @@ func (q *Queries) UpdateDayExercise(ctx context.Context, arg UpdateDayExercisePa
 	return result.RowsAffected(), nil
 }
 
+const updateDayExercisePlacement = `-- name: UpdateDayExercisePlacement :exec
+UPDATE mentorix.program_day_exercises SET
+  program_day_id = $2,
+  sort_order = $3,
+  modified_at = $4,
+  modified_by = $5
+WHERE id = $1
+`
+
+type UpdateDayExercisePlacementParams struct {
+	ID           pgtype.UUID `json:"id"`
+	ProgramDayID pgtype.UUID `json:"program_day_id"`
+	SortOrder    int32       `json:"sort_order"`
+	ModifiedAt   time.Time   `json:"modified_at"`
+	ModifiedBy   pgtype.UUID `json:"modified_by"`
+}
+
+func (q *Queries) UpdateDayExercisePlacement(ctx context.Context, arg UpdateDayExercisePlacementParams) error {
+	_, err := q.db.Exec(ctx, updateDayExercisePlacement,
+		arg.ID,
+		arg.ProgramDayID,
+		arg.SortOrder,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
+	)
+	return err
+}
+
 const updateProgram = `-- name: UpdateProgram :execrows
 UPDATE mentorix.programs SET
   modified_by = $1,
@@ -637,4 +914,71 @@ func (q *Queries) UpdateProgram(ctx context.Context, arg UpdateProgramParams) (i
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const updateProgramDayOrder = `-- name: UpdateProgramDayOrder :exec
+UPDATE mentorix.program_days SET
+  sort_order = $3,
+  day_number = $4
+WHERE id = $1 AND week_id = $2
+`
+
+type UpdateProgramDayOrderParams struct {
+	ID        pgtype.UUID `json:"id"`
+	WeekID    pgtype.UUID `json:"week_id"`
+	SortOrder int32       `json:"sort_order"`
+	DayNumber int32       `json:"day_number"`
+}
+
+func (q *Queries) UpdateProgramDayOrder(ctx context.Context, arg UpdateProgramDayOrderParams) error {
+	_, err := q.db.Exec(ctx, updateProgramDayOrder,
+		arg.ID,
+		arg.WeekID,
+		arg.SortOrder,
+		arg.DayNumber,
+	)
+	return err
+}
+
+const updateProgramWeekOrder = `-- name: UpdateProgramWeekOrder :exec
+UPDATE mentorix.program_weeks SET
+  sort_order = $3,
+  week_number = $4
+WHERE id = $1 AND program_id = $2
+`
+
+type UpdateProgramWeekOrderParams struct {
+	ID         pgtype.UUID `json:"id"`
+	ProgramID  pgtype.UUID `json:"program_id"`
+	SortOrder  int32       `json:"sort_order"`
+	WeekNumber int32       `json:"week_number"`
+}
+
+func (q *Queries) UpdateProgramWeekOrder(ctx context.Context, arg UpdateProgramWeekOrderParams) error {
+	_, err := q.db.Exec(ctx, updateProgramWeekOrder,
+		arg.ID,
+		arg.ProgramID,
+		arg.SortOrder,
+		arg.WeekNumber,
+	)
+	return err
+}
+
+const weekBelongsToProgram = `-- name: WeekBelongsToProgram :one
+SELECT EXISTS(
+  SELECT 1 FROM mentorix.program_weeks
+  WHERE id = $1 AND program_id = $2
+) AS ok
+`
+
+type WeekBelongsToProgramParams struct {
+	ID        pgtype.UUID `json:"id"`
+	ProgramID pgtype.UUID `json:"program_id"`
+}
+
+func (q *Queries) WeekBelongsToProgram(ctx context.Context, arg WeekBelongsToProgramParams) (bool, error) {
+	row := q.db.QueryRow(ctx, weekBelongsToProgram, arg.ID, arg.ProgramID)
+	var ok bool
+	err := row.Scan(&ok)
+	return ok, err
 }

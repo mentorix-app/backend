@@ -440,10 +440,10 @@ paths:
 
     post:
       tags: [programs]
-      summary: Create draft program with day 1
+      summary: Create draft program with week 1 and seven days
       description: >
         Creates a program in `draft` status with empty `name`, `name_ru`, `description`, `description_ru`, and `preview_image_url`,
-        and auto-creates day 1. Step-1 fields can be filled later via PATCH.
+        and auto-creates week 1 with seven empty days. Step-1 fields can be filled later via PATCH.
       operationId: createProgram
       security:
         - bearerAuth: []
@@ -464,12 +464,17 @@ paths:
                 preview_image_url: ""
                 created_at: "2026-06-21T12:00:00Z"
                 modified_at: "2026-06-21T12:00:00Z"
-                days:
-                  - id: "550e8400-e29b-41d4-a716-446655440002"
-                    day_number: 1
+                weeks:
+                  - id: "550e8400-e29b-41d4-a716-446655440010"
+                    week_number: 1
                     sort_order: 1
-                    exercises: []
                     created_at: "2026-06-21T12:00:00Z"
+                    days:
+                      - id: "550e8400-e29b-41d4-a716-446655440002"
+                        day_number: 1
+                        sort_order: 1
+                        exercises: []
+                        created_at: "2026-06-21T12:00:00Z"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -480,7 +485,7 @@ paths:
       - $ref: "#/components/parameters/ProgramId"
     get:
       tags: [programs]
-      summary: Get program with days and exercises
+      summary: Get program with weeks, days, and exercises
       description: >
         Owner (`created_by`) or any user with the `admin` role may read the program.
       operationId: getProgram
@@ -602,12 +607,95 @@ paths:
         "409":
           description: Invalid status transition
 
-  /programs/{id}/days:
+  /programs/{id}/weeks:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
     post:
       tags: [programs]
-      summary: Add program day
+      summary: Add program week with seven empty days
+      operationId: addProgramWeek
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Program with new week
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program not found
+
+  /programs/{id}/weeks/reorder:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    put:
+      tags: [programs]
+      summary: Reorder program weeks
+      operationId: reorderProgramWeeks
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramWeeksReorder"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program not found
+
+  /programs/{id}/weeks/{week_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+    delete:
+      tags: [programs]
+      summary: Delete program week
+      description: Returns 409 when deleting the last week in the program.
+      operationId: deleteProgramWeek
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program or week not found
+        "409":
+          description: Cannot delete the last week
+
+  /programs/{id}/weeks/{week_id}/days:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+    post:
+      tags: [programs]
+      summary: Add day to program week
+      description: Returns 409 when the week already has 7 days (maximum).
       operationId: addProgramDay
       security:
         - bearerAuth: []
@@ -623,15 +711,51 @@ paths:
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program not found
+          description: Program or week not found
+        "409":
+          description: Week already has the maximum of 7 days
 
-  /programs/{id}/days/{day_id}:
+  /programs/{id}/weeks/{week_id}/days/reorder:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+    put:
+      tags: [programs]
+      summary: Reorder days within a program week
+      operationId: reorderProgramDays
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramDaysReorder"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program or week not found
+
+  /programs/{id}/weeks/{week_id}/days/{day_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
       - $ref: "#/components/parameters/ProgramDayId"
     delete:
       tags: [programs]
-      summary: Delete program day
+      summary: Delete day from program week
+      description: Returns 409 when deleting the last day in the week.
       operationId: deleteProgramDay
       security:
         - bearerAuth: []
@@ -647,11 +771,46 @@ paths:
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program or day not found
+          description: Program, week, or day not found
+        "409":
+          description: Cannot delete the last day in week
 
-  /programs/{id}/days/{day_id}/exercises:
+  /programs/{id}/weeks/{week_id}/exercises/reorder:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+    put:
+      tags: [programs]
+      summary: Reorder or move exercises within a program week
+      operationId: reorderProgramWeekExercises
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramWeekExercisesReorder"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program or week not found
+
+  /programs/{id}/weeks/{week_id}/days/{day_id}/exercises:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
       - $ref: "#/components/parameters/ProgramDayId"
     post:
       tags: [programs]
@@ -679,11 +838,12 @@ paths:
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program or day not found
+          description: Program, week, or day not found
 
-  /programs/{id}/days/{day_id}/exercises/{item_id}:
+  /programs/{id}/weeks/{week_id}/days/{day_id}/exercises/{item_id}:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
       - $ref: "#/components/parameters/ProgramDayId"
       - $ref: "#/components/parameters/ProgramDayExerciseId"
     put:
@@ -712,7 +872,7 @@ paths:
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program, day, or exercise item not found
+          description: Program, week, day, or exercise item not found
 
     delete:
       tags: [programs]
@@ -732,7 +892,7 @@ paths:
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program, day, or exercise item not found
+          description: Program, week, day, or exercise item not found
 
 components:
   securitySchemes:
@@ -801,6 +961,14 @@ components:
 
     ProgramId:
       name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ProgramWeekId:
+      name: week_id
       in: path
       required: true
       schema:
@@ -1242,16 +1410,74 @@ components:
           type: string
           format: date-time
 
+    ProgramWeek:
+      type: object
+      required: [id, week_number, sort_order, days, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        week_number:
+          type: integer
+        sort_order:
+          type: integer
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramDay"
+        created_at:
+          type: string
+          format: date-time
+
     ProgramDetail:
       allOf:
         - $ref: "#/components/schemas/Program"
         - type: object
-          required: [days]
+          required: [weeks]
           properties:
-            days:
+            weeks:
               type: array
               items:
-                $ref: "#/components/schemas/ProgramDay"
+                $ref: "#/components/schemas/ProgramWeek"
+
+    ProgramWeeksReorder:
+      type: object
+      required: [week_ids]
+      properties:
+        week_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ProgramDaysReorder:
+      type: object
+      required: [day_ids]
+      properties:
+        day_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ProgramWeekExercisesReorder:
+      type: object
+      required: [days]
+      properties:
+        days:
+          type: array
+          items:
+            type: object
+            required: [day_id, exercise_item_ids]
+            properties:
+              day_id:
+                type: string
+                format: uuid
+              exercise_item_ids:
+                type: array
+                items:
+                  type: string
+                  format: uuid
 
     ProgramListResponse:
       type: object

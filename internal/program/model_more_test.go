@@ -8,15 +8,15 @@ import (
 	"mentorix-backend/internal/exercise"
 )
 
-func TestValidatePublishDetail_noDays(t *testing.T) {
+func TestValidatePublishDetail_noWeeks(t *testing.T) {
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
 	d := Detail{
 		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
-		Days:    nil,
+		Weeks:   nil,
 	}
 	if err := validatePublishDetail(d); err == nil {
-		t.Fatal("expected validation error for no days")
+		t.Fatal("expected validation error for no weeks")
 	}
 }
 
@@ -26,11 +26,14 @@ func TestValidatePublishDetail_invalidSetsReps(t *testing.T) {
 	zero := 0
 	d := Detail{
 		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
-		Days: []Day{{
-			Exercises: []DayExercise{{
-				ExerciseID: uuid.New(),
-				Sets:       &zero,
-				Reps:       &zero,
+		Weeks: []Week{{
+			WeekNumber: 1,
+			Days: []Day{{
+				Exercises: []DayExercise{{
+					ExerciseID: uuid.New(),
+					Sets:       &zero,
+					Reps:       &zero,
+				}},
 			}},
 		}},
 	}
@@ -98,14 +101,65 @@ func TestDayExerciseInput_ValidateDraft_errors(t *testing.T) {
 	}
 }
 
+func TestValidatePublishDetail_skipsDaysWithoutExercises(t *testing.T) {
+	category := CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	sets, reps := 3, 10
+	d := Detail{
+		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
+		Weeks: []Week{{
+			WeekNumber: 1,
+			Days: []Day{
+				{DayNumber: 1, SortOrder: 1},
+				{
+					DayNumber: 2,
+					SortOrder: 2,
+					Exercises: []DayExercise{{
+						ExerciseID: uuid.New(),
+						Sets:       &sets,
+						Reps:       &reps,
+					}},
+				},
+			},
+		}},
+	}
+	if err := validatePublishDetail(d); err != nil {
+		t.Fatalf("validatePublishDetail() error = %v, want nil", err)
+	}
+}
+
+func TestValidatePublishDetail_missingDifficulty(t *testing.T) {
+	category := CategoryMuscleGain
+	sets, reps := 3, 10
+	d := Detail{
+		Program: Program{Name: "Plan", Category: &category},
+		Weeks: []Week{{
+			WeekNumber: 1,
+			Days: []Day{{
+				Exercises: []DayExercise{{
+					ExerciseID: uuid.New(),
+					Sets:       &sets,
+					Reps:       &reps,
+				}},
+			}},
+		}},
+	}
+	if err := validatePublishDetail(d); err == nil {
+		t.Fatal("expected validation error for missing difficulty")
+	}
+}
+
 func TestValidatePublishDetail_missingMetadata(t *testing.T) {
 	sets, reps := 3, 10
 	base := Detail{
-		Days: []Day{{
-			Exercises: []DayExercise{{
-				ExerciseID: uuid.New(),
-				Sets:       &sets,
-				Reps:       &reps,
+		Weeks: []Week{{
+			WeekNumber: 1,
+			Days: []Day{{
+				Exercises: []DayExercise{{
+					ExerciseID: uuid.New(),
+					Sets:       &sets,
+					Reps:       &reps,
+				}},
 			}},
 		}},
 	}
@@ -120,21 +174,31 @@ func TestValidatePublishDetail_missingMetadata(t *testing.T) {
 			name: "empty name",
 			d: Detail{
 				Program: Program{Category: &category, Difficulty: &difficulty},
-				Days:    base.Days,
+				Weeks:   base.Weeks,
 			},
 		},
 		{
 			name: "missing category",
 			d: Detail{
 				Program: Program{Name: "Plan", Difficulty: &difficulty},
-				Days:    base.Days,
+				Weeks:   base.Weeks,
 			},
 		},
 		{
-			name: "empty day exercises",
+			name: "week without training day",
 			d: Detail{
 				Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
-				Days:    []Day{{DayNumber: 1}},
+				Weeks:   []Week{{WeekNumber: 1, Days: []Day{{DayNumber: 1}}}},
+			},
+		},
+		{
+			name: "second week without exercises",
+			d: Detail{
+				Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
+				Weeks: []Week{
+					base.Weeks[0],
+					{WeekNumber: 2, Days: []Day{{DayNumber: 1}}},
+				},
 			},
 		},
 	}

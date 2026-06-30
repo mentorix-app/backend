@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "e5f6a7b8-c9d0-1234-ef01-567890123456",
     "name": "Mentorix Backend",
-    "description": "Коллекция по коду (`cmd/api`, `internal/auth`, `internal/admin`, `internal/exercise`, `internal/program`, `internal/health`).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\n## Порядок smoke-теста (Programs)\n1. Health → Login\n2. POST /programs (сохраняет program_id, program_day_id; name=\"\")\n3. PATCH /programs/:id\n4. POST .../days/:day_id/exercises (нужен exercise_id)\n5. PUT .../exercises/:item_id (опционально)\n6. POST /programs/:id/publish\n7. POST /programs/:id/archive (опционально)\n8. DELETE /programs/:id",
+    "description": "Коллекция по коду (`cmd/api`, `internal/auth`, `internal/admin`, `internal/exercise`, `internal/program`, `internal/health`).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\n## Порядок smoke-теста (Programs)\n1. Health → Login\n2. POST /programs (сохраняет program_id, program_week_id, program_day_id; name=\"\")\n3. PATCH /programs/:id\n4. POST .../weeks/:week_id/days/:day_id/exercises (нужен exercise_id)\n5. PUT .../exercises/:item_id (опционально)\n6. POST /programs/:id/publish\n7. POST /programs/:id/archive (опционально)\n8. DELETE /programs/:id",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -623,10 +623,13 @@
                   "    const b = pm.response.json();",
                   "    pm.test('draft status', () => pm.expect(b.status).to.eql('draft'));",
                   "    pm.test('empty name', () => pm.expect(b.name).to.eql(''));",
-                  "    pm.test('day 1 exists', () => pm.expect(b.days).to.be.an('array').that.is.not.empty);",
+                  "    pm.test('week 1 with days exists', () => pm.expect(b.weeks).to.be.an('array').that.is.not.empty);",
                   "    pm.environment.set('program_id', b.id);",
-                  "    if (b.days && b.days.length > 0) {",
-                  "        pm.environment.set('program_day_id', b.days[0].id);",
+                  "    if (b.weeks && b.weeks.length > 0) {",
+                  "        pm.environment.set('program_week_id', b.weeks[0].id);",
+                  "        if (b.weeks[0].days && b.weeks[0].days.length > 0) {",
+                  "            pm.environment.set('program_day_id', b.weeks[0].days[0].id);",
+                  "        }",
                   "    }",
                   "}"
               ]
@@ -641,7 +644,7 @@
             "method": "POST",
             "header": [],
             "url": "{{base_url}}/programs",
-            "description": "Создаёт draft-программу с Днём 1. 201: ProgramDetail"
+            "description": "Создаёт draft-программу с неделей 1 и 7 пустыми днями. 201: ProgramDetail"
           },
           "response": []
         },
@@ -668,7 +671,7 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/programs/{{program_id}}",
-            "description": "ProgramDetail с days и exercises"
+            "description": "ProgramDetail с weeks, days и exercises"
           },
           "response": []
         },
@@ -717,7 +720,169 @@
           "response": []
         },
         {
-          "name": "POST /programs/:id/days",
+          "name": "POST /programs/:id/weeks",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id')) {",
+                  "    throw new Error('program_id пустой — выполни POST /programs');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    pm.test('weeks array exists', () => pm.expect(b.weeks).to.be.an('array').that.is.not.empty);",
+                  "    if (b.weeks && b.weeks.length > 0) {",
+                  "        pm.environment.set('program_week_id', b.weeks[b.weeks.length - 1].id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/weeks",
+            "description": "Добавить неделю (+7 пустых дней)"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /programs/:id/weeks/reorder",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id')) {",
+                  "    throw new Error('program_id/program_week_id пустые — выполни POST /programs');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"week_ids\": [\"{{program_week_id}}\"]\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/reorder",
+            "description": "Переупорядочить недели (полный список week_ids)"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /programs/:id/weeks/:week_id/days/reorder",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_id пустые — выполни POST /programs');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"day_ids\": [\"{{program_day_id}}\"]\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/reorder",
+            "description": "Переупорядочить дни недели (полный список day_ids)"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /programs/:id/weeks/:week_id/exercises/reorder",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id') || !pm.environment.get('program_day_exercise_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_id/program_day_exercise_id пустые — выполни POST .../exercises');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"days\": [\n    {\n      \"day_id\": \"{{program_day_id}}\",\n      \"exercise_item_ids\": [\"{{program_day_exercise_id}}\"]\n    }\n  ]\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/exercises/reorder",
+            "description": "Переупорядочить упражнения внутри недели (снимок days + exercise_item_ids)"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /programs/:id/weeks/:week_id",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id')) {",
+                  "    throw new Error('program_id/program_week_id пустые — выполни POST /programs');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}",
+            "description": "Удалить неделю (409 если последняя)"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/days",
           "event": [
             {
               "listen": "prerequest",
@@ -738,21 +903,21 @@
             },
             "method": "POST",
             "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/days",
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days",
             "description": "Добавить день"
           },
           "response": []
         },
         {
-          "name": "POST /programs/:id/days/:day_id/exercises",
+          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/exercises",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_day_id')) {",
-                  "    throw new Error('program_id/program_day_id пустые — выполни POST /programs');",
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_id пустые — выполни POST /programs');",
                   "}",
                   "if (!pm.environment.get('exercise_id')) {",
                   "    throw new Error('exercise_id пустой — нужен POST /exercises или задай UUID');",
@@ -767,7 +932,8 @@
                 "exec": [
                   "if (pm.response.code === 201) {",
                   "    const b = pm.response.json();",
-                  "    const day = (b.days || []).find(d => d.id === pm.environment.get('program_day_id'));",
+                  "    const week = (b.weeks || []).find(w => w.id === pm.environment.get('program_week_id'));",
+                  "    const day = week && week.days ? week.days.find(d => d.id === pm.environment.get('program_day_id')) : null;",
                   "    if (day && day.exercises && day.exercises.length > 0) {",
                   "        pm.environment.set('program_day_exercise_id', day.exercises[day.exercises.length - 1].id);",
                   "    }",
@@ -787,21 +953,21 @@
               "mode": "raw",
               "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 3,\n  \"reps\": 10,\n  \"weight_kg\": 70,\n  \"instruction\": \"Контролируй негативную фазу\"\n}"
             },
-            "url": "{{base_url}}/programs/{{program_id}}/days/{{program_day_id}}/exercises",
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/exercises",
             "description": "Добавить упражнение в день"
           },
           "response": []
         },
         {
-          "name": "PUT /programs/:id/days/:day_id/exercises/:item_id",
+          "name": "PUT /programs/:id/weeks/:week_id/days/:day_id/exercises/:item_id",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_day_id') || !pm.environment.get('program_day_exercise_id')) {",
-                  "    throw new Error('program_id/program_day_id/program_day_exercise_id пустые — выполни POST .../exercises');",
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id') || !pm.environment.get('program_day_exercise_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_id/program_day_exercise_id пустые — выполни POST .../exercises');",
                   "}",
                   "if (!pm.environment.get('exercise_id')) {",
                   "    throw new Error('exercise_id пустой — нужен POST /exercises или задай UUID');",
@@ -830,21 +996,21 @@
               "mode": "raw",
               "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 4,\n  \"reps\": 8,\n  \"weight_kg\": 75,\n  \"instruction\": \"Обновлённая инструкция\"\n}"
             },
-            "url": "{{base_url}}/programs/{{program_id}}/days/{{program_day_id}}/exercises/{{program_day_exercise_id}}",
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/exercises/{{program_day_exercise_id}}",
             "description": "Обновить упражнение в дне"
           },
           "response": []
         },
         {
-          "name": "DELETE /programs/:id/days/:day_id/exercises/:item_id",
+          "name": "DELETE /programs/:id/weeks/:week_id/days/:day_id/exercises/:item_id",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_day_id') || !pm.environment.get('program_day_exercise_id')) {",
-                  "    throw new Error('program_id/program_day_id/program_day_exercise_id пустые — выполни POST .../exercises');",
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id') || !pm.environment.get('program_day_exercise_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_id/program_day_exercise_id пустые — выполни POST .../exercises');",
                   "}"
                 ]
               }
@@ -866,21 +1032,21 @@
             },
             "method": "DELETE",
             "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/days/{{program_day_id}}/exercises/{{program_day_exercise_id}}",
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/exercises/{{program_day_exercise_id}}",
             "description": "Удалить упражнение из дня. После удаления для publish снова добавь упражнение."
           },
           "response": []
         },
         {
-          "name": "DELETE /programs/:id/days/:day_id",
+          "name": "DELETE /programs/:id/weeks/:week_id/days/:day_id",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_day_id')) {",
-                  "    throw new Error('program_id/program_day_id пустые — выполни POST /programs');",
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_id пустые — выполни POST /programs');",
                   "}"
                 ]
               }
@@ -902,8 +1068,8 @@
             },
             "method": "DELETE",
             "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/days/{{program_day_id}}",
-            "description": "Удалить день. Нужен хотя бы один день для publish — не удаляй последний день перед publish."
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}",
+            "description": "Удалить день из недели. Нужен хотя бы один день в неделе — не удаляй последний день."
           },
           "response": []
         },

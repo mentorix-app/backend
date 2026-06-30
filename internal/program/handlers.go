@@ -36,11 +36,16 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.DELETE("/:id", h.Delete)
 	g.POST("/:id/publish", h.Publish)
 	g.POST("/:id/archive", h.Archive)
-	g.POST("/:id/days", h.AddDay)
-	g.DELETE("/:id/days/:day_id", h.DeleteDay)
-	g.POST("/:id/days/:day_id/exercises", h.AddDayExercise)
-	g.PUT("/:id/days/:day_id/exercises/:item_id", h.UpdateDayExercise)
-	g.DELETE("/:id/days/:day_id/exercises/:item_id", h.DeleteDayExercise)
+	g.POST("/:id/weeks", h.AddWeek)
+	g.PUT("/:id/weeks/reorder", h.ReorderWeeks)
+	g.DELETE("/:id/weeks/:week_id", h.DeleteWeek)
+	g.PUT("/:id/weeks/:week_id/days/reorder", h.ReorderDays)
+	g.PUT("/:id/weeks/:week_id/exercises/reorder", h.ReorderWeekExercises)
+	g.POST("/:id/weeks/:week_id/days", h.AddDay)
+	g.DELETE("/:id/weeks/:week_id/days/:day_id", h.DeleteDay)
+	g.POST("/:id/weeks/:week_id/days/:day_id/exercises", h.AddDayExercise)
+	g.PUT("/:id/weeks/:week_id/days/:day_id/exercises/:item_id", h.UpdateDayExercise)
+	g.DELETE("/:id/weeks/:week_id/days/:day_id/exercises/:item_id", h.DeleteDayExercise)
 }
 
 type patchBody struct {
@@ -90,6 +95,54 @@ func (b dayExerciseBody) toInput() (DayExerciseInput, error) {
 		WeightKg:    b.WeightKg,
 		Instruction: b.Instruction,
 	}, nil
+}
+
+type reorderWeeksBody struct {
+	WeekIDs []string `json:"week_ids"`
+}
+
+type reorderDaysBody struct {
+	DayIDs []string `json:"day_ids"`
+}
+
+type reorderExercisesBody struct {
+	Days []reorderExercisesDayBody `json:"days"`
+}
+
+type reorderExercisesDayBody struct {
+	DayID           string   `json:"day_id"`
+	ExerciseItemIDs []string `json:"exercise_item_ids"`
+}
+
+func parseUUIDList(raw []string) ([]uuid.UUID, error) {
+	out := make([]uuid.UUID, 0, len(raw))
+	for _, s := range raw {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+func (b reorderExercisesBody) toInput() ([]WeekExerciseReorderDay, error) {
+	out := make([]WeekExerciseReorderDay, 0, len(b.Days))
+	for _, day := range b.Days {
+		dayID, err := uuid.Parse(day.DayID)
+		if err != nil {
+			return nil, err
+		}
+		itemIDs, err := parseUUIDList(day.ExerciseItemIDs)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, WeekExerciseReorderDay{
+			DayID:           dayID,
+			ExerciseItemIDs: itemIDs,
+		})
+	}
+	return out, nil
 }
 
 func (h *Handlers) List(c echo.Context) error {
@@ -192,6 +245,42 @@ func (h *Handlers) Archive(c echo.Context) error {
 	})
 }
 
+func (h *Handlers) AddWeek(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	d, err := h.svc.AddWeek(c.Request().Context(), uid, programID)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
+func (h *Handlers) DeleteWeek(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	weekID, err := parseID(c.Param("week_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	d, err := h.svc.DeleteWeek(c.Request().Context(), uid, programID, weekID)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
 func (h *Handlers) AddDay(c echo.Context) error {
 	uid, ok := auth.UserIDFromContext(c)
 	if !ok {
@@ -201,7 +290,11 @@ func (h *Handlers) AddDay(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	d, err := h.svc.AddDay(c.Request().Context(), uid, programID)
+	weekID, err := parseID(c.Param("week_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	d, err := h.svc.AddDay(c.Request().Context(), uid, programID, weekID)
 	if err != nil {
 		return mapProgramError(err)
 	}
@@ -217,11 +310,95 @@ func (h *Handlers) DeleteDay(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
+	weekID, err := parseID(c.Param("week_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
 	dayID, err := parseID(c.Param("day_id"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	d, err := h.svc.DeleteDay(c.Request().Context(), uid, programID, dayID)
+	d, err := h.svc.DeleteDay(c.Request().Context(), uid, programID, weekID, dayID)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
+func (h *Handlers) ReorderWeeks(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	var body reorderWeeksBody
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	weekIDs, err := parseUUIDList(body.WeekIDs)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	d, err := h.svc.ReorderWeeks(c.Request().Context(), uid, programID, weekIDs)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
+func (h *Handlers) ReorderDays(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	weekID, err := parseID(c.Param("week_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	var body reorderDaysBody
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	dayIDs, err := parseUUIDList(body.DayIDs)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	d, err := h.svc.ReorderDays(c.Request().Context(), uid, programID, weekID, dayIDs)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
+func (h *Handlers) ReorderWeekExercises(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	weekID, err := parseID(c.Param("week_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	var body reorderExercisesBody
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	days, err := body.toInput()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	d, err := h.svc.ReorderWeekExercises(c.Request().Context(), uid, programID, weekID, days)
 	if err != nil {
 		return mapProgramError(err)
 	}
@@ -229,18 +406,18 @@ func (h *Handlers) DeleteDay(c echo.Context) error {
 }
 
 func (h *Handlers) AddDayExercise(c echo.Context) error {
-	return h.dayExerciseAction(c, http.StatusCreated, func(ctx context.Context, uid, programID, dayID uuid.UUID, in DayExerciseInput) (Detail, error) {
-		return h.svc.AddDayExercise(ctx, uid, programID, dayID, in)
+	return h.dayExerciseAction(c, http.StatusCreated, func(ctx context.Context, uid, programID, weekID, dayID uuid.UUID, in DayExerciseInput) (Detail, error) {
+		return h.svc.AddDayExercise(ctx, uid, programID, weekID, dayID, in)
 	})
 }
 
 func (h *Handlers) UpdateDayExercise(c echo.Context) error {
-	return h.dayExerciseAction(c, http.StatusOK, func(ctx context.Context, uid, programID, dayID uuid.UUID, in DayExerciseInput) (Detail, error) {
+	return h.dayExerciseAction(c, http.StatusOK, func(ctx context.Context, uid, programID, weekID, dayID uuid.UUID, in DayExerciseInput) (Detail, error) {
 		itemID, err := parseID(c.Param("item_id"))
 		if err != nil {
 			return Detail{}, err
 		}
-		return h.svc.UpdateDayExercise(ctx, uid, programID, dayID, itemID, in)
+		return h.svc.UpdateDayExercise(ctx, uid, programID, weekID, dayID, itemID, in)
 	})
 }
 
@@ -253,6 +430,10 @@ func (h *Handlers) DeleteDayExercise(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
+	weekID, err := parseID(c.Param("week_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
 	dayID, err := parseID(c.Param("day_id"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
@@ -261,14 +442,14 @@ func (h *Handlers) DeleteDayExercise(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	d, err := h.svc.DeleteDayExercise(c.Request().Context(), uid, programID, dayID, itemID)
+	d, err := h.svc.DeleteDayExercise(c.Request().Context(), uid, programID, weekID, dayID, itemID)
 	if err != nil {
 		return mapProgramError(err)
 	}
 	return c.JSON(http.StatusOK, d)
 }
 
-type dayExerciseFn func(ctx context.Context, uid, programID, dayID uuid.UUID, in DayExerciseInput) (Detail, error)
+type dayExerciseFn func(ctx context.Context, uid, programID, weekID, dayID uuid.UUID, in DayExerciseInput) (Detail, error)
 
 func (h *Handlers) dayExerciseAction(c echo.Context, status int, fn dayExerciseFn) error {
 	uid, ok := auth.UserIDFromContext(c)
@@ -276,6 +457,10 @@ func (h *Handlers) dayExerciseAction(c echo.Context, status int, fn dayExerciseF
 		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
 	}
 	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	weekID, err := parseID(c.Param("week_id"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
@@ -291,7 +476,7 @@ func (h *Handlers) dayExerciseAction(c echo.Context, status int, fn dayExerciseF
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	d, err := fn(c.Request().Context(), uid, programID, dayID, in)
+	d, err := fn(c.Request().Context(), uid, programID, weekID, dayID, in)
 	if err != nil {
 		return mapProgramError(err)
 	}
@@ -328,7 +513,11 @@ func mapProgramError(err error) *echo.HTTPError {
 		return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
 	case errors.Is(err, ErrValidation):
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrInvalidReorder):
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrInvalidStatusTransition):
+		return echo.NewHTTPError(http.StatusConflict, err.Error())
+	case errors.Is(err, ErrLastWeek), errors.Is(err, ErrLastDay), errors.Is(err, ErrMaxDaysPerWeek):
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
 	default:
 		return echo.NewHTTPError(http.StatusInternalServerError, "program operation failed")

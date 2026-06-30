@@ -72,6 +72,7 @@ type MentorixProgramDay struct {
 	CreatedAt  time.Time   `json:"created_at"`
 	ModifiedAt time.Time   `json:"modified_at"`
 	ModifiedBy pgtype.UUID `json:"modified_by"`
+	WeekID     pgtype.UUID `json:"week_id"`
 }
 
 type MentorixProgramDayExercise struct {
@@ -86,6 +87,16 @@ type MentorixProgramDayExercise struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	ModifiedAt   time.Time      `json:"modified_at"`
 	ModifiedBy   pgtype.UUID    `json:"modified_by"`
+}
+
+type MentorixProgramWeek struct {
+	ID         pgtype.UUID `json:"id"`
+	ProgramID  pgtype.UUID `json:"program_id"`
+	WeekNumber int32       `json:"week_number"`
+	SortOrder  int32       `json:"sort_order"`
+	CreatedAt  time.Time   `json:"created_at"`
+	ModifiedAt time.Time   `json:"modified_at"`
+	ModifiedBy pgtype.UUID `json:"modified_by"`
 }
 
 type MentorixTrainer struct {

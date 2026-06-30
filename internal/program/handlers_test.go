@@ -22,6 +22,14 @@ type listProgramStore struct {
 	lastParams ListParams
 }
 
+type errListProgramStore struct {
+	fakeProgramStore
+}
+
+func (s *errListProgramStore) List(context.Context, ListParams) (ListResult, error) {
+	return ListResult{}, errors.New("list failed")
+}
+
 func (s *listProgramStore) List(_ context.Context, params ListParams) (ListResult, error) {
 	s.lastParams = params
 	return ListResult{Items: []Program{}}, nil
@@ -43,7 +51,7 @@ func publishableDetail(userID, programID uuid.UUID) Detail {
 	d.Category = &cat
 	d.Difficulty = &diff
 	sets, reps := 3, 10
-	d.Days[0].Exercises = []DayExercise{{
+	d.Weeks[0].Days[0].Exercises = []DayExercise{{
 		ID:         uuid.New(),
 		ExerciseID: uuid.New(),
 		Sets:       &sets,
@@ -54,6 +62,7 @@ func publishableDetail(userID, programID uuid.UUID) Detail {
 
 func sampleDetail(userID, programID uuid.UUID) Detail {
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
+	weekID := uuid.New()
 	dayID := uuid.New()
 	return Detail{
 		Program: Program{
@@ -65,11 +74,17 @@ func sampleDetail(userID, programID uuid.UUID) Detail {
 			CreatedAt:  now,
 			ModifiedAt: now,
 		},
-		Days: []Day{{
-			ID:        dayID,
-			DayNumber: 1,
-			SortOrder: 1,
-			CreatedAt: now,
+		Weeks: []Week{{
+			ID:         weekID,
+			WeekNumber: 1,
+			SortOrder:  1,
+			CreatedAt:  now,
+			Days: []Day{{
+				ID:        dayID,
+				DayNumber: 1,
+				SortOrder: 1,
+				CreatedAt: now,
+			}},
 		}},
 	}
 }
@@ -108,7 +123,7 @@ func programContext(e *echo.Echo, method, path, body string, userID uuid.UUID, p
 	if len(params) > 0 {
 		names := make([]string, 0, len(params))
 		values := make([]string, 0, len(params))
-		for _, key := range []string{"id", "day_id", "item_id"} {
+		for _, key := range []string{"id", "week_id", "day_id", "item_id"} {
 			if v, ok := params[key]; ok {
 				names = append(names, key)
 				values = append(values, v)
@@ -136,6 +151,53 @@ func assertHTTPError(t *testing.T, err error, wantCode int) {
 	if !ok || he.Code != wantCode {
 		t.Fatalf("error = %v, want %d", err, wantCode)
 	}
+}
+
+func TestHandlers_List_storeError(t *testing.T) {
+	h := programHandler(&errListProgramStore{})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodGet, "/programs", "", uuid.New(), nil)
+	err := h.List(c)
+	assertHTTPError(t, err, http.StatusInternalServerError)
+}
+
+func TestHandlers_Create_storeError(t *testing.T) {
+	h := programHandler(&errCreateStore{})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs", "", uuid.New(), nil)
+	err := h.Create(c)
+	assertHTTPError(t, err, http.StatusInternalServerError)
+}
+
+type errCreateStore struct {
+	fakeProgramStore
+}
+
+func (errCreateStore) CreateDraft(context.Context, uuid.UUID) (Detail, error) {
+	return Detail{}, errors.New("create failed")
+}
+
+type errUpdateStore struct {
+	fakeProgramStore
+}
+
+func (errUpdateStore) Update(context.Context, uuid.UUID, uuid.UUID, UpdateInput) (Detail, error) {
+	return Detail{}, errors.New("update failed")
+}
+
+func TestHandlers_Update_storeError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	h := programHandler(&errUpdateStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+	})
+	e := echo.New()
+	body := `{"name":"x"}`
+	c, _ := programContext(e, http.MethodPatch, "/programs/"+programID.String(), body, userID, map[string]string{"id": programID.String()})
+	err := h.Update(c)
+	assertHTTPError(t, err, http.StatusInternalServerError)
 }
 
 func TestHandlers_List_passesQueryParams(t *testing.T) {
@@ -213,6 +275,37 @@ func TestHandlers_Get(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_mapProgramError_internal(t *testing.T) {
+	err := mapProgramError(errors.New("boom"))
+	if err.Code != http.StatusInternalServerError {
+		t.Fatalf("code = %d, want 500", err.Code)
+	}
+}
+
+func TestHandlers_ReorderWeeks_invalidJSON(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPut, "/programs/"+uuid.New().String()+"/weeks/reorder", "{", uuid.New(), map[string]string{
+		"id": uuid.New().String(),
+	})
+	err := h.ReorderWeeks(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
+}
+
+func TestHandlers_ReorderWeeks_invalidWeekIDs(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	h := programHandler(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+	})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/reorder", `{"week_ids":["bad"]}`, userID, map[string]string{
+		"id": programID.String(),
+	})
+	err := h.ReorderWeeks(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
 }
 
 func TestHandlers_Get_invalidID(t *testing.T) {
@@ -365,7 +458,7 @@ func TestHandlers_Archive_success(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 }
 
-func TestHandlers_AddDay(t *testing.T) {
+func TestHandlers_AddWeek(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	detail := sampleDetail(userID, programID)
@@ -373,7 +466,255 @@ func TestHandlers_AddDay(t *testing.T) {
 	h := programHandler(store)
 
 	e := echo.New()
-	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/days", "", userID, map[string]string{"id": programID.String()})
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks", "", userID, map[string]string{
+		"id": programID.String(),
+	})
+
+	if err := h.AddWeek(c); err != nil {
+		t.Fatalf("AddWeek: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_DeleteWeek_mapsLastWeek(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	store := &deleteWeekErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		deleteWeekErr: ErrLastWeek,
+	}
+	h := programHandler(store)
+	e := echo.New()
+	c, _ := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+weekID.String(), "", userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
+	err := h.DeleteWeek(c)
+	assertHTTPError(t, err, http.StatusConflict)
+}
+
+func TestHandlers_ReorderWeeks_mapsInvalidReorder(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	store := &reorderWeeksErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		reorderErr: ErrInvalidReorder,
+	}
+	h := programHandler(store)
+	body := `{"week_ids":["` + uuid.New().String() + `"]}`
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/reorder", body, userID, map[string]string{
+		"id": programID.String(),
+	})
+	err := h.ReorderWeeks(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
+}
+
+func TestHandlers_DeleteWeek_success(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	store := &fakeProgramStore{program: detail.Program, detail: detail}
+	h := programHandler(store)
+	e := echo.New()
+	c, rec := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+weekID.String(), "", userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
+	if err := h.DeleteWeek(c); err != nil {
+		t.Fatalf("DeleteWeek: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_ReorderWeeks(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	detail := sampleDetail(userID, programID)
+	store := &fakeProgramStore{program: detail.Program, detail: detail}
+	h := programHandler(store)
+
+	body := `{"week_ids":["` + weekID.String() + `"]}`
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/reorder", body, userID, map[string]string{
+		"id": programID.String(),
+	})
+
+	if err := h.ReorderWeeks(c); err != nil {
+		t.Fatalf("ReorderWeeks: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_DeleteDay_mapsLastDay(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	dayID := uuid.New()
+	store := &deleteDayErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		deleteDayErr: ErrLastDay,
+	}
+	h := programHandler(store)
+	e := echo.New()
+	c, _ := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String(), "", userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+		"day_id":  dayID.String(),
+	})
+	err := h.DeleteDay(c)
+	assertHTTPError(t, err, http.StatusConflict)
+}
+
+func TestHandlers_AddDay_mapsMaxDays(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	store := &addDayErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		addDayErr: ErrMaxDaysPerWeek,
+	}
+	h := programHandler(store)
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days", "", userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
+	err := h.AddDay(c)
+	assertHTTPError(t, err, http.StatusConflict)
+}
+
+func TestHandlers_AddDay_notFound(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	store := &addDayErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		addDayErr: ErrNotFound,
+	}
+	h := programHandler(store)
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days", "", userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
+	err := h.AddDay(c)
+	assertHTTPError(t, err, http.StatusNotFound)
+}
+
+func TestHandlers_ReorderDays_mapsInvalidReorder(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	store := &reorderDaysErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		reorderErr: ErrInvalidReorder,
+	}
+	h := programHandler(store)
+	body := `{"day_ids":["` + uuid.New().String() + `"]}`
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/reorder", body, userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
+	err := h.ReorderDays(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
+}
+
+func TestHandlers_ReorderWeekExercises_mapsInvalidReorder(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	store := &reorderExercisesErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		reorderErr: ErrInvalidReorder,
+	}
+	h := programHandler(store)
+	body := `{"days":[{"day_id":"` + uuid.New().String() + `","exercise_item_ids":["` + uuid.New().String() + `"]}]}`
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/exercises/reorder", body, userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
+	err := h.ReorderWeekExercises(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
+}
+
+func TestHandlers_ReorderDays(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	dayID := detail.Weeks[0].Days[0].ID
+	store := &fakeProgramStore{program: detail.Program, detail: detail}
+	h := programHandler(store)
+
+	body := `{"day_ids":["` + dayID.String() + `"]}`
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/reorder", body, userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
+
+	if err := h.ReorderDays(c); err != nil {
+		t.Fatalf("ReorderDays: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_ReorderWeekExercises(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	dayID := detail.Weeks[0].Days[0].ID
+	itemID := uuid.New()
+	store := &fakeProgramStore{program: detail.Program, detail: detail}
+	h := programHandler(store)
+
+	body := `{"days":[{"day_id":"` + dayID.String() + `","exercise_item_ids":["` + itemID.String() + `"]}]}`
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/exercises/reorder", body, userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
+
+	if err := h.ReorderWeekExercises(c); err != nil {
+		t.Fatalf("ReorderWeekExercises: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_AddDay(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	store := &fakeProgramStore{program: detail.Program, detail: detail}
+	h := programHandler(store)
+
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days", "", userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+	})
 
 	if err := h.AddDay(c); err != nil {
 		t.Fatalf("AddDay: %v", err)
@@ -384,15 +725,17 @@ func TestHandlers_AddDay(t *testing.T) {
 func TestHandlers_DeleteDay(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	dayID := uuid.New()
 	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	dayID := detail.Weeks[0].Days[0].ID
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
 	e := echo.New()
-	c, rec := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/days/"+dayID.String(), "", userID, map[string]string{
-		"id":     programID.String(),
-		"day_id": dayID.String(),
+	c, rec := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String(), "", userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+		"day_id":  dayID.String(),
 	})
 
 	if err := h.DeleteDay(c); err != nil {
@@ -404,17 +747,19 @@ func TestHandlers_DeleteDay(t *testing.T) {
 func TestHandlers_AddDayExercise(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	dayID := uuid.New()
 	exerciseID := uuid.New()
 	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	dayID := detail.Weeks[0].Days[0].ID
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
 	body := `{"exercise_id":"` + exerciseID.String() + `","sets":3,"reps":10}`
 	e := echo.New()
-	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/days/"+dayID.String()+"/exercises", body, userID, map[string]string{
-		"id":     programID.String(),
-		"day_id": dayID.String(),
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/exercises", body, userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+		"day_id":  dayID.String(),
 	})
 
 	if err := h.AddDayExercise(c); err != nil {
@@ -427,9 +772,10 @@ func TestHandlers_AddDayExercise_invalidExerciseID(t *testing.T) {
 	h := programHandler(&fakeProgramStore{})
 	e := echo.New()
 	body := `{"exercise_id":"bad","sets":3,"reps":10}`
-	c, _ := programContext(e, http.MethodPost, "/programs/"+uuid.New().String()+"/days/"+uuid.New().String()+"/exercises", body, uuid.New(), map[string]string{
-		"id":     uuid.New().String(),
-		"day_id": uuid.New().String(),
+	c, _ := programContext(e, http.MethodPost, "/programs/"+uuid.New().String()+"/weeks/"+uuid.New().String()+"/days/"+uuid.New().String()+"/exercises", body, uuid.New(), map[string]string{
+		"id":      uuid.New().String(),
+		"week_id": uuid.New().String(),
+		"day_id":  uuid.New().String(),
 	})
 
 	err := h.AddDayExercise(c)
@@ -439,17 +785,19 @@ func TestHandlers_AddDayExercise_invalidExerciseID(t *testing.T) {
 func TestHandlers_UpdateDayExercise(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	dayID := uuid.New()
 	itemID := uuid.New()
 	exerciseID := uuid.New()
 	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	dayID := detail.Weeks[0].Days[0].ID
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
 	body := `{"exercise_id":"` + exerciseID.String() + `","sets":4,"reps":8}`
 	e := echo.New()
-	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/days/"+dayID.String()+"/exercises/"+itemID.String(), body, userID, map[string]string{
+	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/exercises/"+itemID.String(), body, userID, map[string]string{
 		"id":      programID.String(),
+		"week_id": weekID.String(),
 		"day_id":  dayID.String(),
 		"item_id": itemID.String(),
 	})
@@ -463,15 +811,17 @@ func TestHandlers_UpdateDayExercise(t *testing.T) {
 func TestHandlers_DeleteDayExercise(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	dayID := uuid.New()
 	itemID := uuid.New()
 	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	dayID := detail.Weeks[0].Days[0].ID
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
 	e := echo.New()
-	c, rec := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/days/"+dayID.String()+"/exercises/"+itemID.String(), "", userID, map[string]string{
+	c, rec := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/exercises/"+itemID.String(), "", userID, map[string]string{
 		"id":      programID.String(),
+		"week_id": weekID.String(),
 		"day_id":  dayID.String(),
 		"item_id": itemID.String(),
 	})
@@ -490,8 +840,9 @@ func TestHandlers_DeleteDayExercise_notFound(t *testing.T) {
 	h := programHandler(store)
 
 	e := echo.New()
-	c, _ := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/days/"+uuid.New().String()+"/exercises/"+uuid.New().String(), "", userID, map[string]string{
+	c, _ := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+uuid.New().String()+"/days/"+uuid.New().String()+"/exercises/"+uuid.New().String(), "", userID, map[string]string{
 		"id":      programID.String(),
+		"week_id": uuid.New().String(),
 		"day_id":  uuid.New().String(),
 		"item_id": uuid.New().String(),
 	})
@@ -579,7 +930,7 @@ func TestHandlers_Publish_mapsValidationError(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail: Detail{
 			Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
-			Days:    []Day{{DayNumber: 1, Exercises: []DayExercise{}}},
+			Weeks:   []Week{{WeekNumber: 1, Days: []Day{{DayNumber: 1, Exercises: []DayExercise{}}}}},
 		},
 	}
 	h := programHandler(store)

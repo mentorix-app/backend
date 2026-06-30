@@ -15,12 +15,15 @@ func validPublishDetail(name string) Detail {
 	reps := 10
 	return Detail{
 		Program: Program{Name: name, Category: &category, Difficulty: &difficulty},
-		Days: []Day{{
-			DayNumber: 1,
-			Exercises: []DayExercise{{
-				ExerciseID: uuid.New(),
-				Sets:       &sets,
-				Reps:       &reps,
+		Weeks: []Week{{
+			WeekNumber: 1,
+			Days: []Day{{
+				DayNumber: 1,
+				Exercises: []DayExercise{{
+					ExerciseID: uuid.New(),
+					Sets:       &sets,
+					Reps:       &reps,
+				}},
 			}},
 		}},
 	}
@@ -54,11 +57,13 @@ func TestValidatePublishDetail_missingCategory(t *testing.T) {
 	reps := 10
 	d := Detail{
 		Program: Program{Name: "Test", Difficulty: &difficulty},
-		Days: []Day{{
-			Exercises: []DayExercise{{
-				ExerciseID: uuid.New(),
-				Sets:       &sets,
-				Reps:       &reps,
+		Weeks: []Week{{
+			Days: []Day{{
+				Exercises: []DayExercise{{
+					ExerciseID: uuid.New(),
+					Sets:       &sets,
+					Reps:       &reps,
+				}},
 			}},
 		}},
 	}

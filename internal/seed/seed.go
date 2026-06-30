@@ -232,17 +232,18 @@ func createProgram(ctx context.Context, svc *program.Service, userID uuid.UUID, 
 		if err != nil {
 			return err
 		}
-		if len(detail.Days) == 0 {
+		if len(detail.Weeks) == 0 || len(detail.Weeks[0].Days) == 0 {
 			return fmt.Errorf("program has no days")
 		}
-		dayID := detail.Days[0].ID
+		weekID := detail.Weeks[0].ID
+		dayID := detail.Weeks[0].Days[0].ID
 		for i, exName := range spec.ExerciseNames {
 			exID, ok := exByName[exName]
 			if !ok {
 				return fmt.Errorf("exercise %q not found", exName)
 			}
 			sets, reps := 3, 8+i%3
-			_, err := svc.AddDayExercise(ctx, userID, draft.ID, dayID, program.DayExerciseInput{
+			_, err := svc.AddDayExercise(ctx, userID, draft.ID, weekID, dayID, program.DayExerciseInput{
 				ExerciseID: exID,
 				Sets:       &sets,
 				Reps:       &reps,
