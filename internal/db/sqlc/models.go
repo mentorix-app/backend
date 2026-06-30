@@ -64,6 +64,18 @@ type MentorixProgram struct {
 	DescriptionRu   string             `json:"description_ru"`
 }
 
+type MentorixProgramAssignment struct {
+	ID               pgtype.UUID `json:"id"`
+	ProgramID        pgtype.UUID `json:"program_id"`
+	ProgramVersionID pgtype.UUID `json:"program_version_id"`
+	TrainerID        pgtype.UUID `json:"trainer_id"`
+	ClientUserID     pgtype.UUID `json:"client_user_id"`
+	Status           string      `json:"status"`
+	AssignedAt       time.Time   `json:"assigned_at"`
+	CreatedAt        time.Time   `json:"created_at"`
+	ModifiedAt       time.Time   `json:"modified_at"`
+}
+
 type MentorixProgramDay struct {
 	ID         pgtype.UUID `json:"id"`
 	ProgramID  pgtype.UUID `json:"program_id"`
@@ -87,6 +99,52 @@ type MentorixProgramDayExercise struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	ModifiedAt   time.Time      `json:"modified_at"`
 	ModifiedBy   pgtype.UUID    `json:"modified_by"`
+}
+
+type MentorixProgramVersion struct {
+	ID                 pgtype.UUID `json:"id"`
+	ProgramID          pgtype.UUID `json:"program_id"`
+	VersionNumber      int32       `json:"version_number"`
+	PublishedAt        time.Time   `json:"published_at"`
+	PublishedBy        pgtype.UUID `json:"published_by"`
+	Name               string      `json:"name"`
+	NameRu             string      `json:"name_ru"`
+	Description        string      `json:"description"`
+	DescriptionRu      string      `json:"description_ru"`
+	Category           *string     `json:"category"`
+	Difficulty         *string     `json:"difficulty"`
+	PreviewImageUrl    string      `json:"preview_image_url"`
+	CreatedAt          time.Time   `json:"created_at"`
+	ContentFingerprint string      `json:"content_fingerprint"`
+}
+
+type MentorixProgramVersionDay struct {
+	ID                   pgtype.UUID `json:"id"`
+	ProgramVersionID     pgtype.UUID `json:"program_version_id"`
+	ProgramVersionWeekID pgtype.UUID `json:"program_version_week_id"`
+	DayNumber            int32       `json:"day_number"`
+	SortOrder            int32       `json:"sort_order"`
+	CreatedAt            time.Time   `json:"created_at"`
+}
+
+type MentorixProgramVersionDayExercise struct {
+	ID                  pgtype.UUID    `json:"id"`
+	ProgramVersionDayID pgtype.UUID    `json:"program_version_day_id"`
+	ExerciseID          pgtype.UUID    `json:"exercise_id"`
+	SortOrder           int32          `json:"sort_order"`
+	Sets                *int32         `json:"sets"`
+	Reps                *int32         `json:"reps"`
+	WeightKg            pgtype.Numeric `json:"weight_kg"`
+	Instruction         string         `json:"instruction"`
+	CreatedAt           time.Time      `json:"created_at"`
+}
+
+type MentorixProgramVersionWeek struct {
+	ID               pgtype.UUID `json:"id"`
+	ProgramVersionID pgtype.UUID `json:"program_version_id"`
+	WeekNumber       int32       `json:"week_number"`
+	SortOrder        int32       `json:"sort_order"`
+	CreatedAt        time.Time   `json:"created_at"`
 }
 
 type MentorixProgramWeek struct {

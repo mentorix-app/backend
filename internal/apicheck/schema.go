@@ -82,6 +82,16 @@ func schemaBindings() []schemaBinding {
 			WeightKg    *float64 `json:"weight_kg"`
 			Instruction *string  `json:"instruction"`
 		}{})},
+		{name: "ProgramAssignment", typ: reflect.TypeOf(program.Assignment{})},
+		{name: "ProgramAssignmentListResponse", typ: reflect.TypeOf(program.AssignmentListResult{})},
+		{name: "SetClientProgramAssignmentRequest", typ: reflect.TypeOf(program.SetClientProgramAssignmentRequest{})},
+		{name: "ProgramAssignmentSyncRequest", typ: reflect.TypeOf(program.AssignmentSyncRequest{})},
+		{name: "ProgramAssignmentSyncSkipped", typ: reflect.TypeOf(program.AssignmentSyncSkipped{})},
+		{name: "ProgramAssignmentSyncResponse", typ: reflect.TypeOf(program.AssignmentSyncResult{})},
+		{name: "ProgramVersionSummary", typ: reflect.TypeOf(program.VersionSummary{})},
+		{name: "ProgramVersionListResponse", typ: reflect.TypeOf(program.VersionListResult{})},
+		{name: "ProgramVersionCleanupSkipped", typ: reflect.TypeOf(program.VersionCleanupSkipped{})},
+		{name: "ProgramVersionCleanupResponse", typ: reflect.TypeOf(program.VersionCleanupResult{})},
 	}
 }
 
@@ -172,6 +182,9 @@ func enumBindings() []enumBinding {
 		{name: "ProgramCategory", values: []string{
 			string(program.CategoryWeightLoss), string(program.CategoryMuscleGain), string(program.CategoryRehabilitation),
 			string(program.CategoryEndurance), string(program.CategoryFunctional),
+		}},
+		{name: "ProgramAssignmentStatus", values: []string{
+			string(program.AssignmentStatusActive), string(program.AssignmentStatusCompleted), string(program.AssignmentStatusCancelled),
 		}},
 	}
 }

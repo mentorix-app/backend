@@ -1128,6 +1128,94 @@
           "response": []
         },
         {
+          "name": "POST /programs/:id/publish-update",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/publish-update",
+            "description": "Freeze current published program as new version"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /programs/:id/assignments",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/assignments",
+            "description": "List clients on this program (read-only)"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/assignments/sync",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"all_active\": true\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/assignments/sync",
+            "description": "Sync assignments to latest frozen version"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /programs/:id/versions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/versions",
+            "description": "List frozen program versions"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/versions/cleanup",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/versions/cleanup",
+            "description": "Delete all unused versions"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /programs/:id/versions/:version_id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/versions/{{program_version_id}}",
+            "description": "Delete unused version"
+          },
+          "response": []
+        },
+        {
           "name": "DELETE /programs/:id",
           "request": {
             "auth": {
@@ -1138,6 +1226,43 @@
             "header": [],
             "url": "{{base_url}}/programs/{{program_id}}",
             "description": "Soft delete (deleted_at)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Trainer",
+      "item": [
+        {
+          "name": "GET /trainer/clients/:client_user_id/program-assignment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/trainer/clients/{{client_user_id}}/program-assignment",
+            "description": "Current program for client (clients page Select)"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /trainer/clients/:client_user_id/program-assignment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": \"{{program_id}}\"\n}"
+            },
+            "url": "{{base_url}}/trainer/clients/{{client_user_id}}/program-assignment",
+            "description": "Set or replace client program; program_id null to clear"
           },
           "response": []
         }

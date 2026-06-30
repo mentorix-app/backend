@@ -13,6 +13,7 @@ import (
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/trainerclient"
 )
 
 const contractJWTSecret = "contract-check-jwt-secret-min-32-chars"
@@ -43,4 +44,6 @@ func MountRoutes(e *echo.Echo, pool *pgxpool.Pool) {
 
 	progSvc := program.NewService(pool)
 	program.NewHandlers(progSvc, pool, contractJWTSecret).Mount(e)
+
+	trainerclient.NewHandlers(progSvc, pool, contractJWTSecret).Mount(e)
 }

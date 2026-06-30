@@ -19,6 +19,8 @@ type programStore interface {
 	GetDetail(ctx context.Context, id uuid.UUID) (Detail, error)
 	Update(ctx context.Context, id, userID uuid.UUID, in UpdateInput) (Detail, error)
 	SetStatus(ctx context.Context, id, userID uuid.UUID, status Status) (Detail, error)
+	PublishFromDraft(ctx context.Context, id, userID uuid.UUID, d Detail) (Detail, error)
+	FreezePublishedVersion(ctx context.Context, id, userID uuid.UUID, d Detail) (Detail, error)
 	SoftDelete(ctx context.Context, id, userID uuid.UUID) error
 	AddWeek(ctx context.Context, programID uuid.UUID) (Detail, error)
 	DeleteWeek(ctx context.Context, programID, weekID uuid.UUID) (Detail, error)
@@ -30,6 +32,14 @@ type programStore interface {
 	ReorderWeeks(ctx context.Context, programID uuid.UUID, weekIDs []uuid.UUID) (Detail, error)
 	ReorderDays(ctx context.Context, programID, weekID uuid.UUID, dayIDs []uuid.UUID) (Detail, error)
 	ReorderWeekExercises(ctx context.Context, userID, programID, weekID uuid.UUID, days []WeekExerciseReorderDay) (Detail, error)
+	TrainerIDForUser(ctx context.Context, userID uuid.UUID) (uuid.UUID, error)
+	GetClientProgramAssignment(ctx context.Context, trainerID, clientUserID uuid.UUID) (*Assignment, error)
+	SetClientProgramAssignment(ctx context.Context, trainerUserID, trainerID, clientUserID uuid.UUID, programID *uuid.UUID) (*Assignment, error)
+	ListProgramAssignments(ctx context.Context, programID uuid.UUID) (AssignmentListResult, error)
+	SyncProgramAssignments(ctx context.Context, programID uuid.UUID, req AssignmentSyncRequest) (AssignmentSyncResult, error)
+	ListProgramVersions(ctx context.Context, programID uuid.UUID) (VersionListResult, error)
+	DeleteProgramVersion(ctx context.Context, programID, versionID uuid.UUID) error
+	CleanupProgramVersions(ctx context.Context, programID uuid.UUID) (VersionCleanupResult, error)
 }
 
 type Service struct {
@@ -42,6 +52,11 @@ func NewService(pool *pgxpool.Pool) *Service {
 		store: NewStore(pool),
 		roles: sqlc.New(pool),
 	}
+}
+
+// NewServiceWithStore wires a Service with test or custom store implementations.
+func NewServiceWithStore(store programStore, roles auth.RoleQuerier) *Service {
+	return &Service{store: store, roles: roles}
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID) (Detail, error) {
@@ -88,7 +103,7 @@ func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, in UpdateInp
 }
 
 func (s *Service) Publish(ctx context.Context, userID, id uuid.UUID) (Detail, error) {
-	if err := s.ensureMutable(ctx, userID, id); err != nil {
+	if err := s.ensureAccess(ctx, userID, id); err != nil {
 		return Detail{}, err
 	}
 	d, err := s.store.GetDetail(ctx, id)
@@ -109,7 +124,48 @@ func (s *Service) Publish(ctx context.Context, userID, id uuid.UUID) (Detail, er
 	if err := validatePublishDetail(d); err != nil {
 		return Detail{}, err
 	}
-	out, err := s.store.SetStatus(ctx, id, userID, StatusPublished)
+	var out Detail
+	switch d.Status {
+	case StatusDraft:
+		out, err = s.store.PublishFromDraft(ctx, id, userID, d)
+	case StatusArchived:
+		out, err = s.store.SetStatus(ctx, id, userID, StatusPublished)
+	default:
+		return Detail{}, ErrInvalidStatusTransition
+	}
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return out, nil
+}
+
+func (s *Service) PublishUpdate(ctx context.Context, userID, id uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, id); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.GetDetail(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	if d.DeletedAt != nil {
+		return Detail{}, ErrNotFound
+	}
+	if d.Status != StatusPublished {
+		return Detail{}, ErrInvalidStatusTransition
+	}
+	if !d.HasUnpublishedChanges {
+		return Detail{}, ErrNoUnpublishedChanges
+	}
+	if err := validatePublishDetail(d); err != nil {
+		return Detail{}, err
+	}
+	out, err := s.store.FreezePublishedVersion(ctx, id, userID, d)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound
@@ -320,7 +376,23 @@ func (s *Service) ensureAccess(ctx context.Context, userID, programID uuid.UUID)
 }
 
 func (s *Service) ensureMutable(ctx context.Context, userID, programID uuid.UUID) error {
-	return s.ensureAccess(ctx, userID, programID)
+	p, err := s.store.GetProgramRow(ctx, programID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if p.DeletedAt != nil {
+		return ErrNotFound
+	}
+	if err := s.ensureOwnerOrAdmin(ctx, userID, p.CreatedBy); err != nil {
+		return err
+	}
+	if p.Status == StatusArchived {
+		return ErrReadOnly
+	}
+	return nil
 }
 
 func (s *Service) ensureOwnerOrAdmin(ctx context.Context, userID, ownerID uuid.UUID) error {

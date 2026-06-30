@@ -107,6 +107,9 @@ func TestHandlers_Mount_registersRoutes(t *testing.T) {
 	if !found["GET /programs"] || !found["POST /programs"] {
 		t.Fatalf("routes missing: %v", found)
 	}
+	if !found["POST /programs/:id/publish-update"] || !found["GET /programs/:id/assignments"] {
+		t.Fatalf("assignment/version routes missing: %v", found)
+	}
 }
 
 func programContext(e *echo.Echo, method, path, body string, userID uuid.UUID, params map[string]string) (echo.Context, *httptest.ResponseRecorder) {
@@ -123,7 +126,7 @@ func programContext(e *echo.Echo, method, path, body string, userID uuid.UUID, p
 	if len(params) > 0 {
 		names := make([]string, 0, len(params))
 		values := make([]string, 0, len(params))
-		for _, key := range []string{"id", "week_id", "day_id", "item_id"} {
+		for _, key := range []string{"id", "week_id", "day_id", "item_id", "version_id", "client_user_id"} {
 			if v, ok := params[key]; ok {
 				names = append(names, key)
 				values = append(values, v)
@@ -855,6 +858,14 @@ type publishStore struct {
 	fakeProgramStore
 }
 
+func (p *publishStore) PublishFromDraft(_ context.Context, _, _ uuid.UUID, d Detail) (Detail, error) {
+	if p.err != nil {
+		return Detail{}, p.err
+	}
+	d.Status = StatusPublished
+	return d, nil
+}
+
 func (p *publishStore) SetStatus(_ context.Context, _ uuid.UUID, _ uuid.UUID, status Status) (Detail, error) {
 	if p.err != nil {
 		return Detail{}, p.err
@@ -951,4 +962,81 @@ func TestHandlers_Archive_mapsStatusConflict(t *testing.T) {
 	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/archive", "", userID, map[string]string{"id": programID.String()})
 	err := h.Archive(c)
 	assertHTTPError(t, err, http.StatusConflict)
+}
+
+func TestHandlers_Delete_unauthorized(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodDelete, "/programs/"+uuid.New().String(), nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(uuid.New().String())
+	err := h.Delete(c)
+	assertHTTPError(t, err, http.StatusUnauthorized)
+}
+
+func TestHandlers_Delete_invalidID(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodDelete, "/programs/not-a-uuid", "", uuid.New(), map[string]string{"id": "not-a-uuid"})
+	err := h.Delete(c)
+	assertHTTPError(t, err, http.StatusBadRequest)
+}
+
+func TestHandlers_Delete_notFound(t *testing.T) {
+	userID := uuid.New()
+	h := programHandler(&fakeProgramStore{err: ErrNotFound})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodDelete, "/programs/"+uuid.New().String(), "", userID, map[string]string{"id": uuid.New().String()})
+	err := h.Delete(c)
+	assertHTTPError(t, err, http.StatusNotFound)
+}
+
+func TestHandlers_AddWeek_unauthorized(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/programs/"+uuid.New().String()+"/weeks", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(uuid.New().String())
+	err := h.AddWeek(c)
+	assertHTTPError(t, err, http.StatusUnauthorized)
+}
+
+func TestHandlers_Archive_unauthorized(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/programs/"+uuid.New().String()+"/archive", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(uuid.New().String())
+	err := h.Archive(c)
+	assertHTTPError(t, err, http.StatusUnauthorized)
+}
+
+func TestHandlers_Publish_unauthorized(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/programs/"+uuid.New().String()+"/publish", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(uuid.New().String())
+	err := h.Publish(c)
+	assertHTTPError(t, err, http.StatusUnauthorized)
+}
+
+func TestHandlers_AddDay_unauthorized(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/programs/"+uuid.New().String()+"/weeks/"+uuid.New().String()+"/days", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id", "week_id")
+	c.SetParamValues(uuid.New().String(), uuid.New().String())
+	err := h.AddDay(c)
+	assertHTTPError(t, err, http.StatusUnauthorized)
 }

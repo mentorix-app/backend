@@ -35,7 +35,13 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.PATCH("/:id", h.Update)
 	g.DELETE("/:id", h.Delete)
 	g.POST("/:id/publish", h.Publish)
+	g.POST("/:id/publish-update", h.PublishUpdate)
 	g.POST("/:id/archive", h.Archive)
+	g.GET("/:id/assignments", h.ListAssignments)
+	g.POST("/:id/assignments/sync", h.SyncAssignments)
+	g.GET("/:id/versions", h.ListVersions)
+	g.POST("/:id/versions/cleanup", h.CleanupVersions)
+	g.DELETE("/:id/versions/:version_id", h.DeleteVersion)
 	g.POST("/:id/weeks", h.AddWeek)
 	g.PUT("/:id/weeks/reorder", h.ReorderWeeks)
 	g.DELETE("/:id/weeks/:week_id", h.DeleteWeek)
@@ -237,6 +243,99 @@ func (h *Handlers) Publish(c echo.Context) error {
 	return h.statusAction(c, func(ctx echo.Context, uid, id uuid.UUID) (Detail, error) {
 		return h.svc.Publish(ctx.Request().Context(), uid, id)
 	})
+}
+
+func (h *Handlers) PublishUpdate(c echo.Context) error {
+	return h.statusAction(c, func(ctx echo.Context, uid, id uuid.UUID) (Detail, error) {
+		return h.svc.PublishUpdate(ctx.Request().Context(), uid, id)
+	})
+}
+
+func (h *Handlers) ListAssignments(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	result, err := h.svc.ListAssignments(c.Request().Context(), uid, programID)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) SyncAssignments(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	var body AssignmentSyncRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	result, err := h.svc.SyncAssignments(c.Request().Context(), uid, programID, body)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) ListVersions(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	result, err := h.svc.ListVersions(c.Request().Context(), uid, programID)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) CleanupVersions(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	result, err := h.svc.CleanupVersions(c.Request().Context(), uid, programID)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+func (h *Handlers) DeleteVersion(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := parseID(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	versionID, err := parseID(c.Param("version_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	if err := h.svc.DeleteVersion(c.Request().Context(), uid, programID, versionID); err != nil {
+		return mapProgramError(err)
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handlers) Archive(c echo.Context) error {
@@ -505,10 +604,23 @@ func parseID(raw string) (uuid.UUID, error) {
 	return uuid.Parse(raw)
 }
 
+// HTTPErrorFrom maps program domain errors to Echo HTTP errors (shared with trainer client handlers).
+func HTTPErrorFrom(err error) *echo.HTTPError {
+	return mapProgramError(err)
+}
+
 func mapProgramError(err error) *echo.HTTPError {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, httpx.MsgProgramNotFound)
+	case errors.Is(err, ErrReadOnly):
+		return echo.NewHTTPError(http.StatusForbidden, err.Error())
+	case errors.Is(err, ErrClientNotLinked):
+		return echo.NewHTTPError(http.StatusForbidden, err.Error())
+	case errors.Is(err, ErrClientBlocked), errors.Is(err, ErrProgramNotPublished):
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
+	case errors.Is(err, ErrClientNotFound):
+		return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
 	case errors.Is(err, ErrForbidden):
 		return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
 	case errors.Is(err, ErrValidation):
@@ -516,6 +628,10 @@ func mapProgramError(err error) *echo.HTTPError {
 	case errors.Is(err, ErrInvalidReorder):
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrInvalidStatusTransition):
+		return echo.NewHTTPError(http.StatusConflict, err.Error())
+	case errors.Is(err, ErrNoUnpublishedChanges), errors.Is(err, ErrInvalidSyncRequest):
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
+	case errors.Is(err, ErrVersionHasAssignments), errors.Is(err, ErrSoleProgramVersion):
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
 	case errors.Is(err, ErrLastWeek), errors.Is(err, ErrLastDay), errors.Is(err, ErrMaxDaysPerWeek):
 		return echo.NewHTTPError(http.StatusConflict, err.Error())

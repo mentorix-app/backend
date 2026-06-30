@@ -70,6 +70,27 @@ Single convention across Go code, PostgreSQL, and REST JSON. **Do not** use came
 - Request DTOs in handlers may differ from response structs; both use snake_case JSON tags.
 - Exceptions only where a standard requires it: `token_type: "Bearer"`, single-word keys (`email`, `password`, `name`).
 
+### PostgreSQL tables and columns (mandatory)
+
+Full rules: **`AGENTS.md`** §2 «Именование таблиц и полей PostgreSQL». Summary (must match `db/schema.sql`, migration **`000007_schema_naming_unification`**):
+
+| Rule | Example |
+| ---- | ------- |
+| Schema | `mentorix` |
+| Table names | `snake_case`, plural | `programs`, `trainer_clients` |
+| Domain prefix | `auth_*`, `user_*`, `trainer_*`, `program_*` | `auth_refresh_sessions`, `program_day_exercises` |
+| Child tables | full compound prefix | `program_version_weeks`, not `version_weeks` |
+| PK | `id uuid` | |
+| FK column | `{role}_id` | `program_id`, `program_version_id`, `week_id` |
+| Trainer–client link | **`client_user_id`** → `users` | not `client_id` |
+| Trainer FK | **`trainer_id`** → `trainers(id)` | not `trainer_user_id` |
+| Audit | `created_at`, `modified_at`, `created_by`, `modified_by` | |
+| Soft delete | `deleted_at` | |
+| DB enum strings | `snake_case` + CHECK | `email_password`, `published` |
+| UNIQUE / INDEX | `{table}_{cols}_uniq`, `{table}_{col}_idx` | |
+
+Program snapshot tables (implemented): `program_versions`, `program_version_weeks`, `program_version_days`, `program_version_day_exercises`, `program_assignments` — mirror the editable `program_*` tree for frozen client plans.
+
 ---
 
 ## Testing

@@ -16,6 +16,15 @@ var (
 	ErrForbidden               = errors.New("forbidden")
 	ErrNotFound                = errors.New("program not found")
 	ErrInvalidStatusTransition = errors.New("invalid status transition")
+	ErrReadOnly                = errors.New("program is read-only")
+	ErrClientNotLinked         = errors.New("client is not linked to trainer")
+	ErrClientBlocked           = errors.New("client is blocked")
+	ErrClientNotFound          = errors.New("client not found")
+	ErrProgramNotPublished     = errors.New("program is not published")
+	ErrNoUnpublishedChanges    = errors.New("no unpublished changes to publish")
+	ErrInvalidSyncRequest      = errors.New("invalid sync request")
+	ErrVersionHasAssignments   = errors.New("version has assignments")
+	ErrSoleProgramVersion      = errors.New("cannot delete the only program version")
 	ErrLastWeek                = errors.New("cannot delete the last week")
 	ErrLastDay                 = errors.New("cannot delete the last day in week")
 	ErrMaxDaysPerWeek          = errors.New("week cannot have more than 7 days")
@@ -45,21 +54,25 @@ const (
 type Difficulty = exercise.Difficulty
 
 type Program struct {
-	ID              uuid.UUID   `json:"id"`
-	CreatedBy       uuid.UUID   `json:"created_by"`
-	CreatedByName   string      `json:"created_by_name"`
-	ModifiedBy      uuid.UUID   `json:"modified_by"`
-	Status          Status      `json:"status"`
-	Name            string      `json:"name"`
-	NameRu          string      `json:"name_ru"`
-	Description     string      `json:"description"`
-	DescriptionRu   string      `json:"description_ru"`
-	Category        *Category   `json:"category,omitempty"`
-	Difficulty      *Difficulty `json:"difficulty,omitempty"`
-	PreviewImageURL string      `json:"preview_image_url"`
-	CreatedAt       time.Time   `json:"created_at"`
-	ModifiedAt      time.Time   `json:"modified_at"`
-	DeletedAt       *time.Time  `json:"deleted_at,omitempty"`
+	ID                     uuid.UUID   `json:"id"`
+	CreatedBy              uuid.UUID   `json:"created_by"`
+	CreatedByName          string      `json:"created_by_name"`
+	ModifiedBy             uuid.UUID   `json:"modified_by"`
+	Status                 Status      `json:"status"`
+	Name                   string      `json:"name"`
+	NameRu                 string      `json:"name_ru"`
+	Description            string      `json:"description"`
+	DescriptionRu          string      `json:"description_ru"`
+	Category               *Category   `json:"category,omitempty"`
+	Difficulty             *Difficulty `json:"difficulty,omitempty"`
+	PreviewImageURL        string      `json:"preview_image_url"`
+	LatestProgramVersionID *uuid.UUID  `json:"latest_program_version_id"`
+	LatestClientPlanAt     *time.Time  `json:"latest_client_plan_at"`
+	HasUnpublishedChanges  bool        `json:"has_unpublished_changes"`
+	AssignmentCount        int         `json:"assignment_count"`
+	CreatedAt              time.Time   `json:"created_at"`
+	ModifiedAt             time.Time   `json:"modified_at"`
+	DeletedAt              *time.Time  `json:"deleted_at,omitempty"`
 }
 
 type DayExercise struct {

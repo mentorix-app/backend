@@ -73,6 +73,25 @@ func (f *fakeProgramStore) SetStatus(_ context.Context, _, _ uuid.UUID, status S
 	return out, nil
 }
 
+func (f *fakeProgramStore) PublishFromDraft(_ context.Context, _, _ uuid.UUID, d Detail) (Detail, error) {
+	if f.err != nil {
+		return Detail{}, f.err
+	}
+	out := d
+	out.Program.Status = StatusPublished
+	out.HasUnpublishedChanges = false
+	return out, nil
+}
+
+func (f *fakeProgramStore) FreezePublishedVersion(_ context.Context, _, _ uuid.UUID, d Detail) (Detail, error) {
+	if f.err != nil {
+		return Detail{}, f.err
+	}
+	out := d
+	out.HasUnpublishedChanges = false
+	return out, nil
+}
+
 func (f *fakeProgramStore) SoftDelete(context.Context, uuid.UUID, uuid.UUID) error {
 	return f.err
 }
@@ -115,6 +134,38 @@ func (f *fakeProgramStore) ReorderDays(context.Context, uuid.UUID, uuid.UUID, []
 
 func (f *fakeProgramStore) ReorderWeekExercises(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []WeekExerciseReorderDay) (Detail, error) {
 	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) TrainerIDForUser(context.Context, uuid.UUID) (uuid.UUID, error) {
+	return uuid.New(), f.err
+}
+
+func (f *fakeProgramStore) GetClientProgramAssignment(context.Context, uuid.UUID, uuid.UUID) (*Assignment, error) {
+	return nil, f.err
+}
+
+func (f *fakeProgramStore) SetClientProgramAssignment(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, *uuid.UUID) (*Assignment, error) {
+	return nil, f.err
+}
+
+func (f *fakeProgramStore) ListProgramAssignments(context.Context, uuid.UUID) (AssignmentListResult, error) {
+	return AssignmentListResult{}, f.err
+}
+
+func (f *fakeProgramStore) SyncProgramAssignments(context.Context, uuid.UUID, AssignmentSyncRequest) (AssignmentSyncResult, error) {
+	return AssignmentSyncResult{}, f.err
+}
+
+func (f *fakeProgramStore) ListProgramVersions(context.Context, uuid.UUID) (VersionListResult, error) {
+	return VersionListResult{}, f.err
+}
+
+func (f *fakeProgramStore) DeleteProgramVersion(context.Context, uuid.UUID, uuid.UUID) error {
+	return f.err
+}
+
+func (f *fakeProgramStore) CleanupProgramVersions(context.Context, uuid.UUID) (VersionCleanupResult, error) {
+	return VersionCleanupResult{}, f.err
 }
 
 type capturingStore struct {

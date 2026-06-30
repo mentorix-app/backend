@@ -105,7 +105,12 @@ func (s *Store) List(ctx context.Context, params ListParams) (ListResult, error)
 
 	items := make([]Program, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, programFromListRow(row))
+		p := programFromListRow(row)
+		p, err = s.enrichProgram(ctx, p, nil)
+		if err != nil {
+			return ListResult{}, err
+		}
+		items = append(items, p)
 	}
 
 	return ListResult{
@@ -126,6 +131,19 @@ func (s *Store) GetProgramRow(ctx context.Context, id uuid.UUID) (Program, error
 }
 
 func (s *Store) GetDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
+	d, err := s.loadDetail(ctx, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	p, err := s.enrichProgram(ctx, d.Program, &d)
+	if err != nil {
+		return Detail{}, err
+	}
+	d.Program = p
+	return d, nil
+}
+
+func (s *Store) loadDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
 	p, err := s.GetProgramRow(ctx, id)
 	if err != nil {
 		return Detail{}, err

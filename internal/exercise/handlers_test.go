@@ -465,3 +465,41 @@ func TestDeleteMany(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdate_missingUser(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	req := httptest.NewRequest(http.MethodPut, "/exercises/"+uuid.New().String(), strings.NewReader(validUpsertJSON()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(uuid.New().String())
+
+	err := h.Update(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusUnauthorized {
+		t.Fatalf("error = %v, want 401", err)
+	}
+}
+
+func TestDeleteMany_missingUser(t *testing.T) {
+	e := echo.New()
+	h := testExerciseHandlers(&fakeExerciseStore{})
+	req := httptest.NewRequest(http.MethodDelete, "/exercises", strings.NewReader(`{"ids":["`+uuid.New().String()+`"]}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := h.DeleteMany(c)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusUnauthorized {
+		t.Fatalf("error = %v, want 401", err)
+	}
+}

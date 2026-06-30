@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"mentorix-backend/internal/auth"
 )
 
@@ -82,5 +84,16 @@ func TestAuthService_LoginWrongPassword(t *testing.T) {
 	}
 	if _, err := svc.Login(ctx, email, "wrong-password"); err == nil {
 		t.Fatal("expected login error for wrong password")
+	}
+}
+
+func TestAuthService_UserPrimaryEmailNotFound(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	svc := auth.NewService(pool, "integration-test-jwt-secret-32chars", 15*time.Minute, 30*24*time.Hour)
+
+	_, err := svc.UserPrimaryEmail(ctx, uuid.New())
+	if err == nil {
+		t.Fatal("expected not found error")
 	}
 }

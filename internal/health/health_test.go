@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 )
@@ -126,5 +127,35 @@ func TestNewPool_invalidURL(t *testing.T) {
 	_, err := NewPool(context.Background(), "://not-postgres")
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestRegisterReady_databaseUnavailable(t *testing.T) {
+	cfg, err := pgxpool.ParseConfig("postgres://mentorix:mentorix@127.0.0.1:1/mentorix?connect_timeout=1")
+	if err != nil {
+		t.Fatalf("ParseConfig: %v", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("NewWithConfig: %v", err)
+	}
+	defer pool.Close()
+
+	e := echo.New()
+	RegisterReady(e, pool, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	var resp ReadyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Checks["database"] != CheckError {
+		t.Fatalf("database check = %q, want error", resp.Checks["database"])
 	}
 }

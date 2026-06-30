@@ -18,6 +18,7 @@ tags:
   - name: admin
   - name: exercises
   - name: programs
+  - name: trainer
 
 paths:
   /health:
@@ -607,6 +608,229 @@ paths:
         "409":
           description: Invalid status transition
 
+  /programs/{id}/publish-update:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    post:
+      tags: [programs]
+      summary: Publish update for an already published program
+      description: >
+        Freezes the current program tree as a new program_version (v2, v3, …).
+        Clients on older versions are unchanged until sync. Requires the same
+        validation as the first publish.
+      operationId: publishProgramUpdate
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Program with new frozen version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program not found
+        "409":
+          description: Program is not published
+        "422":
+          description: Publish validation failed
+
+  /programs/{id}/assignments:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    get:
+      tags: [programs]
+      summary: List client assignments for a program
+      description: >
+        Read-only list for the program page: who is on which frozen version,
+        including is_behind_latest for sync UI.
+      operationId: listProgramAssignments
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Assignments for this program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramAssignmentListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program not found
+
+  /programs/{id}/assignments/sync:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    post:
+      tags: [programs]
+      summary: Sync assignments to the latest frozen version
+      description: >
+        Updates program_version_id to latest_program_version_id for selected or
+        all active assignments. Only the latest version is supported (no arbitrary
+        older version).
+      operationId: syncProgramAssignments
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramAssignmentSyncRequest"
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramAssignmentSyncResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program not found
+        "422":
+          description: Invalid sync request (e.g. empty selection)
+
+  /programs/{id}/versions:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    get:
+      tags: [programs]
+      summary: List frozen program versions
+      operationId: listProgramVersions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Version history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramVersionListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program not found
+
+  /programs/{id}/versions/cleanup:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    post:
+      tags: [programs]
+      summary: Delete all unused program versions
+      description: Removes versions with assignment_count = 0 (skips sole version).
+      operationId: cleanupProgramVersions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Cleanup result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramVersionCleanupResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program not found
+
+  /programs/{id}/versions/{version_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramVersionId"
+    delete:
+      tags: [programs]
+      summary: Delete an unused program version
+      operationId: deleteProgramVersion
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Version deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program or version not found
+        "409":
+          description: Version has assignments or is the sole version
+
+  /trainer/clients/{client_user_id}/program-assignment:
+    parameters:
+      - $ref: "#/components/parameters/ClientUserId"
+    get:
+      tags: [trainer]
+      summary: Get client's active program assignment
+      description: >
+        Used by the clients page Select to show the current program. Returns null
+        body when the client has no active program.
+      operationId: getTrainerClientProgramAssignment
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Active assignment or null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramAssignment"
+                nullable: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (client is not linked to trainer)
+        "404":
+          description: Client user not found
+    put:
+      tags: [trainer]
+      summary: Set or clear client's active program
+      description: >
+        Clients page Select: choose a published program (latest frozen version) or
+        null to remove. Replaces any other active program for this trainer–client pair.
+      operationId: setTrainerClientProgramAssignment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetClientProgramAssignmentRequest"
+      responses:
+        "200":
+          description: Updated assignment or null when cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramAssignment"
+                nullable: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (client is not linked or program not owned)
+        "404":
+          description: Client or program not found
+        "422":
+          description: Program is not published or client is blocked
+
   /programs/{id}/weeks:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
@@ -967,6 +1191,22 @@ components:
         type: string
         format: uuid
 
+    ProgramVersionId:
+      name: version_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ClientUserId:
+      name: client_user_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
     ProgramWeekId:
       name: week_id
       in: path
@@ -1309,6 +1549,8 @@ components:
         - description
         - description_ru
         - preview_image_url
+        - has_unpublished_changes
+        - assignment_count
         - created_at
         - modified_at
       properties:
@@ -1341,6 +1583,24 @@ components:
           nullable: true
         preview_image_url:
           type: string
+        latest_program_version_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Latest frozen plan for clients; null before first publish.
+        latest_client_plan_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the latest frozen plan was published.
+        has_unpublished_changes:
+          type: boolean
+          description: >
+            True when the editable program differs from the latest frozen version.
+        assignment_count:
+          type: integer
+          minimum: 0
+          description: Number of active client assignments on this program.
         created_at:
           type: string
           format: date-time
@@ -1493,8 +1753,9 @@ components:
     ProgramPatch:
       type: object
       description: >
-        Partial update for draft/published programs. Empty `name` is allowed in draft;
-        publish validates that name is non-empty.
+        Partial update for draft and published programs. Archived programs are
+        read-only (403 on mutations). Empty `name` is allowed in draft; publish
+        validates that name is non-empty.
       properties:
         name:
           type: string
@@ -1534,3 +1795,168 @@ components:
           minimum: 0
         instruction:
           type: string
+
+    ProgramAssignmentStatus:
+      type: string
+      enum:
+        - active
+        - completed
+        - cancelled
+
+    ProgramAssignment:
+      type: object
+      required:
+        - id
+        - program_id
+        - program_version_id
+        - trainer_id
+        - client_user_id
+        - status
+        - assigned_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        program_id:
+          type: string
+          format: uuid
+        program_version_id:
+          type: string
+          format: uuid
+        trainer_id:
+          type: string
+          format: uuid
+        client_user_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ProgramAssignmentStatus"
+        assigned_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        client_plan_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the assigned frozen version was published.
+        is_behind_latest:
+          type: boolean
+          description: Present in program assignment lists when client is not on latest version.
+
+    ProgramAssignmentListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramAssignment"
+        latest_program_version_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    SetClientProgramAssignmentRequest:
+      type: object
+      properties:
+        program_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Published program to assign; null clears the active assignment.
+
+    ProgramAssignmentSyncRequest:
+      type: object
+      description: Provide either all_active or assignment_ids (not both empty).
+      properties:
+        all_active:
+          type: boolean
+        assignment_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ProgramAssignmentSyncSkipped:
+      type: object
+      required: [assignment_id, reason]
+      properties:
+        assignment_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+
+    ProgramAssignmentSyncResponse:
+      type: object
+      required: [synced, skipped]
+      properties:
+        synced:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramAssignment"
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramAssignmentSyncSkipped"
+
+    ProgramVersionSummary:
+      type: object
+      required:
+        - id
+        - version_number
+        - published_at
+        - assignment_count
+        - can_delete
+      properties:
+        id:
+          type: string
+          format: uuid
+        version_number:
+          type: integer
+          minimum: 1
+        published_at:
+          type: string
+          format: date-time
+        assignment_count:
+          type: integer
+          minimum: 0
+        can_delete:
+          type: boolean
+
+    ProgramVersionListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramVersionSummary"
+
+    ProgramVersionCleanupSkipped:
+      type: object
+      required: [version_id, reason]
+      properties:
+        version_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+
+    ProgramVersionCleanupResponse:
+      type: object
+      required: [deleted_version_ids, skipped]
+      properties:
+        deleted_version_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramVersionCleanupSkipped"

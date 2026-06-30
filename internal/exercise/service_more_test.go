@@ -122,6 +122,35 @@ func TestService_Update_success(t *testing.T) {
 	}
 }
 
+type countingDeleteStore struct {
+	stubExerciseStore
+	count int64
+	err   error
+}
+
+func (d *countingDeleteStore) DeleteMany(context.Context, uuid.UUID, []uuid.UUID) (int64, error) {
+	return d.count, d.err
+}
+
+func TestService_DeleteMany_success(t *testing.T) {
+	svc := &Service{store: &countingDeleteStore{count: 2}}
+	got, err := svc.DeleteMany(context.Background(), uuid.New(), []uuid.UUID{uuid.New(), uuid.New()})
+	if err != nil {
+		t.Fatalf("DeleteMany() error = %v", err)
+	}
+	if got != 2 {
+		t.Fatalf("count = %d, want 2", got)
+	}
+}
+
+func TestService_Get_notFound(t *testing.T) {
+	svc := &Service{store: &stubExerciseStore{getErr: errors.New("not found")}}
+	_, err := svc.Get(context.Background(), uuid.New())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestService_Update_propagatesStoreError(t *testing.T) {
 	want := errors.New("db down")
 	svc := &Service{store: &stubExerciseStore{updateErr: want}}
