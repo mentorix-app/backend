@@ -1,0 +1,36 @@
+---
+description: REST API endpoints and contract alignment
+globs: "api/**/*,internal/**/handlers*.go,internal/auth/apitypes.go,internal/apicheck/**/*,postman/**/*"
+alwaysApply: false
+---
+
+# API endpoints
+
+Contract canon: [api/openapi.yaml](../../api/openapi.yaml).
+
+## JSON and URLs
+
+| Layer | Rule |
+| ----- | ---- |
+| JSON keys | `snake_case` tags |
+| Enum values | `snake_case` |
+| URL paths | `kebab-case` |
+| GET entities | include `created_at` if column exists (not `/health`) |
+
+Exceptions: `token_type: "Bearer"`; single-word keys (`email`, `password`).
+
+DTOs: [internal/auth/apitypes.go](../../internal/auth/apitypes.go) for shared auth types.
+
+## New endpoint checklist
+
+1. Echo route in feature handler
+2. Update `api/openapi.yaml`
+3. Update `postman/mentorix-backend.postman_collection.json`
+4. Add/adjust `schemaBindings` in `internal/apicheck/schema.go` if new schemas
+5. Update `docs/features/<feature>.md` (non-obvious rules only)
+
+Run: `SKIP_SMOKE=1 ./postman/validate.sh` or `go test ./internal/apicheck/...`
+
+## Docs
+
+Do not list all paths in markdown — link OpenAPI. Feature behavior → `docs/features/`.

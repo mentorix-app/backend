@@ -1,0 +1,48 @@
+---
+description: Go code layout, naming, and quality (Mentorix)
+globs: "**/*.go"
+alwaysApply: false
+---
+
+# Go code
+
+General Go style: [best-practices.mdc](best-practices.mdc) (auxiliary).
+
+## Layout
+
+- `cmd/<name>/` — wiring only; inject deps, no business logic.
+- `internal/<feature>/` — handler → service → sqlc store.
+- `internal/db/sqlc/` — generated; do not hand-edit.
+- `pkg/` — only if actually needed externally.
+
+## Quality
+
+- Handle all errors; wrap with `fmt.Errorf("context: %w", err)`.
+- Pass `context.Context` into DB and external calls.
+- No `panic` in business logic.
+- Inject dependencies; no globals for app state.
+- Validate at HTTP boundary.
+- Secrets in env only.
+- Comments: English, non-obvious only; concise GoDoc on exports when needed.
+
+## Naming (Go / JSON / enums)
+
+| Layer | Rule | Example |
+| ----- | ---- | ------- |
+| Go exported | PascalCase | `NameRu`, `ExerciseType` |
+| Enum const | type + snake value | `ExerciseTypeStrength = "strength"` |
+| JSON | explicit `json:"snake_case"` | `access_token` |
+| Domain types | not `Type` | `ExerciseType`, `ProgramStatus` |
+
+Never rely on default JSON field names.
+
+## Tests
+
+- Table-driven for business rules.
+- Handler tests with fake store/service.
+- Integration: `go test -tags integration ./internal/db/storetest/...`
+- Contract: `internal/apicheck`, `postman/validate.sh`
+
+## Tooling
+
+`gofmt`, `goimports`, `go vet`, golangci-lint. After SQL changes: `schema-sync`, `sqlc generate`.

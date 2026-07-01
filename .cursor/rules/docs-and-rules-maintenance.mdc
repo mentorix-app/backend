@@ -1,0 +1,60 @@
+---
+description: How to create and maintain docs, rules, and status.md
+alwaysApply: true
+---
+
+# Docs and rules maintenance
+
+Human mirror: [docs/maintenance.md](../../docs/maintenance.md).
+
+## Where content lives
+
+| Kind | Location |
+| ---- | -------- |
+| Patterns (how) | `.cursor/rules/*.mdc` |
+| Implemented (what) | `docs/status.md` |
+| Feature facts | `docs/features/<name>.md` |
+| API contract | `api/openapi.yaml` |
+
+**Do not** duplicate OpenAPI or naming rules in docs.
+
+## New feature
+
+1. Add `docs/features/<name>.md`; link in `docs/README.md`.
+2. When **done** — one row in `docs/status.md`.
+3. New naming/process pattern → update the matching `.mdc` (one line or new narrow file).
+
+## New agent rule
+
+| Topic | File |
+| ----- | ---- |
+| DB | `database-naming.mdc` or new `*.mdc` with `globs: db/**` |
+| Go | `go-code.mdc` or new with `globs: **/*.go` |
+| HTTP/API | `api-endpoints.mdc` |
+| QA/CI | `qa-before-push.mdc` |
+| Other | new `.mdc`, prefer `globs` over `alwaysApply` |
+
+## status.md
+
+- Rows only for code that exists (+ OpenAPI for API).
+- No future plans until work starts; then add `## В работе` or `## Запланировано`.
+- One line per item + link; no specs (use feature docs).
+
+## Migrations
+
+After new `db/migrations/*.up.sql`, update version in `docs/architecture.md` and `docs/status.md`. Run `./scripts/docs-check.sh`.
+
+## Size limits
+
+Rule ~80–120 lines; feature doc ~150; `index.mdc` ~40. Split or trim when exceeded.
+
+## Forbidden
+
+- One mega-file (old AGENTS.md pattern).
+- Copy-paste between docs and rules.
+- Stale rows in status or docs contradicting code/OpenAPI/schema.
+
+## On every commit
+
+1. Sync docs/rules/status with the diff — see [qa-before-push.mdc](qa-before-push.mdc) §A.
+2. Run `./scripts/docs-check.sh` (or `make docs-check`).

@@ -1,0 +1,48 @@
+---
+description: Docs/rules sync before commit; full QA before push
+alwaysApply: true
+---
+
+# QA before commit and push
+
+## A. Docs and rules — before every commit (required)
+
+No commit with code/API/DB changes without aligned docs/rules.
+
+| If diff touches… | Update / verify |
+| ---------------- | --------------- |
+| `internal/<feature>/`, handlers, service | `docs/features/<feature>.md` |
+| `api/openapi.yaml`, Postman, apicheck | same feature doc; remove stale endpoints from docs |
+| `db/migrations/`, `db/queries/` | feature doc tables; new capability → `docs/status.md` |
+| `internal/seed/` | `docs/environments.md` |
+| New naming/process pattern | matching `.cursor/rules/*.mdc` |
+| Docs/rules only | no conflict with code, OpenAPI, `db/schema.sql` |
+
+Run `make docs-check` (links, sizes, migration version in docs).
+
+**Actuality:** docs describe **now** only; delete stale text in the same commit. Canon: code + OpenAPI + schema.
+
+**status.md:** each row = live feature; new done capability → add row if missing.
+
+Docs-only commits: still check links, duplicates, contradictions.
+
+## B. Technical QA — before push
+
+Full run: `make check` or `./scripts/check.sh`. CI parity: `make check-ci`.
+
+| Step | Command |
+| ---- | ------- |
+| Format | `gofmt` |
+| Vet / lint | `go vet`, golangci-lint |
+| Unit tests | `go test ./...` |
+| Build | `go build ./...` |
+| sqlc drift | `sqlc generate` + clean `git diff internal/db/sqlc/` |
+| go generate | `go generate ./internal/db/...` + diff |
+| Contract | `SKIP_SMOKE=1 ./postman/validate.sh` |
+| Migrate (full local) | `./scripts/migrate-check.sh` |
+| Integration | `go test -tags integration ./internal/db/storetest/...` |
+| Coverage | `./scripts/coverage.sh --min 85` |
+| Smoke (full, API up) | `./postman/validate.sh` |
+| After migrations | `make schema-sync` |
+
+See [scripts/check.sh](../../scripts/check.sh) for flags (`--no-smoke`, etc.).

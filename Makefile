@@ -17,7 +17,7 @@ AIR_VERSION ?= v1.61.7
 	migrate migrate-down migrate-version migrate-check \
 	schema-sync sqlc generate \
 	test test-integration vet fmt lint \
-	validate validate-smoke check check-ci \
+	validate validate-smoke check check-ci docs-check \
 	coverage coverage-check \
 	install-tools install-migrate install-sqlc install-lint install-air
 
@@ -101,6 +101,9 @@ check: ## Full local QA suite (see scripts/check.sh --help for flags)
 
 check-ci: ## CI parity checks only
 	$(SCRIPTS)/check.sh --ci
+
+docs-check: ## Validate docs/rules links, sizes, migration version in docs
+	$(SCRIPTS)/docs-check.sh
 
 coverage: ## Coverage report (unit + integration merge)
 	$(SCRIPTS)/coverage.sh

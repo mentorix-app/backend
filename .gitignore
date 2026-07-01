@@ -41,8 +41,6 @@ go.work.sum
 .env.*
 !.env.example
 
-# Local product / handoff notes (not shared via remote)
-AGENTS.md
 
 # Editor/IDE
 .idea/

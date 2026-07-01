@@ -1,10 +1,10 @@
 ---
 description: Google Go Style — best practices (full reference)
 globs: "**/*.go"
-alwaysApply: true
+alwaysApply: false
 ---
 
-> **Mentorix precedence:** Auxiliary Google guidance. On conflict with `.cursor/rules/mentorix.mdc` or `AGENTS.md`, **those win**.
+> **Mentorix precedence:** Auxiliary Google guidance. On conflict with `.cursor/rules/index.mdc` and other project rules or `docs/`, **those win**.
 > Source: https://google.github.io/styleguide/go/best-practices.html
 
 # Go Style Best Practices

@@ -1,0 +1,44 @@
+---
+description: PostgreSQL table and column naming
+globs: db/**/*
+alwaysApply: false
+---
+
+# Database naming
+
+Canonical schema: [db/schema.sql](../../db/schema.sql). Naming locked by migration `000007_schema_naming_unification`.
+
+## Rules
+
+| Rule | Example |
+| ---- | ------- |
+| Schema | `mentorix` |
+| Tables | `snake_case`, plural | `programs`, `trainer_clients` |
+| Domain prefix | `auth_*`, `user_*`, `trainer_*`, `program_*` |
+| Child tables | full parent prefix | `program_day_exercises` |
+| PK | `id uuid` | |
+| FK | `{role}_id` | `program_id`, `trainer_id` |
+| Client in link | `client_user_id` → `users` | not `client_id` |
+| Trainer FK | `trainer_id` → `trainers` | not `trainer_user_id` |
+| Audit | `created_at`, `modified_at`, `created_by`, `modified_by` | |
+| Soft delete | `deleted_at` | |
+| Enums | `snake_case` + CHECK | `email_password`, `published` |
+| Type columns | concrete name | `exercise_type` not `type` |
+| UNIQUE | `{table}_{cols}_uniq` | |
+| INDEX | `{table}_{col(s)}_idx` | |
+
+## Program trees
+
+```text
+programs → program_weeks → program_days → program_day_exercises
+program_versions → program_version_weeks → … → program_version_day_exercises
+program_assignments
+```
+
+## Workflow
+
+New migration → `db/queries/` → `sqlc generate` → `scripts/schema-sync.sh` → update feature doc tables (not full DDL in docs).
+
+## Avoid (renamed in 000007)
+
+`refresh_sessions`, `invites`, `link_codes`, `trainer_user_id`, `exercises.type`, `added_by`.
