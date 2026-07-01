@@ -3,9 +3,7 @@
 ## Модель
 
 - **Монолит** Go: один деплой REST (Echo v4) + PostgreSQL + Redis.
-- Telegram webhook — тот же бэкенд (когда будет).
-- Без Supabase; свой auth в Go и Postgres.
-- Микросервисы, публичный gRPC, полный OpenTelemetry — только по явному запросу.
+- Свой auth в Go и Postgres (без Supabase).
 
 ## Стек
 
@@ -15,7 +13,7 @@
 | БД | PostgreSQL, схема `mentorix`, pgx + sqlc, golang-migrate |
 | Кэш/лимиты | Redis |
 | Auth | JWT + opaque refresh (cookie), argon2id |
-| Деплой | Render (dev: `develop`, prod позже: `main`) |
+| Деплой | Render Web Service, ветка `develop` (dev) |
 | Логи | `log/slog`, request ID |
 
 Миграции: версия **13**, проверка `./scripts/migrate-check.sh`.

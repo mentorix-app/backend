@@ -8,11 +8,11 @@
 
 ## Единый аккаунт
 
-Один `user_id` для email/пароля, Telegram (позже), OAuth (позже). Данные: `users` + `auth_identities`. Домен и middleware опираются на `user_id`, не на канал входа.
+Один `user_id`; вход — email+пароль (REST). Данные: `users` + `auth_identities`. Домен и middleware опираются на `user_id`.
 
 ## Связи
 
-- Тренер — веб/REST (сейчас email+пароль).
+- Тренер — веб/REST, email+пароль.
 - Клиент может быть у нескольких тренеров (`trainer_clients`).
 - Один клиент — один аккаунт, не отдельный аккаунт на тренера.
 
