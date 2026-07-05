@@ -3,6 +3,7 @@ package program
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -93,19 +94,90 @@ func normalizeBlockExerciseSort(ctx context.Context, q *sqlc.Queries, blockID uu
 		return fmt.Errorf("list block exercises: %w", err)
 	}
 	blockPG := pgconv.ToPGUUID(blockID)
+	now := time.Now().UTC()
 	for i, row := range rows {
-		if int(row.SortOrder) == i+1 {
-			continue
-		}
 		if err := q.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
-			ID:                row.ID,
+			ID:                    row.ID,
 			ProgramWeekDayBlockID: blockPG,
-			SortOrder:         int32(i + 1),
-			ModifiedAt:        time.Now().UTC(),
-			ModifiedBy:        pgtype.UUID{},
+			SortOrder:             int32(i + 1),
+			ModifiedAt:              now,
+			ModifiedBy:            pgtype.UUID{},
 		}); err != nil {
 			return fmt.Errorf("normalize exercise sort: %w", err)
 		}
 	}
 	return nil
+}
+
+func normalizeProgramWeekSort(ctx context.Context, q *sqlc.Queries, programID uuid.UUID) error {
+	rows, err := q.ListProgramWeeks(ctx, pgconv.ToPGUUID(programID))
+	if err != nil {
+		return fmt.Errorf("list program weeks: %w", err)
+	}
+	programPG := pgconv.ToPGUUID(programID)
+	for i, row := range rows {
+		if err := q.UpdateProgramWeekOrder(ctx, sqlc.UpdateProgramWeekOrderParams{
+			ID:         row.ID,
+			ProgramID:  programPG,
+			SortOrder:  int32(i + 1),
+			WeekNumber: row.WeekNumber,
+		}); err != nil {
+			return fmt.Errorf("normalize week sort: %w", err)
+		}
+	}
+	return nil
+}
+
+func normalizeProgramDaySort(ctx context.Context, q *sqlc.Queries, weekID uuid.UUID) error {
+	rows, err := q.ListProgramDaysForWeek(ctx, pgconv.ToPGUUID(weekID))
+	if err != nil {
+		return fmt.Errorf("list program days: %w", err)
+	}
+	weekPG := pgconv.ToPGUUID(weekID)
+	for i, row := range rows {
+		if err := q.UpdateProgramDayOrder(ctx, sqlc.UpdateProgramDayOrderParams{
+			ID:        row.ID,
+			WeekID:    weekPG,
+			SortOrder: int32(i + 1),
+			DayNumber: row.DayNumber,
+		}); err != nil {
+			return fmt.Errorf("normalize day sort: %w", err)
+		}
+	}
+	return nil
+}
+
+func sortProgramDetail(d *Detail) {
+	sort.Slice(d.Weeks, func(i, j int) bool {
+		if d.Weeks[i].SortOrder == d.Weeks[j].SortOrder {
+			return d.Weeks[i].ID.String() < d.Weeks[j].ID.String()
+		}
+		return d.Weeks[i].SortOrder < d.Weeks[j].SortOrder
+	})
+	for wi := range d.Weeks {
+		sort.Slice(d.Weeks[wi].Days, func(i, j int) bool {
+			if d.Weeks[wi].Days[i].SortOrder == d.Weeks[wi].Days[j].SortOrder {
+				return d.Weeks[wi].Days[i].ID.String() < d.Weeks[wi].Days[j].ID.String()
+			}
+			return d.Weeks[wi].Days[i].SortOrder < d.Weeks[wi].Days[j].SortOrder
+		})
+		for di := range d.Weeks[wi].Days {
+			sort.Slice(d.Weeks[wi].Days[di].Blocks, func(i, j int) bool {
+				if d.Weeks[wi].Days[di].Blocks[i].SortOrder == d.Weeks[wi].Days[di].Blocks[j].SortOrder {
+					return d.Weeks[wi].Days[di].Blocks[i].ID.String() < d.Weeks[wi].Days[di].Blocks[j].ID.String()
+				}
+				return d.Weeks[wi].Days[di].Blocks[i].SortOrder < d.Weeks[wi].Days[di].Blocks[j].SortOrder
+			})
+			for bi := range d.Weeks[wi].Days[di].Blocks {
+				ex := d.Weeks[wi].Days[di].Blocks[bi].Exercises
+				sort.Slice(ex, func(i, j int) bool {
+					if ex[i].SortOrder == ex[j].SortOrder {
+						return ex[i].ID.String() < ex[j].ID.String()
+					}
+					return ex[i].SortOrder < ex[j].SortOrder
+				})
+				d.Weeks[wi].Days[di].Blocks[bi].Exercises = ex
+			}
+		}
+	}
 }

@@ -37,7 +37,7 @@ Canon: [db/schema.sql](../../db/schema.sql). Locked by migration `000007_schema_
 
 | Field | Scope | UNIQUE | Meaning |
 | ----- | ----- | ------ | ------- |
-| `sort_order` | siblings under same parent | no | UI/DnD position; app keeps `1..N` |
+| `sort_order` | siblings under same parent | no | UI/DnD position; **unique `1..N` per parent** — after any write touching order, store **normalizes/reorders** siblings; API returns siblings sorted by `sort_order` |
 | `week_number` | per `program_id` | yes | stable label |
 | `day_number` | per `week_id` | yes | stable label |
 | `version_number` | per `program_id` | yes | frozen publish label |

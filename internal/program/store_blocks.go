@@ -44,13 +44,26 @@ func (s *Store) AddBlockExercise(ctx context.Context, userID, programID, weekID,
 		return Detail{}, fmt.Errorf("%w: exercise not found", ErrValidation)
 	}
 
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
 	blockPG := pgconv.ToPGUUID(blockID)
-	nextSort, err := s.q.NextBlockExerciseSort(ctx, blockPG)
+	nextSort, err := qtx.NextBlockExerciseSort(ctx, blockPG)
 	if err != nil {
 		return Detail{}, fmt.Errorf("next exercise sort: %w", err)
 	}
-	if err := s.q.InsertBlockExercise(ctx, blockExerciseInsertParams(blockPG, nextSort, userID, in)); err != nil {
+	if err := qtx.InsertBlockExercise(ctx, blockExerciseInsertParams(blockPG, nextSort, userID, in)); err != nil {
 		return Detail{}, fmt.Errorf("insert block exercise: %w", err)
+	}
+	if err := normalizeBlockExerciseSort(ctx, qtx, blockID); err != nil {
+		return Detail{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }

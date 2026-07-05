@@ -37,6 +37,8 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 
 Зеркало для version-дерева (см. naming rule).
 
+**`sort_order`:** после любой операции, затрагивающей порядок (create, move, reorder, delete, merge, ungroup, extract), store нормализует siblings к уникальным `1..N` без дублей. Ответ `GET /programs/{id}` — дерево уже отсортировано по `sort_order`.
+
 ### Миграция данных
 
 На каждое существующее упражнение дня — блок `single` + перенос строки. Publish-копирование включает блоки.

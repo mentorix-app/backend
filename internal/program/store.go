@@ -152,7 +152,9 @@ func (s *Store) loadDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
 	if err != nil {
 		return Detail{}, err
 	}
-	return Detail{Program: p, Weeks: weeks}, nil
+	d := Detail{Program: p, Weeks: weeks}
+	sortProgramDetail(&d)
+	return d, nil
 }
 
 func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, programID uuid.UUID) ([]Week, error) {
@@ -367,6 +369,9 @@ func (s *Store) DeleteWeek(ctx context.Context, programID, weekID uuid.UUID) (De
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
 	}
+	if err := normalizeProgramWeekSort(ctx, s.q, programID); err != nil {
+		return Detail{}, err
+	}
 	return s.GetDetail(ctx, programID)
 }
 
@@ -424,6 +429,9 @@ func (s *Store) DeleteDay(ctx context.Context, programID, weekID, dayID uuid.UUI
 	}
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
+	}
+	if err := normalizeProgramDaySort(ctx, s.q, weekID); err != nil {
+		return Detail{}, err
 	}
 	return s.GetDetail(ctx, programID)
 }
