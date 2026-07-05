@@ -755,6 +755,57 @@ func TestHandlers_DeleteDay(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 }
 
+func TestHandlers_CreateDayBlock_unauthorized(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	c := e.NewContext(httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"block_type":"single"}`)), httptest.NewRecorder())
+	c.SetParamNames("id", "week_id", "day_id")
+	c.SetParamValues(uuid.New().String(), uuid.New().String(), uuid.New().String())
+	assertHTTPError(t, h.CreateDayBlock(c), http.StatusUnauthorized)
+}
+
+func TestHandlers_CreateDayBlock_invalidJSON(t *testing.T) {
+	userID := uuid.New()
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/", "{", userID, map[string]string{
+		"id": uuid.New().String(), "week_id": uuid.New().String(), "day_id": uuid.New().String(),
+	})
+	assertHTTPError(t, h.CreateDayBlock(c), http.StatusBadRequest)
+}
+
+func TestHandlers_ReorderDays_unauthorized(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"day_ids":[]}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	c := e.NewContext(req, httptest.NewRecorder())
+	c.SetParamNames("id", "week_id")
+	c.SetParamValues(uuid.New().String(), uuid.New().String())
+	assertHTTPError(t, h.ReorderDays(c), http.StatusUnauthorized)
+}
+
+func TestHandlers_ReorderDays_invalidJSON(t *testing.T) {
+	userID := uuid.New()
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPut, "/", "{", userID, map[string]string{
+		"id": uuid.New().String(), "week_id": uuid.New().String(),
+	})
+	assertHTTPError(t, h.ReorderDays(c), http.StatusBadRequest)
+}
+
+func TestHandlers_ReorderBlockExercises_unauthorized(t *testing.T) {
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"exercise_item_ids":[]}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	c := e.NewContext(req, httptest.NewRecorder())
+	c.SetParamNames("id", "week_id", "block_id")
+	c.SetParamValues(uuid.New().String(), uuid.New().String(), uuid.New().String())
+	assertHTTPError(t, h.ReorderBlockExercises(c), http.StatusUnauthorized)
+}
+
 func TestHandlers_CreateDayBlock(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()

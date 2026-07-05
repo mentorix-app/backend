@@ -56,18 +56,7 @@ type upsertBody struct {
 }
 
 func (b upsertBody) toInput() UpsertInput {
-	return UpsertInput{
-		Name:            b.Name,
-		NameRu:          b.NameRu,
-		Equipment:       b.Equipment,
-		Type:            b.Type,
-		MuscleGroup:     b.MuscleGroup,
-		Description:     b.Description,
-		DescriptionRu:   b.DescriptionRu,
-		Difficulty:      b.Difficulty,
-		VideoURL:        b.VideoURL,
-		PreviewImageURL: b.PreviewImageURL,
-	}
+	return UpsertInput(b)
 }
 
 func (h *Handlers) List(c echo.Context) error {

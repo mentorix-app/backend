@@ -89,6 +89,8 @@ func TestProgramVersionAndAssignment_oneActivePerTrainerClient(t *testing.T) {
 		t.Fatalf("InsertProgramVersion B: %v", err)
 	}
 
+	trainerUserPG := pgconv.ToPGUUID(trainerUserID)
+
 	_, err = q.InsertProgramAssignment(ctx, sqlc.InsertProgramAssignmentParams{
 		ProgramID:        pgconv.ToPGUUID(draft.ID),
 		ProgramVersionID: version.ID,
@@ -96,7 +98,9 @@ func TestProgramVersionAndAssignment_oneActivePerTrainerClient(t *testing.T) {
 		ClientUserID:     pgconv.ToPGUUID(clientUserID),
 		Status:           "active",
 		AssignedAt:       now,
+		CreatedBy:        trainerUserPG,
 		ModifiedAt:       now,
+		ModifiedBy:       trainerUserPG,
 	})
 	if err != nil {
 		t.Fatalf("InsertProgramAssignment: %v", err)
@@ -109,7 +113,9 @@ func TestProgramVersionAndAssignment_oneActivePerTrainerClient(t *testing.T) {
 		ClientUserID:     pgconv.ToPGUUID(clientUserID),
 		Status:           "active",
 		AssignedAt:       now,
+		CreatedBy:        trainerUserPG,
 		ModifiedAt:       now,
+		ModifiedBy:       trainerUserPG,
 	})
 	if err == nil {
 		t.Fatal("expected unique violation for second active assignment")
@@ -123,6 +129,7 @@ func TestProgramVersionAndAssignment_oneActivePerTrainerClient(t *testing.T) {
 		TrainerID:    trainerID,
 		ClientUserID: pgconv.ToPGUUID(clientUserID),
 		ModifiedAt:   now,
+		ModifiedBy:   trainerUserPG,
 	})
 	if err != nil {
 		t.Fatalf("CancelActiveProgramAssignmentsForTrainerClient: %v", err)
@@ -147,7 +154,9 @@ func TestProgramVersionAndAssignment_oneActivePerTrainerClient(t *testing.T) {
 		ClientUserID:     pgconv.ToPGUUID(clientUserID),
 		Status:           "active",
 		AssignedAt:       now,
+		CreatedBy:        trainerUserPG,
 		ModifiedAt:       now,
+		ModifiedBy:       trainerUserPG,
 	})
 	if err != nil {
 		t.Fatalf("InsertProgramAssignment after cancel: %v", err)

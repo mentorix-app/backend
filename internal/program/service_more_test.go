@@ -807,6 +807,595 @@ func TestService_ReorderBlockExercises_success(t *testing.T) {
 	}
 }
 
+func TestService_blockMutations_success(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	dayID := uuid.New()
+	blockID := uuid.New()
+	itemID := uuid.New()
+	targetBlockID := uuid.New()
+	exerciseID := uuid.New()
+	sets, reps := 3, 10
+	emom := BlockTypeEMOM
+	instr := "work"
+	want := Detail{Program: Program{ID: programID, Status: StatusDraft}}
+	store := &fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		detail:  want,
+	}
+	svc := testService(store, nil)
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		run  func() error
+	}{
+		{"PatchDayBlock", func() error {
+			_, err := svc.PatchDayBlock(ctx, userID, programID, weekID, blockID, BlockPatchInput{BlockType: &emom, Instruction: &instr})
+			return err
+		}},
+		{"AddBlockExercise", func() error {
+			_, err := svc.AddBlockExercise(ctx, userID, programID, weekID, blockID, DayExerciseInput{
+				ExerciseID: exerciseID,
+				Sets:       &sets,
+				Reps:       &reps,
+			})
+			return err
+		}},
+		{"MergeDayBlocks", func() error {
+			_, err := svc.MergeDayBlocks(ctx, userID, programID, weekID, dayID, []uuid.UUID{blockID, uuid.New()})
+			return err
+		}},
+		{"UngroupDayBlock", func() error {
+			_, err := svc.UngroupDayBlock(ctx, userID, programID, weekID, blockID)
+			return err
+		}},
+		{"MoveDayBlock", func() error {
+			_, err := svc.MoveDayBlock(ctx, userID, programID, weekID, blockID, dayID, 1)
+			return err
+		}},
+		{"ExtractBlockExercise", func() error {
+			_, err := svc.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, 1)
+			return err
+		}},
+		{"MoveExerciseToBlock", func() error {
+			_, err := svc.MoveExerciseToBlock(ctx, userID, programID, weekID, blockID, itemID, targetBlockID)
+			return err
+		}},
+		{"DeleteDayBlock", func() error {
+			_, err := svc.DeleteDayBlock(ctx, userID, programID, weekID, blockID)
+			return err
+		}},
+		{"DeleteBlockExercise", func() error {
+			_, err := svc.DeleteBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+			return err
+		}},
+		{"UpdateBlockExercise", func() error {
+			_, err := svc.UpdateBlockExercise(ctx, userID, programID, weekID, blockID, itemID, DayExerciseInput{
+				ExerciseID: exerciseID, Sets: &sets, Reps: &reps,
+			})
+			return err
+		}},
+		{"ReorderDayBlocks", func() error {
+			_, err := svc.ReorderDayBlocks(ctx, userID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.run(); err != nil {
+				t.Fatalf("%s() error = %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestService_blockMutations_notFound(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	dayID := uuid.New()
+	blockID := uuid.New()
+	itemID := uuid.New()
+	targetBlockID := uuid.New()
+	exerciseID := uuid.New()
+	sets, reps := 3, 10
+	emom := BlockTypeEMOM
+	instr := "work"
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		err:     pgx.ErrNoRows,
+	}, nil)
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		run  func() error
+	}{
+		{"PatchDayBlock", func() error {
+			_, err := svc.PatchDayBlock(ctx, userID, programID, weekID, blockID, BlockPatchInput{BlockType: &emom, Instruction: &instr})
+			return err
+		}},
+		{"AddBlockExercise", func() error {
+			_, err := svc.AddBlockExercise(ctx, userID, programID, weekID, blockID, DayExerciseInput{
+				ExerciseID: exerciseID, Sets: &sets, Reps: &reps,
+			})
+			return err
+		}},
+		{"MergeDayBlocks", func() error {
+			_, err := svc.MergeDayBlocks(ctx, userID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+		{"UngroupDayBlock", func() error {
+			_, err := svc.UngroupDayBlock(ctx, userID, programID, weekID, blockID)
+			return err
+		}},
+		{"MoveDayBlock", func() error {
+			_, err := svc.MoveDayBlock(ctx, userID, programID, weekID, blockID, dayID, 1)
+			return err
+		}},
+		{"ExtractBlockExercise", func() error {
+			_, err := svc.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, 1)
+			return err
+		}},
+		{"MoveExerciseToBlock", func() error {
+			_, err := svc.MoveExerciseToBlock(ctx, userID, programID, weekID, blockID, itemID, targetBlockID)
+			return err
+		}},
+		{"DeleteDayBlock", func() error {
+			_, err := svc.DeleteDayBlock(ctx, userID, programID, weekID, blockID)
+			return err
+		}},
+		{"ReorderDayBlocks", func() error {
+			_, err := svc.ReorderDayBlocks(ctx, userID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+		{"DeleteBlockExercise", func() error {
+			_, err := svc.DeleteBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+			return err
+		}},
+		{"UpdateBlockExercise", func() error {
+			_, err := svc.UpdateBlockExercise(ctx, userID, programID, weekID, blockID, itemID, DayExerciseInput{
+				ExerciseID: exerciseID, Sets: &sets, Reps: &reps,
+			})
+			return err
+		}},
+		{"CreateDayBlock", func() error {
+			_, err := svc.CreateDayBlock(ctx, userID, programID, weekID, dayID, CreateDayBlockInput{
+				BlockType: BlockTypeSingle,
+				Exercise:  &DayExerciseInput{ExerciseID: exerciseID, Sets: &sets, Reps: &reps},
+			})
+			return err
+		}},
+		{"ReorderBlockExercises", func() error {
+			_, err := svc.ReorderBlockExercises(ctx, userID, programID, weekID, blockID, []uuid.UUID{itemID})
+			return err
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.run(); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("%s() error = %v, want ErrNotFound", tc.name, err)
+			}
+		})
+	}
+}
+
+type getProgramRowErrOnlyStore struct {
+	fakeProgramStore
+	getErr error
+}
+
+func (g *getProgramRowErrOnlyStore) GetProgramRow(context.Context, uuid.UUID) (Program, error) {
+	return Program{}, g.getErr
+}
+
+func TestService_blockMutations_getProgramRowError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	want := errors.New("db down")
+	svc := testService(&getProgramRowErrOnlyStore{getErr: want}, nil)
+	ctx := context.Background()
+
+	_, err := svc.MergeDayBlocks(ctx, userID, programID, uuid.New(), uuid.New(), []uuid.UUID{uuid.New()})
+	if !errors.Is(err, want) {
+		t.Fatalf("MergeDayBlocks() error = %v, want %v", err, want)
+	}
+	_, err = svc.DeleteBlockExercise(ctx, userID, programID, uuid.New(), uuid.New(), uuid.New())
+	if !errors.Is(err, want) {
+		t.Fatalf("DeleteBlockExercise() error = %v, want %v", err, want)
+	}
+}
+
+func TestService_blockMutations_readOnly(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	dayID := uuid.New()
+	blockID := uuid.New()
+	itemID := uuid.New()
+	targetBlockID := uuid.New()
+	exerciseID := uuid.New()
+	sets, reps := 3, 10
+	emom := BlockTypeEMOM
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
+	}, nil)
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		run  func() error
+	}{
+		{"PatchDayBlock", func() error {
+			_, err := svc.PatchDayBlock(ctx, userID, programID, weekID, blockID, BlockPatchInput{BlockType: &emom})
+			return err
+		}},
+		{"AddBlockExercise", func() error {
+			_, err := svc.AddBlockExercise(ctx, userID, programID, weekID, blockID, DayExerciseInput{
+				ExerciseID: exerciseID, Sets: &sets, Reps: &reps,
+			})
+			return err
+		}},
+		{"MergeDayBlocks", func() error {
+			_, err := svc.MergeDayBlocks(ctx, userID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+		{"UngroupDayBlock", func() error {
+			_, err := svc.UngroupDayBlock(ctx, userID, programID, weekID, blockID)
+			return err
+		}},
+		{"MoveDayBlock", func() error {
+			_, err := svc.MoveDayBlock(ctx, userID, programID, weekID, blockID, dayID, 1)
+			return err
+		}},
+		{"ExtractBlockExercise", func() error {
+			_, err := svc.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, 1)
+			return err
+		}},
+		{"MoveExerciseToBlock", func() error {
+			_, err := svc.MoveExerciseToBlock(ctx, userID, programID, weekID, blockID, itemID, targetBlockID)
+			return err
+		}},
+		{"DeleteDayBlock", func() error {
+			_, err := svc.DeleteDayBlock(ctx, userID, programID, weekID, blockID)
+			return err
+		}},
+		{"ReorderDayBlocks", func() error {
+			_, err := svc.ReorderDayBlocks(ctx, userID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+		{"DeleteBlockExercise", func() error {
+			_, err := svc.DeleteBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+			return err
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.run(); !errors.Is(err, ErrReadOnly) {
+				t.Fatalf("%s() error = %v, want ErrReadOnly", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestService_blockMutations_deletedProgram(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	blockID := uuid.New()
+	deleted := time.Now().UTC()
+	emom := BlockTypeEMOM
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft, DeletedAt: &deleted},
+	}, nil)
+	_, err := svc.PatchDayBlock(context.Background(), userID, programID, weekID, blockID, BlockPatchInput{BlockType: &emom})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("PatchDayBlock() error = %v, want ErrNotFound", err)
+	}
+	_, err = svc.MergeDayBlocks(context.Background(), userID, programID, weekID, uuid.New(), []uuid.UUID{blockID})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("MergeDayBlocks() error = %v, want ErrNotFound", err)
+	}
+}
+
+type getProgramRowFailStore struct {
+	fakeProgramStore
+	failAfter int
+	calls     int
+}
+
+func (g *getProgramRowFailStore) GetProgramRow(ctx context.Context, id uuid.UUID) (Program, error) {
+	g.calls++
+	if g.calls > g.failAfter {
+		return Program{}, pgx.ErrNoRows
+	}
+	return g.fakeProgramStore.GetProgramRow(ctx, id)
+}
+
+func TestService_Archive_readOnly(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
+	}, nil)
+	_, err := svc.Archive(context.Background(), userID, programID)
+	if !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("Archive() error = %v, want ErrReadOnly", err)
+	}
+}
+
+func TestService_Archive_getProgramRowNotFound(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&getProgramRowFailStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		},
+		failAfter: 1,
+	}, nil)
+	_, err := svc.Archive(context.Background(), userID, programID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Archive() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestService_Archive_setStatusGenericError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	want := errors.New("set status failed")
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		detail:  Detail{Program: Program{ID: programID, Status: StatusArchived}},
+		err:     want,
+	}, nil)
+	_, err := svc.Archive(context.Background(), userID, programID)
+	if !errors.Is(err, want) {
+		t.Fatalf("Archive() error = %v, want %v", err, want)
+	}
+}
+
+func TestService_blockMutations_forbidden(t *testing.T) {
+	ownerID := uuid.New()
+	otherID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	dayID := uuid.New()
+	blockID := uuid.New()
+	itemID := uuid.New()
+	targetBlockID := uuid.New()
+	emom := BlockTypeEMOM
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: ownerID, Status: StatusDraft},
+	}, &fakeRoleQuerier{isAdmin: false})
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		run  func() error
+	}{
+		{"PatchDayBlock", func() error {
+			_, err := svc.PatchDayBlock(ctx, otherID, programID, weekID, blockID, BlockPatchInput{BlockType: &emom})
+			return err
+		}},
+		{"MergeDayBlocks", func() error {
+			_, err := svc.MergeDayBlocks(ctx, otherID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+		{"DeleteBlockExercise", func() error {
+			_, err := svc.DeleteBlockExercise(ctx, otherID, programID, weekID, blockID, itemID)
+			return err
+		}},
+		{"UpdateBlockExercise", func() error {
+			sets, reps := 3, 10
+			_, err := svc.UpdateBlockExercise(ctx, otherID, programID, weekID, blockID, itemID, DayExerciseInput{
+				ExerciseID: uuid.New(), Sets: &sets, Reps: &reps,
+			})
+			return err
+		}},
+		{"AddBlockExercise", func() error {
+			sets, reps := 3, 10
+			_, err := svc.AddBlockExercise(ctx, otherID, programID, weekID, blockID, DayExerciseInput{
+				ExerciseID: uuid.New(), Sets: &sets, Reps: &reps,
+			})
+			return err
+		}},
+		{"UngroupDayBlock", func() error {
+			_, err := svc.UngroupDayBlock(ctx, otherID, programID, weekID, blockID)
+			return err
+		}},
+		{"MoveDayBlock", func() error {
+			_, err := svc.MoveDayBlock(ctx, otherID, programID, weekID, blockID, dayID, 1)
+			return err
+		}},
+		{"ExtractBlockExercise", func() error {
+			_, err := svc.ExtractBlockExercise(ctx, otherID, programID, weekID, blockID, itemID, 1)
+			return err
+		}},
+		{"MoveExerciseToBlock", func() error {
+			_, err := svc.MoveExerciseToBlock(ctx, otherID, programID, weekID, blockID, itemID, targetBlockID)
+			return err
+		}},
+		{"DeleteDayBlock", func() error {
+			_, err := svc.DeleteDayBlock(ctx, otherID, programID, weekID, blockID)
+			return err
+		}},
+		{"ReorderDayBlocks", func() error {
+			_, err := svc.ReorderDayBlocks(ctx, otherID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+		{"Archive", func() error {
+			_, err := svc.Archive(ctx, otherID, programID)
+			return err
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.run(); !errors.Is(err, ErrForbidden) {
+				t.Fatalf("%s() error = %v, want ErrForbidden", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestService_UpdateBlockExercise_validation(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+	}, nil)
+	_, err := svc.UpdateBlockExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New(), DayExerciseInput{})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
+func TestService_UpdateBlockExercise_readOnly(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	sets, reps := 3, 10
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
+	}, nil)
+	_, err := svc.UpdateBlockExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New(), DayExerciseInput{
+		ExerciseID: uuid.New(), Sets: &sets, Reps: &reps,
+	})
+	if !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("UpdateBlockExercise() error = %v, want ErrReadOnly", err)
+	}
+}
+
+func TestService_UpdateBlockExercise_storeError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	sets, reps := 3, 10
+	want := errors.New("store failed")
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		err:     want,
+	}, nil)
+	_, err := svc.UpdateBlockExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New(), DayExerciseInput{
+		ExerciseID: uuid.New(), Sets: &sets, Reps: &reps,
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("UpdateBlockExercise() error = %v, want %v", err, want)
+	}
+}
+
+func TestService_AddBlockExercise_validation(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+	}, nil)
+	_, err := svc.AddBlockExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), DayExerciseInput{})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
+func TestService_PatchDayBlock_validation(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+	}, nil)
+	single := BlockTypeSingle
+	_, err := svc.PatchDayBlock(context.Background(), userID, programID, uuid.New(), uuid.New(), BlockPatchInput{BlockType: &single})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+}
+
+func TestService_blockMutations_storeError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	dayID := uuid.New()
+	blockID := uuid.New()
+	itemID := uuid.New()
+	targetBlockID := uuid.New()
+	exerciseID := uuid.New()
+	sets, reps := 3, 10
+	emom := BlockTypeEMOM
+	instr := "work"
+	want := errors.New("store failed")
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		err:     want,
+	}, nil)
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		run  func() error
+	}{
+		{"AddBlockExercise", func() error {
+			_, err := svc.AddBlockExercise(ctx, userID, programID, weekID, blockID, DayExerciseInput{
+				ExerciseID: exerciseID, Sets: &sets, Reps: &reps,
+			})
+			return err
+		}},
+		{"PatchDayBlock", func() error {
+			_, err := svc.PatchDayBlock(ctx, userID, programID, weekID, blockID, BlockPatchInput{BlockType: &emom, Instruction: &instr})
+			return err
+		}},
+		{"MergeDayBlocks", func() error {
+			_, err := svc.MergeDayBlocks(ctx, userID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+		{"UngroupDayBlock", func() error {
+			_, err := svc.UngroupDayBlock(ctx, userID, programID, weekID, blockID)
+			return err
+		}},
+		{"MoveDayBlock", func() error {
+			_, err := svc.MoveDayBlock(ctx, userID, programID, weekID, blockID, dayID, 1)
+			return err
+		}},
+		{"ExtractBlockExercise", func() error {
+			_, err := svc.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, 1)
+			return err
+		}},
+		{"MoveExerciseToBlock", func() error {
+			_, err := svc.MoveExerciseToBlock(ctx, userID, programID, weekID, blockID, itemID, targetBlockID)
+			return err
+		}},
+		{"DeleteDayBlock", func() error {
+			_, err := svc.DeleteDayBlock(ctx, userID, programID, weekID, blockID)
+			return err
+		}},
+		{"ReorderDayBlocks", func() error {
+			_, err := svc.ReorderDayBlocks(ctx, userID, programID, weekID, dayID, []uuid.UUID{blockID})
+			return err
+		}},
+		{"CreateDayBlock", func() error {
+			_, err := svc.CreateDayBlock(ctx, userID, programID, weekID, dayID, CreateDayBlockInput{
+				BlockType: BlockTypeSingle,
+				Exercise:  &DayExerciseInput{ExerciseID: exerciseID, Sets: &sets, Reps: &reps},
+			})
+			return err
+		}},
+		{"UpdateBlockExercise", func() error {
+			_, err := svc.UpdateBlockExercise(ctx, userID, programID, weekID, blockID, itemID, DayExerciseInput{
+				ExerciseID: exerciseID, Sets: &sets, Reps: &reps,
+			})
+			return err
+		}},
+		{"DeleteBlockExercise", func() error {
+			_, err := svc.DeleteBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+			return err
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.run(); !errors.Is(err, want) {
+				t.Fatalf("%s() error = %v, want %v", tc.name, err, want)
+			}
+		})
+	}
+}
+
 type deleteWeekErrStore struct {
 	fakeProgramStore
 	deleteWeekErr error
@@ -814,6 +1403,34 @@ type deleteWeekErrStore struct {
 
 func (d *deleteWeekErrStore) DeleteWeek(context.Context, uuid.UUID, uuid.UUID) (Detail, error) {
 	return Detail{}, d.deleteWeekErr
+}
+
+func TestService_ReorderDayBlocks_notFound(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		err:     pgx.ErrNoRows,
+	}, nil)
+	_, err := svc.ReorderDayBlocks(context.Background(), userID, programID, uuid.New(), uuid.New(), []uuid.UUID{uuid.New()})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ReorderDayBlocks() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestService_ReorderDayBlocks_invalidReorder(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&reorderDayBlocksErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		reorderErr: ErrInvalidReorder,
+	}, nil)
+	_, err := svc.ReorderDayBlocks(context.Background(), userID, programID, uuid.New(), uuid.New(), []uuid.UUID{uuid.New()})
+	if !errors.Is(err, ErrInvalidReorder) {
+		t.Fatalf("ReorderDayBlocks() error = %v, want ErrInvalidReorder", err)
+	}
 }
 
 func TestService_DeleteWeek_notFound(t *testing.T) {
@@ -879,6 +1496,15 @@ type reorderBlockExercisesErrStore struct {
 }
 
 func (r *reorderBlockExercisesErrStore) ReorderBlockExercises(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return Detail{}, r.reorderErr
+}
+
+type reorderDayBlocksErrStore struct {
+	fakeProgramStore
+	reorderErr error
+}
+
+func (r *reorderDayBlocksErrStore) ReorderDayBlocks(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
 	return Detail{}, r.reorderErr
 }
 
@@ -1350,6 +1976,162 @@ func TestService_DeleteBlockExercise_notFound(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("DeleteBlockExercise() error = %v, want ErrNotFound", err)
 	}
+}
+
+func TestService_Delete_softDeleteStoreError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	want := errors.New("soft delete failed")
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		err:     want,
+	}, nil)
+	err := svc.Delete(context.Background(), userID, programID)
+	if !errors.Is(err, want) {
+		t.Fatalf("Delete() error = %v, want %v", err, want)
+	}
+}
+
+func TestService_Delete_softDeleteNotFound(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&softDeleteNoRowsStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+	}, nil)
+	err := svc.Delete(context.Background(), userID, programID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Delete() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestService_Delete_forbidden(t *testing.T) {
+	ownerID := uuid.New()
+	otherID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: ownerID, Status: StatusDraft},
+	}, &fakeRoleQuerier{isAdmin: false})
+	err := svc.Delete(context.Background(), otherID, programID)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Delete() error = %v, want ErrForbidden", err)
+	}
+}
+
+func TestService_PublishUpdate_getDetailNotFound(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		err:     pgx.ErrNoRows,
+	}, nil)
+	_, err := svc.PublishUpdate(context.Background(), userID, programID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("PublishUpdate() error = %v, want ErrNotFound", err)
+	}
+}
+
+type softDeleteNoRowsStore struct {
+	fakeProgramStore
+}
+
+func (s *softDeleteNoRowsStore) SoftDelete(context.Context, uuid.UUID, uuid.UUID) error {
+	return pgx.ErrNoRows
+}
+
+func TestService_Delete_getProgramRowStoreError(t *testing.T) {
+	want := errors.New("db down")
+	svc := testService(&getProgramRowErrOnlyStore{getErr: want}, nil)
+	err := svc.Delete(context.Background(), uuid.New(), uuid.New())
+	if !errors.Is(err, want) {
+		t.Fatalf("Delete() error = %v, want %v", err, want)
+	}
+}
+
+func TestService_PublishUpdate_freezeStoreError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	category := CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	sets := 3
+	reps := 10
+	want := errors.New("freeze failed")
+	svc := testService(&freezeErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+			detail: Detail{
+				Program: Program{
+					ID: programID, CreatedBy: userID, Status: StatusPublished,
+					Name: "Program", Category: &category, Difficulty: &difficulty,
+					HasUnpublishedChanges: true,
+				},
+				Weeks: []Week{publishableWeek([]DayExercise{{
+					ExerciseID: uuid.New(),
+					Sets:       &sets,
+					Reps:       &reps,
+				}})},
+			},
+		},
+		freezeErr: want,
+	}, nil)
+	_, err := svc.PublishUpdate(context.Background(), userID, programID)
+	if !errors.Is(err, want) {
+		t.Fatalf("PublishUpdate() error = %v, want %v", err, want)
+	}
+}
+
+type freezeErrStore struct {
+	fakeProgramStore
+	freezeErr error
+}
+
+func (f *freezeErrStore) FreezePublishedVersion(context.Context, uuid.UUID, uuid.UUID, Detail) (Detail, error) {
+	return Detail{}, f.freezeErr
+}
+
+func TestService_PublishUpdate_getDetailStoreError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	want := errors.New("db down")
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		err:     want,
+	}, nil)
+	_, err := svc.PublishUpdate(context.Background(), userID, programID)
+	if !errors.Is(err, want) {
+		t.Fatalf("PublishUpdate() error = %v, want %v", err, want)
+	}
+}
+
+func TestService_Archive_getProgramRowStoreError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	want := errors.New("db down")
+	svc := testService(&getProgramRowAfterMutableStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		},
+		secondGetErr: want,
+	}, nil)
+	_, err := svc.Archive(context.Background(), userID, programID)
+	if !errors.Is(err, want) {
+		t.Fatalf("Archive() error = %v, want %v", err, want)
+	}
+}
+
+type getProgramRowAfterMutableStore struct {
+	fakeProgramStore
+	secondGetErr error
+	calls        int
+}
+
+func (g *getProgramRowAfterMutableStore) GetProgramRow(context.Context, uuid.UUID) (Program, error) {
+	g.calls++
+	if g.calls == 1 {
+		return g.program, nil
+	}
+	return Program{}, g.secondGetErr
 }
 
 func TestService_Archive_setStatusNotFound(t *testing.T) {

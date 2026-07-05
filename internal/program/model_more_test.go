@@ -1,6 +1,7 @@
 package program
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -48,6 +49,22 @@ func TestDayExerciseInput_ValidatePublish(t *testing.T) {
 		Reps:       &reps,
 	}).ValidatePublish(); err != nil {
 		t.Fatalf("ValidatePublish() error = %v", err)
+	}
+}
+
+func TestDayExerciseInput_ValidatePublish_missingSets(t *testing.T) {
+	reps := 10
+	err := DayExerciseInput{ExerciseID: uuid.New(), Reps: &reps}.ValidatePublish()
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("ValidatePublish() error = %v, want ErrValidation", err)
+	}
+}
+
+func TestDayExerciseInput_ValidatePublish_missingReps(t *testing.T) {
+	sets := 3
+	err := DayExerciseInput{ExerciseID: uuid.New(), Sets: &sets}.ValidatePublish()
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("ValidatePublish() error = %v, want ErrValidation", err)
 	}
 }
 
@@ -125,6 +142,27 @@ func TestValidatePublishDetail_skipsDaysWithoutExercises(t *testing.T) {
 	}
 	if err := validatePublishDetail(d); err != nil {
 		t.Fatalf("validatePublishDetail() error = %v, want nil", err)
+	}
+}
+
+func TestValidatePublishDetail_groupBlockWithoutExercises(t *testing.T) {
+	category := CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	d := Detail{
+		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
+		Weeks: []Week{{
+			WeekNumber: 1,
+			Days: []Day{{
+				DayNumber: 1,
+				SortOrder: 1,
+				Blocks: []DayBlock{{
+					BlockType: BlockTypeEMOM,
+				}},
+			}},
+		}},
+	}
+	if err := validatePublishDetail(d); !errors.Is(err, ErrValidation) {
+		t.Fatalf("validatePublishDetail() error = %v, want ErrValidation", err)
 	}
 }
 

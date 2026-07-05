@@ -146,6 +146,21 @@ func TestExerciseStore_GetByIDNotFound(t *testing.T) {
 	}
 }
 
+func TestExerciseStore_UpdateNotFound(t *testing.T) {
+	pool := NewPool(t)
+	store := exercise.NewStore(pool)
+	_, err := store.Update(context.Background(), uuid.New(), uuid.New(), exercise.UpsertInput{
+		Name:        "Ghost",
+		NameRu:      "Призрак",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupLegs,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err == nil {
+		t.Fatal("expected not found error")
+	}
+}
+
 func TestExerciseStore_ListWithFilters(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()

@@ -160,13 +160,13 @@ type BlockPatchInput struct {
 }
 
 type WeekBlockReorderDay struct {
-	DayID     uuid.UUID
-	BlockIDs  []uuid.UUID
+	DayID    uuid.UUID
+	BlockIDs []uuid.UUID
 }
 
 type BlockExerciseReorder struct {
-	BlockID           uuid.UUID
-	ExerciseItemIDs   []uuid.UUID
+	BlockID         uuid.UUID
+	ExerciseItemIDs []uuid.UUID
 }
 
 func (s Status) valid() bool {

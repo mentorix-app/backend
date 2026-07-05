@@ -213,10 +213,26 @@ func TestService_Logout(t *testing.T) {
 	}
 }
 
+func TestService_Logout_revokeError(t *testing.T) {
+	want := errors.New("revoke failed")
+	svc := testAuthService(&fakeAuthStore{revokeErr: want})
+	if err := svc.Logout(context.Background(), "token"); !errors.Is(err, want) {
+		t.Fatalf("Logout() error = %v, want %v", err, want)
+	}
+}
+
 func TestService_LogoutAll(t *testing.T) {
 	svc := testAuthService(&fakeAuthStore{})
 	if err := svc.LogoutAll(context.Background(), uuid.New()); err != nil {
 		t.Errorf("LogoutAll: %v", err)
+	}
+}
+
+func TestService_LogoutAll_revokeError(t *testing.T) {
+	want := errors.New("revoke all failed")
+	svc := testAuthService(&fakeAuthStore{revokeAllErr: want})
+	if err := svc.LogoutAll(context.Background(), uuid.New()); !errors.Is(err, want) {
+		t.Fatalf("LogoutAll() error = %v, want %v", err, want)
 	}
 }
 

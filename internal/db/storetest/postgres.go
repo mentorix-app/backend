@@ -29,8 +29,8 @@ func repoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
 }
 
-// NewPool starts ephemeral Postgres, runs db/migrations, and returns a pool.
-func NewPool(t *testing.T) *pgxpool.Pool {
+// NewPoolWithURL starts ephemeral Postgres, runs db/migrations, and returns a pool and connection URL.
+func NewPoolWithURL(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
 	requireDocker(t)
 
@@ -89,6 +89,13 @@ func NewPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 
+	return pool, connStr
+}
+
+// NewPool starts ephemeral Postgres, runs db/migrations, and returns a pool.
+func NewPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	pool, _ := NewPoolWithURL(t)
 	return pool
 }
 

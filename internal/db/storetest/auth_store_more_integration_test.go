@@ -4,6 +4,7 @@ package storetest
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,6 +12,24 @@ import (
 
 	"mentorix-backend/internal/auth"
 )
+
+func TestAuthStore_RegisterDuplicateEmail(t *testing.T) {
+	pool := NewPool(t)
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+
+	hash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if _, err := store.RegisterTrainerEmailPassword(ctx, "dup@test.com", hash, ""); err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+	_, err = store.RegisterTrainerEmailPassword(ctx, "dup@test.com", hash, "")
+	if !errors.Is(err, auth.ErrEmailTaken) {
+		t.Fatalf("duplicate register error = %v, want ErrEmailTaken", err)
+	}
+}
 
 func TestAuthStore_RevokeAndGrantRole(t *testing.T) {
 	pool := NewPool(t)

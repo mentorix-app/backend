@@ -128,9 +128,9 @@ func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, us
 			for _, block := range day.Blocks {
 				blockRow, err := q.InsertProgramVersionDayBlock(ctx, sqlc.InsertProgramVersionDayBlockParams{
 					ProgramVersionWeekDayID: dayRow.ID,
-					BlockType:           string(block.BlockType),
-					Instruction:         block.Instruction,
-					SortOrder:           int32(block.SortOrder),
+					BlockType:               string(block.BlockType),
+					Instruction:             block.Instruction,
+					SortOrder:               int32(block.SortOrder),
 				})
 				if err != nil {
 					return fmt.Errorf("insert program version day block: %w", err)
@@ -138,11 +138,11 @@ func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, us
 				for _, ex := range block.Exercises {
 					if _, err := q.InsertProgramVersionDayExercise(ctx, sqlc.InsertProgramVersionDayExerciseParams{
 						ProgramVersionWeekDayBlockID: blockRow.ID,
-						ExerciseID:               pgconv.ToPGUUID(ex.ExerciseID),
-						SortOrder:                int32(ex.SortOrder),
-						Sets:                     intPtrToInt32(ex.Sets),
-						Reps:                     intPtrToInt32(ex.Reps),
-						Instruction:              ex.Instruction,
+						ExerciseID:                   pgconv.ToPGUUID(ex.ExerciseID),
+						SortOrder:                    int32(ex.SortOrder),
+						Sets:                         intPtrToInt32(ex.Sets),
+						Reps:                         intPtrToInt32(ex.Reps),
+						Instruction:                  ex.Instruction,
 					}); err != nil {
 						return fmt.Errorf("insert program version day exercise: %w", err)
 					}

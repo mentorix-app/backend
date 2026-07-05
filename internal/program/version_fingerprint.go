@@ -25,9 +25,9 @@ type weekFingerprint struct {
 }
 
 type dayFingerprint struct {
-	DayNumber int                 `json:"day_number"`
-	SortOrder int                 `json:"sort_order"`
-	Blocks    []blockFingerprint  `json:"blocks"`
+	DayNumber int                `json:"day_number"`
+	SortOrder int                `json:"sort_order"`
+	Blocks    []blockFingerprint `json:"blocks"`
 }
 
 type blockFingerprint struct {

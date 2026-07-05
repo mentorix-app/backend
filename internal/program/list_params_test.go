@@ -69,9 +69,9 @@ func TestValidatePublishDetail(t *testing.T) {
 		Weeks: []Week{{
 			WeekNumber: 1,
 			Days: []Day{singleBlockDay(DayExercise{
-					ExerciseID: uuid.New(),
-					Sets:       &sets,
-					Reps:       &reps,
+				ExerciseID: uuid.New(),
+				Sets:       &sets,
+				Reps:       &reps,
 			})},
 		}},
 	}

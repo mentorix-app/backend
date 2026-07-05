@@ -155,11 +155,11 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 		}
 		for _, ex := range exercises {
 			if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
-				ID:                ex.ID,
+				ID:                    ex.ID,
 				ProgramWeekDayBlockID: pgconv.ToPGUUID(primary.ID),
-				SortOrder:         sortOrder,
-				ModifiedAt:        time.Now().UTC(),
-				ModifiedBy:        pgtype.UUID{},
+				SortOrder:             sortOrder,
+				ModifiedAt:            time.Now().UTC(),
+				ModifiedBy:            pgtype.UUID{},
 			}); err != nil {
 				return Detail{}, fmt.Errorf("move exercise to merged block: %w", err)
 			}
@@ -169,7 +169,7 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 
 	for _, block := range blocks[1:] {
 		if _, err := qtx.DeleteDayBlock(ctx, sqlc.DeleteDayBlockParams{
-			ID:           pgconv.ToPGUUID(block.ID),
+			ID:               pgconv.ToPGUUID(block.ID),
 			ProgramWeekDayID: pgconv.ToPGUUID(dayID),
 		}); err != nil {
 			return Detail{}, fmt.Errorf("delete merged block: %w", err)
@@ -250,11 +250,11 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 		}
 		newBlockIDs = append(newBlockIDs, pgconv.FromPGUUID(newBlockID))
 		if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
-			ID:                ex.ID,
+			ID:                    ex.ID,
 			ProgramWeekDayBlockID: newBlockID,
-			SortOrder:         1,
-			ModifiedAt:        time.Now().UTC(),
-			ModifiedBy:        pgtype.UUID{},
+			SortOrder:             1,
+			ModifiedAt:            time.Now().UTC(),
+			ModifiedBy:            pgtype.UUID{},
 		}); err != nil {
 			return Detail{}, fmt.Errorf("move exercise to single block: %w", err)
 		}
@@ -266,7 +266,7 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 	}
 
 	if _, err := qtx.DeleteDayBlock(ctx, sqlc.DeleteDayBlockParams{
-		ID:           pgconv.ToPGUUID(blockID),
+		ID:               pgconv.ToPGUUID(blockID),
 		ProgramWeekDayID: dayPG,
 	}); err != nil {
 		return Detail{}, fmt.Errorf("delete ungrouped block: %w", err)
@@ -374,11 +374,11 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 
 	now := time.Now().UTC()
 	if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
-		ID:                pgconv.ToPGUUID(itemID),
+		ID:                    pgconv.ToPGUUID(itemID),
 		ProgramWeekDayBlockID: newBlockID,
-		SortOrder:         1,
-		ModifiedAt:        now,
-		ModifiedBy:        pgconv.ToPGUUID(userID),
+		SortOrder:             1,
+		ModifiedAt:            now,
+		ModifiedBy:            pgconv.ToPGUUID(userID),
 	}); err != nil {
 		return Detail{}, fmt.Errorf("extract exercise: %w", err)
 	}
@@ -457,11 +457,11 @@ func (s *Store) MoveExerciseToBlock(ctx context.Context, userID, programID, week
 	qtx := s.q.WithTx(tx)
 	now := time.Now().UTC()
 	if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
-		ID:                pgconv.ToPGUUID(itemID),
+		ID:                    pgconv.ToPGUUID(itemID),
 		ProgramWeekDayBlockID: pgconv.ToPGUUID(targetBlockID),
-		SortOrder:         nextSort,
-		ModifiedAt:        now,
-		ModifiedBy:        pgconv.ToPGUUID(userID),
+		SortOrder:             nextSort,
+		ModifiedAt:            now,
+		ModifiedBy:            pgconv.ToPGUUID(userID),
 	}); err != nil {
 		return Detail{}, fmt.Errorf("move exercise to block: %w", err)
 	}
@@ -469,7 +469,7 @@ func (s *Store) MoveExerciseToBlock(ctx context.Context, userID, programID, week
 	sourceBlockID := pgconv.FromPGUUID(meta.ProgramWeekDayBlockID)
 	if meta.BlockType == string(BlockTypeSingle) {
 		if _, err := qtx.DeleteDayBlock(ctx, sqlc.DeleteDayBlockParams{
-			ID:           meta.ProgramWeekDayBlockID,
+			ID:               meta.ProgramWeekDayBlockID,
 			ProgramWeekDayID: meta.ProgramWeekDayID,
 		}); err != nil {
 			return Detail{}, fmt.Errorf("delete empty single block: %w", err)
@@ -509,7 +509,7 @@ func (s *Store) DeleteDayBlock(ctx context.Context, programID, weekID, blockID u
 	}
 
 	rows, err := s.q.DeleteDayBlock(ctx, sqlc.DeleteDayBlockParams{
-		ID:           pgconv.ToPGUUID(blockID),
+		ID:               pgconv.ToPGUUID(blockID),
 		ProgramWeekDayID: pgconv.ToPGUUID(dayID),
 	})
 	if err != nil {

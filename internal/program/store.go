@@ -547,14 +547,14 @@ func (s *Store) UpdateBlockExercise(ctx context.Context, userID, programID, week
 
 	now := time.Now().UTC()
 	rows, err := s.q.UpdateBlockExercise(ctx, sqlc.UpdateBlockExerciseParams{
-		ID:                pgconv.ToPGUUID(itemID),
+		ID:                    pgconv.ToPGUUID(itemID),
 		ProgramWeekDayBlockID: pgconv.ToPGUUID(blockID),
-		ExerciseID:        pgconv.ToPGUUID(in.ExerciseID),
-		Sets:              intPtrToInt32(in.Sets),
-		Reps:              intPtrToInt32(in.Reps),
-		Instruction:       instructionString(in.Instruction),
-		ModifiedAt:        now,
-		ModifiedBy:        pgconv.ToPGUUID(userID),
+		ExerciseID:            pgconv.ToPGUUID(in.ExerciseID),
+		Sets:                  intPtrToInt32(in.Sets),
+		Reps:                  intPtrToInt32(in.Reps),
+		Instruction:           instructionString(in.Instruction),
+		ModifiedAt:            now,
+		ModifiedBy:            pgconv.ToPGUUID(userID),
 	})
 	if err != nil {
 		return Detail{}, fmt.Errorf("update block exercise: %w", err)
@@ -600,7 +600,7 @@ func (s *Store) DeleteBlockExercise(ctx context.Context, programID, weekID, bloc
 
 	qtx := s.q.WithTx(tx)
 	rows, err := qtx.DeleteBlockExercise(ctx, sqlc.DeleteBlockExerciseParams{
-		ID:                pgconv.ToPGUUID(itemID),
+		ID:                    pgconv.ToPGUUID(itemID),
 		ProgramWeekDayBlockID: pgconv.ToPGUUID(blockID),
 	})
 	if err != nil {
@@ -612,7 +612,7 @@ func (s *Store) DeleteBlockExercise(ctx context.Context, programID, weekID, bloc
 
 	if block.BlockType == string(BlockTypeSingle) {
 		if _, err := qtx.DeleteDayBlock(ctx, sqlc.DeleteDayBlockParams{
-			ID:           pgconv.ToPGUUID(blockID),
+			ID:               pgconv.ToPGUUID(blockID),
 			ProgramWeekDayID: block.ProgramWeekDayID,
 		}); err != nil {
 			return Detail{}, fmt.Errorf("delete empty single block: %w", err)
@@ -788,11 +788,11 @@ func (s *Store) ReorderBlockExercises(ctx context.Context, userID, programID, we
 	blockPG := pgconv.ToPGUUID(blockID)
 	for i, itemID := range itemIDs {
 		if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
-			ID:                pgconv.ToPGUUID(itemID),
+			ID:                    pgconv.ToPGUUID(itemID),
 			ProgramWeekDayBlockID: blockPG,
-			SortOrder:         int32(i + 1),
-			ModifiedAt:        now,
-			ModifiedBy:        userPG,
+			SortOrder:             int32(i + 1),
+			ModifiedAt:            now,
+			ModifiedBy:            userPG,
 		}); err != nil {
 			return Detail{}, fmt.Errorf("update exercise placement: %w", err)
 		}
@@ -1019,13 +1019,13 @@ func blockExerciseInsertParams(blockPG pgtype.UUID, sort int32, userID uuid.UUID
 	now := time.Now().UTC()
 	return sqlc.InsertBlockExerciseParams{
 		ProgramWeekDayBlockID: blockPG,
-		ExerciseID:        pgconv.ToPGUUID(in.ExerciseID),
-		SortOrder:         sort,
-		Sets:              intPtrToInt32(in.Sets),
-		Reps:              intPtrToInt32(in.Reps),
-		Instruction:       instructionString(in.Instruction),
-		ModifiedAt:        now,
-		ModifiedBy:        pgconv.ToPGUUID(userID),
+		ExerciseID:            pgconv.ToPGUUID(in.ExerciseID),
+		SortOrder:             sort,
+		Sets:                  intPtrToInt32(in.Sets),
+		Reps:                  intPtrToInt32(in.Reps),
+		Instruction:           instructionString(in.Instruction),
+		ModifiedAt:            now,
+		ModifiedBy:            pgconv.ToPGUUID(userID),
 	}
 }
 

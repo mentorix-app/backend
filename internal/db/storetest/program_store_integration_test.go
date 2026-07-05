@@ -5,6 +5,7 @@ package storetest
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -438,7 +439,7 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 		t.Fatalf("ReorderBlockExercises unknown item error = %v, want ErrInvalidReorder", err)
 	}
 
-	moved, err := progStore.MoveDayBlock(ctx, draft.ID, week2ID, blockA, dayB, 0)
+	moved, err := progStore.MoveDayBlock(ctx, trainerID, draft.ID, week2ID, blockA, dayB, 0)
 	if err != nil {
 		t.Fatalf("MoveDayBlock: %v", err)
 	}
@@ -454,7 +455,7 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 	for _, b := range dayBAfterMove.Blocks {
 		blockIDs = append(blockIDs, b.ID)
 	}
-	merged, err := progStore.MergeDayBlocks(ctx, draft.ID, week2ID, dayB, blockIDs)
+	merged, err := progStore.MergeDayBlocks(ctx, trainerID, draft.ID, week2ID, dayB, blockIDs)
 	if err != nil {
 		t.Fatalf("MergeDayBlocks: %v", err)
 	}
@@ -475,6 +476,156 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 	_, err = progStore.ReorderBlockExercises(ctx, trainerID, draft.ID, week2ID, groupBlock.ID, []uuid.UUID{groupBlock.Exercises[0].ID})
 	if !errors.Is(err, program.ErrInvalidReorder) {
 		t.Fatalf("ReorderBlockExercises partial list error = %v, want ErrInvalidReorder", err)
+	}
+	reorderedExerciseIDs := make([]uuid.UUID, len(groupBlock.Exercises))
+	for i, ex := range groupBlock.Exercises {
+		reorderedExerciseIDs[len(groupBlock.Exercises)-1-i] = ex.ID
+	}
+	if _, err = progStore.ReorderBlockExercises(ctx, trainerID, draft.ID, week2ID, groupBlock.ID, reorderedExerciseIDs); err != nil {
+		t.Fatalf("ReorderBlockExercises full: %v", err)
+	}
+
+	ungroupedEarly, err := progStore.UngroupDayBlock(ctx, trainerID, draft.ID, week2ID, groupBlock.ID)
+	if err != nil {
+		t.Fatalf("UngroupDayBlock: %v", err)
+	}
+	dayBUngroupedEarly, ok := findDay(ungroupedEarly.Weeks[0], dayB)
+	if !ok {
+		t.Fatal("dayB not found after early ungroup")
+	}
+	earlyBlockIDs := make([]uuid.UUID, 0, len(dayBUngroupedEarly.Blocks))
+	for _, b := range dayBUngroupedEarly.Blocks {
+		if b.BlockType == program.BlockTypeSingle {
+			earlyBlockIDs = append(earlyBlockIDs, b.ID)
+		}
+	}
+	if len(earlyBlockIDs) < 2 {
+		t.Fatalf("single blocks after ungroup = %d, want at least 2", len(earlyBlockIDs))
+	}
+	merged, err = progStore.MergeDayBlocks(ctx, trainerID, draft.ID, week2ID, dayB, earlyBlockIDs)
+	if err != nil {
+		t.Fatalf("MergeDayBlocks after ungroup: %v", err)
+	}
+	dayBMerged, ok = findDay(merged.Weeks[0], dayB)
+	if !ok {
+		t.Fatal("dayB not found after re-merge")
+	}
+	groupBlock = program.DayBlock{}
+	for _, b := range dayBMerged.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			groupBlock = b
+			break
+		}
+	}
+	if groupBlock.ID == uuid.Nil {
+		t.Fatal("expected group block after re-merge")
+	}
+
+	emom := program.BlockTypeEMOM
+	instr := "60s"
+	patched, err := progStore.PatchDayBlock(ctx, trainerID, draft.ID, week2ID, groupBlock.ID, program.BlockPatchInput{
+		BlockType:   &emom,
+		Instruction: &instr,
+	})
+	if err != nil {
+		t.Fatalf("PatchDayBlock: %v", err)
+	}
+	dayBPatched, ok := findDay(patched.Weeks[0], dayB)
+	if !ok {
+		t.Fatal("dayB not found after patch")
+	}
+	var patchedGroup program.DayBlock
+	for _, b := range dayBPatched.Blocks {
+		if b.BlockType == program.BlockTypeEMOM {
+			patchedGroup = b
+			break
+		}
+	}
+	if patchedGroup.ID == uuid.Nil {
+		t.Fatal("expected EMOM group block after patch")
+	}
+
+	withAdded, err := progStore.AddBlockExercise(ctx, trainerID, draft.ID, week2ID, patchedGroup.ID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	})
+	if err != nil {
+		t.Fatalf("AddBlockExercise: %v", err)
+	}
+	dayBWithAdded, ok := findDay(withAdded.Weeks[0], dayB)
+	if !ok {
+		t.Fatal("dayB not found after add exercise")
+	}
+	var groupAfterAdd program.DayBlock
+	for _, b := range dayBWithAdded.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			groupAfterAdd = b
+			break
+		}
+	}
+	if len(groupAfterAdd.Exercises) < 3 {
+		t.Fatalf("group exercises = %d, want at least 3", len(groupAfterAdd.Exercises))
+	}
+
+	dayBlockIDs := make([]uuid.UUID, 0, len(dayBWithAdded.Blocks))
+	for _, b := range dayBWithAdded.Blocks {
+		dayBlockIDs = append(dayBlockIDs, b.ID)
+	}
+	reorderedBlocks, err := progStore.ReorderDayBlocks(ctx, trainerID, draft.ID, week2ID, dayB, dayBlockIDs)
+	if err != nil {
+		t.Fatalf("ReorderDayBlocks: %v", err)
+	}
+	dayBReordered, ok := findDay(reorderedBlocks.Weeks[0], dayB)
+	if !ok {
+		t.Fatal("dayB not found after reorder blocks")
+	}
+	if len(dayBReordered.Blocks) != len(dayBlockIDs) {
+		t.Fatalf("blocks = %d, want %d", len(dayBReordered.Blocks), len(dayBlockIDs))
+	}
+	if len(dayBlockIDs) > 1 {
+		_, err = progStore.ReorderDayBlocks(ctx, trainerID, draft.ID, week2ID, dayB, dayBlockIDs[:1])
+		if !errors.Is(err, program.ErrInvalidReorder) {
+			t.Fatalf("ReorderDayBlocks partial list error = %v, want ErrInvalidReorder", err)
+		}
+	}
+
+	extractItemID := groupAfterAdd.Exercises[0].ID
+	extracted, err := progStore.ExtractBlockExercise(ctx, trainerID, draft.ID, week2ID, groupAfterAdd.ID, extractItemID, 0)
+	if err != nil {
+		t.Fatalf("ExtractBlockExercise: %v", err)
+	}
+	dayBExtracted, ok := findDay(extracted.Weeks[0], dayB)
+	if !ok {
+		t.Fatal("dayB not found after extract")
+	}
+	if dayBlockCount(dayBExtracted) < 2 {
+		t.Fatalf("blocks after extract = %d, want at least 2", dayBlockCount(dayBExtracted))
+	}
+
+	var remainingGroup program.DayBlock
+	var singleBlock program.DayBlock
+	for _, b := range dayBExtracted.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			remainingGroup = b
+		} else if singleBlock.ID == uuid.Nil {
+			singleBlock = b
+		}
+	}
+	if remainingGroup.ID == uuid.Nil || singleBlock.ID == uuid.Nil {
+		t.Fatal("expected group and single block after extract")
+	}
+
+	if len(singleBlock.Exercises) > 0 {
+		_, err = progStore.MoveExerciseToBlock(ctx, trainerID, draft.ID, week2ID, singleBlock.ID, singleBlock.Exercises[0].ID, remainingGroup.ID)
+		if err != nil {
+			t.Fatalf("MoveExerciseToBlock: %v", err)
+		}
+	}
+
+	_, err = progStore.DeleteDayBlock(ctx, draft.ID, week2ID, remainingGroup.ID)
+	if err != nil {
+		t.Fatalf("DeleteDayBlock: %v", err)
 	}
 
 	afterDeleteWeek, err := progStore.DeleteWeek(ctx, draft.ID, week2ID)
@@ -690,5 +841,526 @@ func TestProgramService_adminMutatesOtherUsersProgram(t *testing.T) {
 	}
 	if err := svc.Delete(ctx, adminID, draft.ID); err != nil {
 		t.Fatalf("Delete() by admin error = %v", err)
+	}
+}
+
+func TestProgramStore_blockValidationErrors(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "block-val@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+		Name:        "Curl",
+		NameRu:      "Сгибание",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupArms,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+
+	progStore := program.NewStore(pool)
+	draft, err := progStore.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	sets, reps := 3, 10
+	withBlock, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	})
+	if err != nil {
+		t.Fatalf("create block: %v", err)
+	}
+	var block program.DayBlock
+	for _, d := range withBlock.Weeks[0].Days {
+		if d.ID == dayID {
+			b, ok := firstDayBlock(d)
+			if ok {
+				block = b
+			}
+			break
+		}
+	}
+	if block.ID == uuid.Nil {
+		t.Fatal("expected block")
+	}
+	itemID := block.Exercises[0].ID
+
+	_, err = progStore.MergeDayBlocks(ctx, trainerID, draft.ID, weekID, dayID, []uuid.UUID{block.ID})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("MergeDayBlocks one block error = %v, want ErrValidation", err)
+	}
+
+	_, err = progStore.DeleteDayBlock(ctx, draft.ID, weekID, block.ID)
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("DeleteDayBlock single error = %v, want ErrValidation", err)
+	}
+
+	_, err = progStore.ExtractBlockExercise(ctx, trainerID, draft.ID, weekID, block.ID, itemID, 0)
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("ExtractBlockExercise single error = %v, want ErrValidation", err)
+	}
+
+	_, err = progStore.MoveExerciseToBlock(ctx, trainerID, draft.ID, weekID, block.ID, itemID, block.ID)
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("MoveExerciseToBlock into single error = %v, want ErrValidation", err)
+	}
+
+	_, err = progStore.AddBlockExercise(ctx, trainerID, draft.ID, weekID, block.ID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("AddBlockExercise to single block error = %v, want ErrValidation", err)
+	}
+}
+
+func TestProgramStore_blockNotFound(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "block-nf@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	progStore := program.NewStore(pool)
+	draft, err := progStore.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	unknownBlock := uuid.New()
+	unknownItem := uuid.New()
+	emom := program.BlockTypeEMOM
+
+	_, err = progStore.PatchDayBlock(ctx, trainerID, draft.ID, weekID, unknownBlock, program.BlockPatchInput{BlockType: &emom})
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("PatchDayBlock: %v", err)
+	}
+	_, err = progStore.UngroupDayBlock(ctx, trainerID, draft.ID, weekID, unknownBlock)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("UngroupDayBlock: %v", err)
+	}
+	_, err = progStore.MoveDayBlock(ctx, trainerID, draft.ID, weekID, unknownBlock, dayID, 0)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("MoveDayBlock: %v", err)
+	}
+	_, err = progStore.ExtractBlockExercise(ctx, trainerID, draft.ID, weekID, unknownBlock, unknownItem, 0)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("ExtractBlockExercise: %v", err)
+	}
+	_, err = progStore.MoveExerciseToBlock(ctx, trainerID, draft.ID, weekID, unknownBlock, unknownItem, unknownBlock)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("MoveExerciseToBlock: %v", err)
+	}
+	_, err = progStore.DeleteDayBlock(ctx, draft.ID, weekID, unknownBlock)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("DeleteDayBlock: %v", err)
+	}
+}
+
+func TestProgramStore_groupBlockExerciseCRUD(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "group-crud@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	ex1, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+		Name: "A", NameRu: "А", Type: exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupChest, Difficulty: exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create ex1: %v", err)
+	}
+	ex2, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+		Name: "B", NameRu: "Б", Type: exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupBack, Difficulty: exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create ex2: %v", err)
+	}
+
+	progStore := program.NewStore(pool)
+	draft, err := progStore.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	sets, reps := 3, 10
+
+	withA, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: ex1.ID, Sets: &sets, Reps: &reps,
+	})
+	if err != nil {
+		t.Fatalf("block A: %v", err)
+	}
+	withBoth, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: ex2.ID, Sets: &sets, Reps: &reps,
+	})
+	if err != nil {
+		t.Fatalf("block B: %v", err)
+	}
+
+	dayA, ok := findDay(withBoth.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found")
+	}
+	_ = withA
+	blockIDs := make([]uuid.UUID, 0, len(dayA.Blocks))
+	for _, b := range dayA.Blocks {
+		blockIDs = append(blockIDs, b.ID)
+	}
+	if len(blockIDs) < 2 {
+		t.Fatalf("blocks = %d, want 2", len(blockIDs))
+	}
+
+	merged, err := progStore.MergeDayBlocks(ctx, trainerID, draft.ID, weekID, dayID, blockIDs)
+	if err != nil {
+		t.Fatalf("MergeDayBlocks: %v", err)
+	}
+	dayMerged, ok := findDay(merged.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found after merge")
+	}
+	var groupBlock program.DayBlock
+	for _, b := range dayMerged.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			groupBlock = b
+			break
+		}
+	}
+	if groupBlock.ID == uuid.Nil {
+		t.Fatal("expected group block")
+	}
+
+	withAdded, err := progStore.AddBlockExercise(ctx, trainerID, draft.ID, weekID, groupBlock.ID, program.DayExerciseInput{
+		ExerciseID: ex1.ID, Sets: &sets, Reps: &reps,
+	})
+	if err != nil {
+		t.Fatalf("AddBlockExercise: %v", err)
+	}
+	dayAdded, ok := findDay(withAdded.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found after add")
+	}
+	var groupAfter program.DayBlock
+	for _, b := range dayAdded.Blocks {
+		if b.ID == groupBlock.ID {
+			groupAfter = b
+			break
+		}
+	}
+	if len(groupAfter.Exercises) < 3 {
+		t.Fatalf("exercises = %d, want at least 3", len(groupAfter.Exercises))
+	}
+
+	_, err = progStore.AddBlockExercise(ctx, trainerID, draft.ID, weekID, groupBlock.ID, program.DayExerciseInput{
+		ExerciseID: uuid.New(), Sets: &sets, Reps: &reps,
+	})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("AddBlockExercise unknown exercise: %v, want ErrValidation", err)
+	}
+
+	itemID := groupAfter.Exercises[0].ID
+	_, err = progStore.UpdateBlockExercise(ctx, trainerID, draft.ID, weekID, groupBlock.ID, itemID, program.DayExerciseInput{
+		ExerciseID: uuid.New(), Sets: &sets, Reps: &reps,
+	})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("UpdateBlockExercise unknown exercise: %v, want ErrValidation", err)
+	}
+
+	_, err = progStore.UpdateBlockExercise(ctx, trainerID, draft.ID, weekID, groupBlock.ID, uuid.New(), program.DayExerciseInput{
+		ExerciseID: ex1.ID, Sets: &sets, Reps: &reps,
+	})
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("UpdateBlockExercise unknown item: %v, want ErrNoRows", err)
+	}
+
+	_, err = progStore.DeleteBlockExercise(ctx, draft.ID, weekID, groupBlock.ID, uuid.New())
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("DeleteBlockExercise unknown item: %v, want ErrNoRows", err)
+	}
+
+	afterDelete, err := progStore.DeleteBlockExercise(ctx, draft.ID, weekID, groupBlock.ID, itemID)
+	if err != nil {
+		t.Fatalf("DeleteBlockExercise: %v", err)
+	}
+	dayAfterDelete, ok := findDay(afterDelete.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found after delete exercise")
+	}
+	var exercisesLeft int
+	for _, b := range dayAfterDelete.Blocks {
+		if b.ID == groupBlock.ID {
+			exercisesLeft = len(b.Exercises)
+			break
+		}
+	}
+	if exercisesLeft != len(groupAfter.Exercises)-1 {
+		t.Fatalf("exercises left = %d, want %d", exercisesLeft, len(groupAfter.Exercises)-1)
+	}
+
+	_, err = progStore.DeleteBlockExercise(ctx, draft.ID, weekID, uuid.New(), itemID)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("DeleteBlockExercise unknown block: %v, want ErrNoRows", err)
+	}
+}
+
+func TestProgramStore_twoGroupsMoveAndMergeInstructions(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "two-groups@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	exercises := make([]exercise.Exercise, 4)
+	for i := range exercises {
+		exercises[i], err = exStore.Create(ctx, trainerID, exercise.UpsertInput{
+			Name:        "Ex",
+			NameRu:      "Упр",
+			Type:        exercise.ExerciseTypeStrength,
+			MuscleGroup: exercise.MuscleGroupChest,
+			Difficulty:  exercise.DifficultyBeginner,
+		})
+		if err != nil {
+			t.Fatalf("create exercise %d: %v", i, err)
+		}
+	}
+
+	progStore := program.NewStore(pool)
+	draft, err := progStore.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	sets, reps := 3, 10
+
+	detail := draft
+	for _, ex := range exercises {
+		detail, err = createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+			ExerciseID: ex.ID, Sets: &sets, Reps: &reps,
+		})
+		if err != nil {
+			t.Fatalf("create single block: %v", err)
+		}
+	}
+
+	day, ok := findDay(detail.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found")
+	}
+	if len(day.Blocks) < 4 {
+		t.Fatalf("blocks = %d, want at least 4", len(day.Blocks))
+	}
+	blockIDs := make([]uuid.UUID, len(day.Blocks))
+	for i, b := range day.Blocks {
+		blockIDs[i] = b.ID
+	}
+
+	mergedA, err := progStore.MergeDayBlocks(ctx, trainerID, draft.ID, weekID, dayID, blockIDs[:2])
+	if err != nil {
+		t.Fatalf("MergeDayBlocks A: %v", err)
+	}
+	dayA, ok := findDay(mergedA.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found after merge A")
+	}
+	var groupA program.DayBlock
+	for _, b := range dayA.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			groupA = b
+			break
+		}
+	}
+	if groupA.ID == uuid.Nil {
+		t.Fatal("expected group A")
+	}
+
+	emom := program.BlockTypeEMOM
+	instrA := "EMOM 60s"
+	if _, err = progStore.PatchDayBlock(ctx, trainerID, draft.ID, weekID, groupA.ID, program.BlockPatchInput{
+		BlockType: &emom, Instruction: &instrA,
+	}); err != nil {
+		t.Fatalf("PatchDayBlock A: %v", err)
+	}
+
+	mergedB, err := progStore.MergeDayBlocks(ctx, trainerID, draft.ID, weekID, dayID, blockIDs[2:])
+	if err != nil {
+		t.Fatalf("MergeDayBlocks B: %v", err)
+	}
+	dayB, ok := findDay(mergedB.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found after merge B")
+	}
+	var groupB program.DayBlock
+	for _, b := range dayB.Blocks {
+		if b.BlockType != program.BlockTypeSingle && b.ID != groupA.ID {
+			groupB = b
+			break
+		}
+	}
+	if groupB.ID == uuid.Nil {
+		t.Fatal("expected group B")
+	}
+
+	amrap := program.BlockTypeAMRAP
+	instrB := "20 min cap"
+	patchedB, err := progStore.PatchDayBlock(ctx, trainerID, draft.ID, weekID, groupB.ID, program.BlockPatchInput{
+		BlockType: &amrap, Instruction: &instrB,
+	})
+	if err != nil {
+		t.Fatalf("PatchDayBlock B: %v", err)
+	}
+	dayPatched, ok := findDay(patchedB.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found after patch B")
+	}
+	for _, b := range dayPatched.Blocks {
+		if b.ID == groupB.ID {
+			groupB = b
+			break
+		}
+	}
+	if len(groupB.Exercises) == 0 {
+		t.Fatal("group B has no exercises")
+	}
+
+	itemID := groupA.Exercises[0].ID
+	moved, err := progStore.MoveExerciseToBlock(ctx, trainerID, draft.ID, weekID, groupA.ID, itemID, groupB.ID)
+	if err != nil {
+		t.Fatalf("MoveExerciseToBlock: %v", err)
+	}
+	dayMoved, ok := findDay(moved.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found after move")
+	}
+	var targetGroup program.DayBlock
+	for _, b := range dayMoved.Blocks {
+		if b.ID == groupB.ID {
+			targetGroup = b
+			break
+		}
+	}
+	found := false
+	for _, ex := range targetGroup.Exercises {
+		if ex.ID == itemID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("exercise not found in target group after move")
+	}
+
+	if _, err = progStore.MoveExerciseToBlock(ctx, trainerID, draft.ID, weekID, groupB.ID, itemID, groupB.ID); err != nil {
+		t.Fatalf("MoveExerciseToBlock noop: %v", err)
+	}
+
+	dayAfterMove, ok := findDay(moved.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found")
+	}
+	var groupIDs []uuid.UUID
+	for _, b := range dayAfterMove.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			groupIDs = append(groupIDs, b.ID)
+		}
+	}
+	if len(groupIDs) < 2 {
+		t.Fatalf("group blocks = %d, want at least 2", len(groupIDs))
+	}
+
+	final, err := progStore.MergeDayBlocks(ctx, trainerID, draft.ID, weekID, dayID, groupIDs)
+	if err != nil {
+		t.Fatalf("MergeDayBlocks final: %v", err)
+	}
+	dayFinal, ok := findDay(final.Weeks[0], dayID)
+	if !ok {
+		t.Fatal("day not found after final merge")
+	}
+	var mergedGroup program.DayBlock
+	for _, b := range dayFinal.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			mergedGroup = b
+			break
+		}
+	}
+	if mergedGroup.ID == uuid.Nil {
+		t.Fatal("expected merged group")
+	}
+	if mergedGroup.Instruction == "" {
+		t.Fatal("expected merged instruction")
+	}
+	if !strings.Contains(mergedGroup.Instruction, instrA) || !strings.Contains(mergedGroup.Instruction, instrB) {
+		t.Fatalf("instruction = %q, want both %q and %q", mergedGroup.Instruction, instrA, instrB)
+	}
+}
+
+func TestProgramStore_DeleteProgramVersion_notFound(t *testing.T) {
+	pool := NewPool(t)
+	store := program.NewStore(pool)
+	err := store.DeleteProgramVersion(context.Background(), uuid.New(), uuid.New())
+	if !errors.Is(err, program.ErrNotFound) {
+		t.Fatalf("DeleteProgramVersion() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestProgramStore_SetStatus_notFound(t *testing.T) {
+	pool := NewPool(t)
+	store := program.NewStore(pool)
+	_, err := store.SetStatus(context.Background(), uuid.New(), uuid.New(), program.StatusArchived)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("SetStatus() error = %v, want ErrNoRows", err)
+	}
+}
+
+func TestProgramStore_SoftDelete_notFound(t *testing.T) {
+	pool := NewPool(t)
+	store := program.NewStore(pool)
+	err := store.SoftDelete(context.Background(), uuid.New(), uuid.New())
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("SoftDelete() error = %v, want ErrNoRows", err)
 	}
 }

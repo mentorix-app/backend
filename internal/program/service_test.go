@@ -47,6 +47,9 @@ func (f *fakeProgramStore) List(context.Context, ListParams) (ListResult, error)
 }
 
 func (f *fakeProgramStore) GetProgramRow(context.Context, uuid.UUID) (Program, error) {
+	if f.program.ID != uuid.Nil {
+		return f.program, nil
+	}
 	if f.err != nil {
 		return Program{}, f.err
 	}
@@ -54,6 +57,9 @@ func (f *fakeProgramStore) GetProgramRow(context.Context, uuid.UUID) (Program, e
 }
 
 func (f *fakeProgramStore) GetDetail(context.Context, uuid.UUID) (Detail, error) {
+	if f.detail.Program.ID != uuid.Nil {
+		return f.detail, nil
+	}
 	if f.err != nil {
 		return Detail{}, f.err
 	}

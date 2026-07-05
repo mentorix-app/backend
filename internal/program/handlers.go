@@ -149,10 +149,7 @@ type patchBlockBody struct {
 }
 
 func (b patchBlockBody) toInput() BlockPatchInput {
-	return BlockPatchInput{
-		BlockType:   b.BlockType,
-		Instruction: b.Instruction,
-	}
+	return BlockPatchInput(b)
 }
 
 type moveBlockBody struct {
