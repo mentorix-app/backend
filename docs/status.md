@@ -6,6 +6,7 @@
 
 | Область | Ссылка |
 | ------- | ------ |
+| Блоки упражнений в дне программы (single / группы, merge, move) | [features/program-blocks.md](features/program-blocks.md) |
 | Инфра (health, config, slog, CORS, proxy) | [features/health.md](features/health.md), [architecture.md](architecture.md) |
 | Auth (register, login, refresh, logout, me, rate limit) | [features/auth.md](features/auth.md) |
 | Admin (выдача admin) | [features/admin.md](features/admin.md) |
@@ -18,4 +19,4 @@
 | Render dev | [environments.md](environments.md) |
 | Dev seed | [environments.md](environments.md) |
 
-_Миграции: версия 13 (`./scripts/migrate-check.sh`)._
+_Миграции: версия 16 (`./scripts/migrate-check.sh`)._

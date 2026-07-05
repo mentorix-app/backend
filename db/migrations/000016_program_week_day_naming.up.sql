@@ -1,0 +1,93 @@
+-- Align draft + version program day trees with immediate-parent table naming.
+
+-- Draft: days
+ALTER TABLE mentorix.program_days RENAME TO program_week_days;
+
+ALTER INDEX mentorix.program_days_program_id_idx
+  RENAME TO program_week_days_program_id_idx;
+ALTER INDEX mentorix.program_days_week_id_idx
+  RENAME TO program_week_days_week_id_idx;
+
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_days_week_id_fkey TO program_week_days_week_id_fkey;
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_days_week_day_number_uniq TO program_week_days_week_day_number_uniq;
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_days_week_id_fkey TO program_week_days_week_id_fkey;
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_days_program_id_fkey TO program_week_days_program_id_fkey;
+
+-- Draft: blocks
+ALTER TABLE mentorix.program_day_blocks RENAME TO program_week_day_blocks;
+
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME COLUMN program_day_id TO program_week_day_id;
+
+ALTER INDEX mentorix.program_day_blocks_program_day_id_idx
+  RENAME TO program_week_day_blocks_program_week_day_id_idx;
+
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME CONSTRAINT program_day_blocks_block_type_check TO program_week_day_blocks_block_type_check;
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME CONSTRAINT program_day_blocks_program_day_id_fkey
+  TO program_week_day_blocks_program_week_day_id_fkey;
+
+-- Draft: block exercises
+ALTER TABLE mentorix.program_day_exercises RENAME TO program_week_day_block_exercises;
+
+ALTER TABLE mentorix.program_week_day_block_exercises
+  RENAME COLUMN program_day_block_id TO program_week_day_block_id;
+
+ALTER INDEX mentorix.program_day_exercises_program_day_block_id_idx
+  RENAME TO program_week_day_block_exercises_program_week_day_block_id_idx;
+
+ALTER TABLE mentorix.program_week_day_block_exercises
+  RENAME CONSTRAINT program_day_exercises_program_day_block_id_fkey
+  TO program_week_day_block_exercises_program_week_day_block_id_fkey;
+
+-- Version: days
+ALTER TABLE mentorix.program_version_days RENAME TO program_version_week_days;
+
+ALTER INDEX mentorix.program_version_days_program_version_id_idx
+  RENAME TO program_version_week_days_program_version_id_idx;
+ALTER INDEX mentorix.program_version_days_program_version_week_id_idx
+  RENAME TO program_version_week_days_program_version_week_id_idx;
+
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_days_program_version_id_fkey
+  TO program_version_week_days_program_version_id_fkey;
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_days_program_version_week_id_fkey
+  TO program_version_week_days_program_version_week_id_fkey;
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_days_week_day_number_uniq
+  TO program_version_week_days_week_day_number_uniq;
+
+-- Version: blocks
+ALTER TABLE mentorix.program_version_day_blocks RENAME TO program_version_week_day_blocks;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME COLUMN program_version_day_id TO program_version_week_day_id;
+
+ALTER INDEX mentorix.program_version_day_blocks_program_version_day_id_idx
+  RENAME TO program_version_week_day_blocks_program_version_week_day_id_idx;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME CONSTRAINT program_version_day_blocks_block_type_check
+  TO program_version_week_day_blocks_block_type_check;
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME CONSTRAINT program_version_day_blocks_program_version_day_id_fkey
+  TO program_version_week_day_blocks_program_version_week_day_id_fkey;
+
+-- Version: block exercises
+ALTER TABLE mentorix.program_version_day_exercises RENAME TO program_version_week_day_block_exercises;
+
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  RENAME COLUMN program_version_day_block_id TO program_version_week_day_block_id;
+
+ALTER INDEX mentorix.program_version_day_exercises_program_version_day_block_id_idx
+  RENAME TO program_version_week_day_block_exercises_program_version_week_day_block_id_idx;
+
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  RENAME CONSTRAINT program_version_day_exercises_program_version_day_block_id_fkey
+  TO program_version_week_day_block_exercises_program_version_week_day_block_id_fkey;

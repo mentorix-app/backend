@@ -74,7 +74,7 @@ INSERT INTO mentorix.program_version_weeks (
 RETURNING *;
 
 -- name: InsertProgramVersionDay :one
-INSERT INTO mentorix.program_version_days (
+INSERT INTO mentorix.program_version_week_days (
   program_version_id,
   program_version_week_id,
   day_number,
@@ -82,16 +82,24 @@ INSERT INTO mentorix.program_version_days (
 ) VALUES ($1, $2, $3, $4)
 RETURNING *;
 
+-- name: InsertProgramVersionDayBlock :one
+INSERT INTO mentorix.program_version_week_day_blocks (
+  program_version_week_day_id,
+  block_type,
+  instruction,
+  sort_order
+) VALUES ($1, $2, $3, $4)
+RETURNING *;
+
 -- name: InsertProgramVersionDayExercise :one
-INSERT INTO mentorix.program_version_day_exercises (
-  program_version_day_id,
+INSERT INTO mentorix.program_version_week_day_block_exercises (
+  program_version_week_day_block_id,
   exercise_id,
   sort_order,
   sets,
   reps,
-  weight_kg,
   instruction
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
+) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: ListProgramVersionWeeksByVersionID :many
@@ -102,13 +110,21 @@ ORDER BY sort_order ASC, week_number ASC;
 
 -- name: ListProgramVersionDaysByVersionID :many
 SELECT *
-FROM mentorix.program_version_days
+FROM mentorix.program_version_week_days
 WHERE program_version_id = $1
 ORDER BY sort_order ASC, day_number ASC;
 
+-- name: ListProgramVersionDayBlocksByVersionID :many
+SELECT pvb.*
+FROM mentorix.program_version_week_day_blocks pvb
+JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
+WHERE pd.program_version_id = $1
+ORDER BY pd.sort_order ASC, pd.day_number ASC, pvb.sort_order ASC;
+
 -- name: ListProgramVersionDayExercisesByVersionID :many
 SELECT pde.*
-FROM mentorix.program_version_day_exercises pde
-JOIN mentorix.program_version_days pd ON pd.id = pde.program_version_day_id
+FROM mentorix.program_version_week_day_block_exercises pde
+JOIN mentorix.program_version_week_day_blocks pvb ON pvb.id = pde.program_version_week_day_block_id
+JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
 WHERE pd.program_version_id = $1
-ORDER BY pd.sort_order ASC, pd.day_number ASC, pde.sort_order ASC;
+ORDER BY pd.sort_order ASC, pd.day_number ASC, pvb.sort_order ASC, pde.sort_order ASC;

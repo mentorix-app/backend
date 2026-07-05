@@ -6,31 +6,102 @@ alwaysApply: false
 
 # API endpoints
 
-Contract canon: [api/openapi.yaml](../../api/openapi.yaml).
+Canon: [api/openapi.yaml](../../api/openapi.yaml). Do not duplicate full path lists in docs.
 
-## JSON and URLs
+## JSON
 
-| Layer | Rule |
-| ----- | ---- |
-| JSON keys | `snake_case` tags |
-| Enum values | `snake_case` |
-| URL paths | `kebab-case` |
-| GET entities | include `created_at` if column exists (not `/health`) |
+| Rule | Example |
+| ---- | ------- |
+| Keys | `snake_case` | `exercise_id`, `sort_order` |
+| Enum values | `snake_case` | `muscle_gain`, `for_time` |
+| Exceptions | `token_type: "Bearer"`; single words `email`, `password` | |
 
-Exceptions: `token_type: "Bearer"`; single-word keys (`email`, `password`).
+Shared auth DTOs: [internal/auth/apitypes.go](../../internal/auth/apitypes.go).
 
-DTOs: [internal/auth/apitypes.go](../../internal/auth/apitypes.go) for shared auth types.
+## URL paths
+
+| Rule | Example |
+| ---- | ------- |
+| Segments | **kebab-case** | `publish-update`, `program-assignment` |
+| Resources | plural nouns | `/programs`, `/weeks`, `/blocks` |
+| Path params | `{name}_id` in OpenAPI; Echo `:name_id` | `week_id`, `block_id`, `item_id` |
+| Root resource | `:id` on mount group | `/programs/:id` |
+| No trailing slash | `/programs` not `/programs/` | |
+
+## HTTP verbs
+
+| Intent | Method |
+| ------ | ------ |
+| Read / list | `GET` |
+| Create | `POST` |
+| Full replace | `PUT` |
+| Partial update | `PATCH` |
+| Delete | `DELETE` |
+| Reorder (full id list) | `PUT` … `/reorder` |
+
+## Route shape
+
+**1. Collection** — under parent, needs parent context in path:
+
+```text
+POST   /parents/{parent_id}/children
+PUT    /parents/{parent_id}/children/reorder
+```
+
+**2. Instance** — UUID identifies row; shortest path that still scopes ownership:
+
+```text
+PATCH  /…/blocks/{block_id}
+PUT    /…/blocks/{block_id}/exercises/{item_id}
+```
+
+Use `week_id` (not only `program_id`) when checking block/day belongs to week.
+
+**3. Action** — verb segment on instance or collection; no verb in path param names:
+
+```text
+POST …/blocks/merge          POST …/blocks/{block_id}/ungroup
+POST …/blocks/{block_id}/move
+POST …/blocks/{block_id}/exercises/{item_id}/extract
+POST /programs/{id}/publish
+```
+
+**4. `sort_order` in body** — optional; omit → append at end (position `1..N` in parent).
+
+## Program week subtree
+
+Prefix: `/programs/{id}/weeks/{week_id}`
+
+| Scope | Path pattern |
+| ----- | ------------ |
+| Week | `POST /weeks`, `PUT /weeks/reorder`, `DELETE /weeks/{week_id}` |
+| Day collection | `POST /days`, `PUT /days/reorder`, `DELETE /days/{day_id}` |
+| Block collection (in day) | `POST /days/{day_id}/blocks`, `PUT …/blocks/reorder`, `POST …/blocks/merge` |
+| Block instance | `PATCH /blocks/{block_id}`, `DELETE /blocks/{block_id}`, `POST …/ungroup`, `POST …/move` |
+| Block exercises | `POST /blocks/{block_id}/exercises`, `PUT …/exercises/reorder`, `PUT\|DELETE …/exercises/{item_id}`, `POST …/extract`, `POST …/move` |
+
+Day id **only** where the operation is about the day's block list (create, reorder, merge). Block `block_id` ops sit at **week** level.
+
+## Other mounts
+
+| Prefix | Notes |
+| ------ | ----- |
+| `/auth/*` | auth actions + `/auth/me` |
+| `/exercises` | catalog CRUD |
+| `/admin/users/{user_id}/roles/admin` | admin grant |
+| `/trainer/clients/{client_user_id}/program-assignment` | kebab compound resource |
+| `/health`, `/health/ready` | no `created_at` |
+
+## GET entities
+
+Include `created_at` when column exists (except health).
 
 ## New endpoint checklist
 
-1. Echo route in feature handler
-2. Update `api/openapi.yaml`
-3. Update `postman/mentorix-backend.postman_collection.json`
-4. Add/adjust `schemaBindings` in `internal/apicheck/schema.go` if new schemas
-5. Update `docs/features/<feature>.md` (non-obvious rules only)
+1. Echo route (match patterns above)
+2. `api/openapi.yaml`
+3. `postman/mentorix-backend.postman_collection.json`
+4. `internal/apicheck/schema.go` if new schemas
+5. `docs/features/<feature>.md` — behavior only, not path inventory
 
 Run: `SKIP_SMOKE=1 ./postman/validate.sh` or `go test ./internal/apicheck/...`
-
-## Docs
-
-Do not list all paths in markdown — link OpenAPI. Feature behavior → `docs/features/`.

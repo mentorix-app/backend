@@ -208,7 +208,7 @@ func (q *Queries) InsertProgramVersion(ctx context.Context, arg InsertProgramVer
 }
 
 const insertProgramVersionDay = `-- name: InsertProgramVersionDay :one
-INSERT INTO mentorix.program_version_days (
+INSERT INTO mentorix.program_version_week_days (
   program_version_id,
   program_version_week_id,
   day_number,
@@ -224,14 +224,14 @@ type InsertProgramVersionDayParams struct {
 	SortOrder            int32       `json:"sort_order"`
 }
 
-func (q *Queries) InsertProgramVersionDay(ctx context.Context, arg InsertProgramVersionDayParams) (MentorixProgramVersionDay, error) {
+func (q *Queries) InsertProgramVersionDay(ctx context.Context, arg InsertProgramVersionDayParams) (MentorixProgramVersionWeekDay, error) {
 	row := q.db.QueryRow(ctx, insertProgramVersionDay,
 		arg.ProgramVersionID,
 		arg.ProgramVersionWeekID,
 		arg.DayNumber,
 		arg.SortOrder,
 	)
-	var i MentorixProgramVersionDay
+	var i MentorixProgramVersionWeekDay
 	err := row.Scan(
 		&i.ID,
 		&i.ProgramVersionID,
@@ -243,50 +243,82 @@ func (q *Queries) InsertProgramVersionDay(ctx context.Context, arg InsertProgram
 	return i, err
 }
 
+const insertProgramVersionDayBlock = `-- name: InsertProgramVersionDayBlock :one
+INSERT INTO mentorix.program_version_week_day_blocks (
+  program_version_week_day_id,
+  block_type,
+  instruction,
+  sort_order
+) VALUES ($1, $2, $3, $4)
+RETURNING id, program_version_week_day_id, block_type, instruction, sort_order, created_at
+`
+
+type InsertProgramVersionDayBlockParams struct {
+	ProgramVersionWeekDayID pgtype.UUID `json:"program_version_week_day_id"`
+	BlockType               string      `json:"block_type"`
+	Instruction             string      `json:"instruction"`
+	SortOrder               int32       `json:"sort_order"`
+}
+
+func (q *Queries) InsertProgramVersionDayBlock(ctx context.Context, arg InsertProgramVersionDayBlockParams) (MentorixProgramVersionWeekDayBlock, error) {
+	row := q.db.QueryRow(ctx, insertProgramVersionDayBlock,
+		arg.ProgramVersionWeekDayID,
+		arg.BlockType,
+		arg.Instruction,
+		arg.SortOrder,
+	)
+	var i MentorixProgramVersionWeekDayBlock
+	err := row.Scan(
+		&i.ID,
+		&i.ProgramVersionWeekDayID,
+		&i.BlockType,
+		&i.Instruction,
+		&i.SortOrder,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertProgramVersionDayExercise = `-- name: InsertProgramVersionDayExercise :one
-INSERT INTO mentorix.program_version_day_exercises (
-  program_version_day_id,
+INSERT INTO mentorix.program_version_week_day_block_exercises (
+  program_version_week_day_block_id,
   exercise_id,
   sort_order,
   sets,
   reps,
-  weight_kg,
   instruction
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, program_version_day_id, exercise_id, sort_order, sets, reps, weight_kg, instruction, created_at
+) VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, exercise_id, sort_order, sets, reps, instruction, created_at, program_version_week_day_block_id
 `
 
 type InsertProgramVersionDayExerciseParams struct {
-	ProgramVersionDayID pgtype.UUID    `json:"program_version_day_id"`
-	ExerciseID          pgtype.UUID    `json:"exercise_id"`
-	SortOrder           int32          `json:"sort_order"`
-	Sets                *int32         `json:"sets"`
-	Reps                *int32         `json:"reps"`
-	WeightKg            pgtype.Numeric `json:"weight_kg"`
-	Instruction         string         `json:"instruction"`
+	ProgramVersionWeekDayBlockID pgtype.UUID `json:"program_version_week_day_block_id"`
+	ExerciseID                   pgtype.UUID `json:"exercise_id"`
+	SortOrder                    int32       `json:"sort_order"`
+	Sets                         *int32      `json:"sets"`
+	Reps                         *int32      `json:"reps"`
+	Instruction                  string      `json:"instruction"`
 }
 
-func (q *Queries) InsertProgramVersionDayExercise(ctx context.Context, arg InsertProgramVersionDayExerciseParams) (MentorixProgramVersionDayExercise, error) {
+func (q *Queries) InsertProgramVersionDayExercise(ctx context.Context, arg InsertProgramVersionDayExerciseParams) (MentorixProgramVersionWeekDayBlockExercise, error) {
 	row := q.db.QueryRow(ctx, insertProgramVersionDayExercise,
-		arg.ProgramVersionDayID,
+		arg.ProgramVersionWeekDayBlockID,
 		arg.ExerciseID,
 		arg.SortOrder,
 		arg.Sets,
 		arg.Reps,
-		arg.WeightKg,
 		arg.Instruction,
 	)
-	var i MentorixProgramVersionDayExercise
+	var i MentorixProgramVersionWeekDayBlockExercise
 	err := row.Scan(
 		&i.ID,
-		&i.ProgramVersionDayID,
 		&i.ExerciseID,
 		&i.SortOrder,
 		&i.Sets,
 		&i.Reps,
-		&i.WeightKg,
 		&i.Instruction,
 		&i.CreatedAt,
+		&i.ProgramVersionWeekDayBlockID,
 	)
 	return i, err
 }
@@ -319,33 +351,68 @@ func (q *Queries) InsertProgramVersionWeek(ctx context.Context, arg InsertProgra
 	return i, err
 }
 
-const listProgramVersionDayExercisesByVersionID = `-- name: ListProgramVersionDayExercisesByVersionID :many
-SELECT pde.id, pde.program_version_day_id, pde.exercise_id, pde.sort_order, pde.sets, pde.reps, pde.weight_kg, pde.instruction, pde.created_at
-FROM mentorix.program_version_day_exercises pde
-JOIN mentorix.program_version_days pd ON pd.id = pde.program_version_day_id
+const listProgramVersionDayBlocksByVersionID = `-- name: ListProgramVersionDayBlocksByVersionID :many
+SELECT pvb.id, pvb.program_version_week_day_id, pvb.block_type, pvb.instruction, pvb.sort_order, pvb.created_at
+FROM mentorix.program_version_week_day_blocks pvb
+JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
 WHERE pd.program_version_id = $1
-ORDER BY pd.sort_order ASC, pd.day_number ASC, pde.sort_order ASC
+ORDER BY pd.sort_order ASC, pd.day_number ASC, pvb.sort_order ASC
 `
 
-func (q *Queries) ListProgramVersionDayExercisesByVersionID(ctx context.Context, programVersionID pgtype.UUID) ([]MentorixProgramVersionDayExercise, error) {
+func (q *Queries) ListProgramVersionDayBlocksByVersionID(ctx context.Context, programVersionID pgtype.UUID) ([]MentorixProgramVersionWeekDayBlock, error) {
+	rows, err := q.db.Query(ctx, listProgramVersionDayBlocksByVersionID, programVersionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MentorixProgramVersionWeekDayBlock{}
+	for rows.Next() {
+		var i MentorixProgramVersionWeekDayBlock
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProgramVersionWeekDayID,
+			&i.BlockType,
+			&i.Instruction,
+			&i.SortOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramVersionDayExercisesByVersionID = `-- name: ListProgramVersionDayExercisesByVersionID :many
+SELECT pde.id, pde.exercise_id, pde.sort_order, pde.sets, pde.reps, pde.instruction, pde.created_at, pde.program_version_week_day_block_id
+FROM mentorix.program_version_week_day_block_exercises pde
+JOIN mentorix.program_version_week_day_blocks pvb ON pvb.id = pde.program_version_week_day_block_id
+JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
+WHERE pd.program_version_id = $1
+ORDER BY pd.sort_order ASC, pd.day_number ASC, pvb.sort_order ASC, pde.sort_order ASC
+`
+
+func (q *Queries) ListProgramVersionDayExercisesByVersionID(ctx context.Context, programVersionID pgtype.UUID) ([]MentorixProgramVersionWeekDayBlockExercise, error) {
 	rows, err := q.db.Query(ctx, listProgramVersionDayExercisesByVersionID, programVersionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MentorixProgramVersionDayExercise{}
+	items := []MentorixProgramVersionWeekDayBlockExercise{}
 	for rows.Next() {
-		var i MentorixProgramVersionDayExercise
+		var i MentorixProgramVersionWeekDayBlockExercise
 		if err := rows.Scan(
 			&i.ID,
-			&i.ProgramVersionDayID,
 			&i.ExerciseID,
 			&i.SortOrder,
 			&i.Sets,
 			&i.Reps,
-			&i.WeightKg,
 			&i.Instruction,
 			&i.CreatedAt,
+			&i.ProgramVersionWeekDayBlockID,
 		); err != nil {
 			return nil, err
 		}
@@ -359,20 +426,20 @@ func (q *Queries) ListProgramVersionDayExercisesByVersionID(ctx context.Context,
 
 const listProgramVersionDaysByVersionID = `-- name: ListProgramVersionDaysByVersionID :many
 SELECT id, program_version_id, program_version_week_id, day_number, sort_order, created_at
-FROM mentorix.program_version_days
+FROM mentorix.program_version_week_days
 WHERE program_version_id = $1
 ORDER BY sort_order ASC, day_number ASC
 `
 
-func (q *Queries) ListProgramVersionDaysByVersionID(ctx context.Context, programVersionID pgtype.UUID) ([]MentorixProgramVersionDay, error) {
+func (q *Queries) ListProgramVersionDaysByVersionID(ctx context.Context, programVersionID pgtype.UUID) ([]MentorixProgramVersionWeekDay, error) {
 	rows, err := q.db.Query(ctx, listProgramVersionDaysByVersionID, programVersionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MentorixProgramVersionDay{}
+	items := []MentorixProgramVersionWeekDay{}
 	for rows.Next() {
-		var i MentorixProgramVersionDay
+		var i MentorixProgramVersionWeekDay
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProgramVersionID,

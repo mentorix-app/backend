@@ -18,6 +18,7 @@
 | [features/auth.md](features/auth.md) | Аутентификация |
 | [features/exercises.md](features/exercises.md) | Справочник упражнений |
 | [features/programs.md](features/programs.md) | Программы тренировок |
+| [features/program-blocks.md](features/program-blocks.md) | Блоки упражнений в дне |
 | [features/trainer-clients.md](features/trainer-clients.md) | Назначение программы клиенту |
 | [features/admin.md](features/admin.md) | Admin API |
 

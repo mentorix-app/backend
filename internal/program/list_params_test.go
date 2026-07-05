@@ -68,14 +68,11 @@ func TestValidatePublishDetail(t *testing.T) {
 		Program: Program{Name: "Test", Category: &category, Difficulty: &difficulty},
 		Weeks: []Week{{
 			WeekNumber: 1,
-			Days: []Day{{
-				DayNumber: 1,
-				Exercises: []DayExercise{{
+			Days: []Day{singleBlockDay(DayExercise{
 					ExerciseID: uuid.New(),
 					Sets:       &sets,
 					Reps:       &reps,
-				}},
-			}},
+			})},
 		}},
 	}
 	if err := validatePublishDetail(d); err != nil {

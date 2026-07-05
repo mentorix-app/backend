@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Go code
 
-General Go style: [best-practices.mdc](best-practices.mdc) (auxiliary).
+Optional general style: [Google Go Style](https://google.github.io/styleguide/go/) (not project canon).
 
 ## Layout
 
@@ -24,6 +24,46 @@ General Go style: [best-practices.mdc](best-practices.mdc) (auxiliary).
 - Validate at HTTP boundary.
 - Secrets in env only.
 - Comments: English, non-obvious only; concise GoDoc on exports when needed.
+
+## Performance & concurrency
+
+Use Go's concurrency when work is independent and I/O-bound; keep goroutines bounded. Simplest correct solution first — no concurrency by default.
+
+### When to parallelize
+
+- Independent I/O: DB reads, HTTP, Redis, files.
+- Embarrassingly parallel transforms without shared mutable state.
+- Fan-out inside a request or job — with a **fixed upper bound**.
+
+### Patterns
+
+| Pattern | Use when |
+| ------- | -------- |
+| Worker pool | Many similar jobs; N workers + job `chan`, stop on `ctx.Done()` |
+| `golang.org/x/sync/errgroup` | Fan-out with first-error cancel and `ctx` propagation |
+| Bounded semaphore | Limit concurrency without full pool (`chan struct{}` capacity N) |
+| `sync.WaitGroup` | Wait-for-all when error coordination is manual |
+
+### Safety & limits
+
+- Propagate `context.Context` from HTTP handler / caller; stop on cancel.
+- No unbounded `go func()` per request.
+- DB parallelism must respect **pgx pool** size.
+- Document concurrent-safety on exported APIs (mutators are not safe unless stated).
+- Tests: no `t.Fatal` from child goroutines.
+
+### Speed
+
+- Prefer sqlc batch queries / single round-trips over N+1.
+- Preallocate slices when length is known (`make([]T, 0, n)`).
+- `sync.Pool` only after profiling shows allocation pressure.
+- Use `go test -bench` / `pprof` before hand-tuning.
+
+### Design & review
+
+- For multi-step flows: can independent steps run in parallel with a bounded pool?
+- Prefer in-process worker pool over Redis queue / new service when work fits the monolith.
+- Extract shared pool helper to `internal/...` only after **2+ call sites**.
 
 ## Naming (Go / JSON / enums)
 

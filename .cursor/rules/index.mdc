@@ -7,6 +7,10 @@ alwaysApply: true
 
 **Monolith** Go REST (Echo) + PostgreSQL (`mentorix`) + Redis. One `user_id` for all login channels. No microservices/gRPC without explicit request.
 
+## Go-first design
+
+Prefer idiomatic Go: bounded parallelism, worker pools for independent I/O, `context` cancellation. Details: [go-code.mdc](go-code.mdc).
+
 ## Before non-trivial work
 
 1. [docs/status.md](../../docs/status.md) — what exists
@@ -22,9 +26,8 @@ alwaysApply: true
 | [api-endpoints.mdc](api-endpoints.mdc) | API, handlers, OpenAPI, Postman |
 | [qa-before-push.mdc](qa-before-push.mdc) | every commit / before push |
 | [docs-and-rules-maintenance.mdc](docs-and-rules-maintenance.mdc) | docs & rules lifecycle |
-| [best-practices.mdc](best-practices.mdc) | Go style (auxiliary) |
 
-**Precedence:** project rules + docs > `best-practices.mdc` > code/OpenAPI on conflict.
+**Precedence:** project rules + docs > code/OpenAPI on conflict.
 
 ## Git
 

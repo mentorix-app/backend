@@ -9,7 +9,7 @@ VALUES ($1, $2, $3, $4, $5)
 RETURNING id;
 
 -- name: InsertProgramDay :one
-INSERT INTO mentorix.program_days (program_id, week_id, day_number, sort_order)
+INSERT INTO mentorix.program_week_days (program_id, week_id, day_number, sort_order)
 VALUES ($1, $2, $3, $4)
 RETURNING id;
 
@@ -130,32 +130,32 @@ SELECT EXISTS(
 SELECT
   COALESCE(MAX(day_number), 0) + 1::int AS next_day_number,
   COALESCE(MAX(sort_order), 0) + 1::int AS next_sort_order
-FROM mentorix.program_days
+FROM mentorix.program_week_days
 WHERE week_id = $1;
 
 -- name: InsertProgramDayAuto :exec
-INSERT INTO mentorix.program_days (program_id, week_id, day_number, sort_order)
+INSERT INTO mentorix.program_week_days (program_id, week_id, day_number, sort_order)
 VALUES ($1, $2, $3, $4);
 
 -- name: DeleteProgramDay :execrows
-DELETE FROM mentorix.program_days
+DELETE FROM mentorix.program_week_days
 WHERE id = $1 AND program_id = $2 AND week_id = $3;
 
 -- name: DayBelongsToProgram :one
 SELECT EXISTS(
-  SELECT 1 FROM mentorix.program_days
+  SELECT 1 FROM mentorix.program_week_days
   WHERE id = $1 AND program_id = $2
 ) AS ok;
 
 -- name: DayBelongsToWeek :one
 SELECT EXISTS(
-  SELECT 1 FROM mentorix.program_days
+  SELECT 1 FROM mentorix.program_week_days
   WHERE id = $1 AND week_id = $2 AND program_id = $3
 ) AS ok;
 
 -- name: CountProgramDaysForWeek :one
 SELECT COUNT(*)::int AS count
-FROM mentorix.program_days
+FROM mentorix.program_week_days
 WHERE week_id = $1;
 
 -- name: ExerciseExists :one
@@ -165,11 +165,74 @@ SELECT EXISTS(
 
 -- name: ListProgramDaysForWeek :many
 SELECT id, day_number, sort_order, created_at
-FROM mentorix.program_days
+FROM mentorix.program_week_days
 WHERE week_id = $1
 ORDER BY sort_order ASC, day_number ASC;
 
--- name: ListDayExercises :many
+-- name: ListDayBlocks :many
+SELECT id, block_type, instruction, sort_order, created_at
+FROM mentorix.program_week_day_blocks
+WHERE program_week_day_id = $1
+ORDER BY sort_order ASC, created_at ASC;
+
+-- name: GetDayBlockByID :one
+SELECT id, program_week_day_id, block_type, instruction, sort_order, created_at
+FROM mentorix.program_week_day_blocks
+WHERE id = $1;
+
+-- name: BlockBelongsToDay :one
+SELECT EXISTS(
+  SELECT 1 FROM mentorix.program_week_day_blocks
+  WHERE id = $1 AND program_week_day_id = $2
+) AS ok;
+
+-- name: BlockBelongsToProgram :one
+SELECT EXISTS(
+  SELECT 1
+  FROM mentorix.program_week_day_blocks pdb
+  JOIN mentorix.program_week_days pd ON pd.id = pdb.program_week_day_id
+  WHERE pdb.id = $1 AND pd.program_id = $2
+) AS ok;
+
+-- name: NextDayBlockSort :one
+SELECT COALESCE(MAX(sort_order), 0) + 1::int AS next_sort
+FROM mentorix.program_week_day_blocks
+WHERE program_week_day_id = $1;
+
+-- name: InsertDayBlock :one
+INSERT INTO mentorix.program_week_day_blocks (
+  program_week_day_id, block_type, instruction, sort_order
+) VALUES ($1, $2, $3, $4)
+RETURNING id;
+
+-- name: UpdateDayBlock :execrows
+UPDATE mentorix.program_week_day_blocks SET
+  block_type = COALESCE(sqlc.narg('block_type'), block_type),
+  instruction = COALESCE(sqlc.narg('instruction'), instruction)
+WHERE id = sqlc.arg('id') AND program_week_day_id = sqlc.arg('program_week_day_id');
+
+-- name: DeleteDayBlock :execrows
+DELETE FROM mentorix.program_week_day_blocks
+WHERE id = $1 AND program_week_day_id = $2;
+
+-- name: UpdateDayBlockOrder :exec
+UPDATE mentorix.program_week_day_blocks SET
+  sort_order = $3
+WHERE id = $1 AND program_week_day_id = $2;
+
+-- name: UpdateDayBlockPlacement :exec
+UPDATE mentorix.program_week_day_blocks SET
+  program_week_day_id = $2,
+  sort_order = $3
+WHERE id = $1;
+
+-- name: ListDayBlockIDsForDay :many
+SELECT id
+FROM mentorix.program_week_day_blocks
+WHERE program_week_day_id = $1
+ORDER BY sort_order ASC, created_at ASC;
+
+-- name: ListBlockExercises :many
 SELECT
   pde.id,
   pde.exercise_id,
@@ -178,39 +241,70 @@ SELECT
   pde.sort_order,
   pde.sets,
   pde.reps,
-  pde.weight_kg,
   pde.instruction,
   pde.created_at
-FROM mentorix.program_day_exercises pde
+FROM mentorix.program_week_day_block_exercises pde
 JOIN mentorix.exercises e ON e.id = pde.exercise_id
-WHERE pde.program_day_id = $1
+WHERE pde.program_week_day_block_id = $1
 ORDER BY pde.sort_order ASC, pde.created_at ASC;
 
--- name: NextDayExerciseSort :one
+-- name: NextBlockExerciseSort :one
 SELECT COALESCE(MAX(sort_order), 0) + 1::int AS next_sort
-FROM mentorix.program_day_exercises
-WHERE program_day_id = $1;
+FROM mentorix.program_week_day_block_exercises
+WHERE program_week_day_block_id = $1;
 
--- name: InsertDayExercise :exec
-INSERT INTO mentorix.program_day_exercises (
-  program_day_id, exercise_id, sort_order, sets, reps, weight_kg, instruction,
+-- name: InsertBlockExercise :exec
+INSERT INTO mentorix.program_week_day_block_exercises (
+  program_week_day_block_id, exercise_id, sort_order, sets, reps, instruction,
   modified_at, modified_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
--- name: UpdateDayExercise :execrows
-UPDATE mentorix.program_day_exercises SET
+-- name: UpdateBlockExercise :execrows
+UPDATE mentorix.program_week_day_block_exercises SET
   exercise_id = $3,
   sets = $4,
   reps = $5,
-  weight_kg = $6,
-  instruction = $7,
-  modified_at = $8,
-  modified_by = $9
-WHERE id = $1 AND program_day_id = $2;
+  instruction = $6,
+  modified_at = $7,
+  modified_by = $8
+WHERE id = $1 AND program_week_day_block_id = $2;
 
--- name: DeleteDayExercise :execrows
-DELETE FROM mentorix.program_day_exercises
-WHERE id = $1 AND program_day_id = $2;
+-- name: DeleteBlockExercise :execrows
+DELETE FROM mentorix.program_week_day_block_exercises
+WHERE id = $1 AND program_week_day_block_id = $2;
+
+-- name: UpdateBlockExercisePlacement :exec
+UPDATE mentorix.program_week_day_block_exercises SET
+  program_week_day_block_id = $2,
+  sort_order = $3,
+  modified_at = $4,
+  modified_by = $5
+WHERE id = $1;
+
+-- name: CountBlockExercises :one
+SELECT COUNT(*)::int AS count
+FROM mentorix.program_week_day_block_exercises
+WHERE program_week_day_block_id = $1;
+
+-- name: ListExerciseItemsByWeek :many
+SELECT pde.id, pdb.program_week_day_id
+FROM mentorix.program_week_day_block_exercises pde
+JOIN mentorix.program_week_day_blocks pdb ON pdb.id = pde.program_week_day_block_id
+JOIN mentorix.program_week_days pd ON pd.id = pdb.program_week_day_id
+WHERE pd.week_id = $1;
+
+-- name: ListBlocksByWeek :many
+SELECT pdb.id, pdb.program_week_day_id, pdb.block_type, pdb.instruction, pdb.sort_order, pdb.created_at
+FROM mentorix.program_week_day_blocks pdb
+JOIN mentorix.program_week_days pd ON pd.id = pdb.program_week_day_id
+WHERE pd.week_id = $1
+ORDER BY pd.sort_order ASC, pd.day_number ASC, pdb.sort_order ASC, pdb.created_at ASC;
+
+-- name: GetBlockExerciseMeta :one
+SELECT pde.id, pde.program_week_day_block_id, pdb.program_week_day_id, pdb.block_type
+FROM mentorix.program_week_day_block_exercises pde
+JOIN mentorix.program_week_day_blocks pdb ON pdb.id = pde.program_week_day_block_id
+WHERE pde.id = $1;
 
 -- name: UpdateProgramWeekOrder :exec
 UPDATE mentorix.program_weeks SET
@@ -219,24 +313,10 @@ UPDATE mentorix.program_weeks SET
 WHERE id = $1 AND program_id = $2;
 
 -- name: UpdateProgramDayOrder :exec
-UPDATE mentorix.program_days SET
+UPDATE mentorix.program_week_days SET
   sort_order = $3,
   day_number = $4
 WHERE id = $1 AND week_id = $2;
-
--- name: UpdateDayExercisePlacement :exec
-UPDATE mentorix.program_day_exercises SET
-  program_day_id = $2,
-  sort_order = $3,
-  modified_at = $4,
-  modified_by = $5
-WHERE id = $1;
-
--- name: ListExerciseItemsByWeek :many
-SELECT pde.id, pde.program_day_id
-FROM mentorix.program_day_exercises pde
-JOIN mentorix.program_days pd ON pd.id = pde.program_day_id
-WHERE pd.week_id = $1;
 
 -- name: ListProgramWeekIDs :many
 SELECT id
@@ -246,6 +326,6 @@ ORDER BY sort_order ASC, week_number ASC;
 
 -- name: ListProgramDayIDsForWeek :many
 SELECT id
-FROM mentorix.program_days
+FROM mentorix.program_week_days
 WHERE week_id = $1
 ORDER BY sort_order ASC, day_number ASC;

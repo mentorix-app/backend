@@ -6,39 +6,66 @@ alwaysApply: false
 
 # Database naming
 
-Canonical schema: [db/schema.sql](../../db/schema.sql). Naming locked by migration `000007_schema_naming_unification`.
+Canon: [db/schema.sql](../../db/schema.sql). Locked by migration `000007_schema_naming_unification`.
 
-## Rules
+## Tables
 
 | Rule | Example |
 | ---- | ------- |
 | Schema | `mentorix` |
-| Tables | `snake_case`, plural | `programs`, `trainer_clients` |
+| Name | `snake_case`, **plural** | `programs`, `trainer_clients` |
 | Domain prefix | `auth_*`, `user_*`, `trainer_*`, `program_*` |
-| Child tables | full parent prefix | `program_day_exercises` |
+| Child table | **immediate parent** prefix | `program_week_days`, `program_week_day_blocks` |
 | PK | `id uuid` | |
-| FK | `{role}_id` | `program_id`, `trainer_id` |
-| Client in link | `client_user_id` → `users` | not `client_id` |
-| Trainer FK | `trainer_id` → `trainers` | not `trainer_user_id` |
+| Link / junction | both roles in name | `trainer_clients` |
+
+**Immediate-parent rule:** FK `program_week_day_block_id` → table `program_week_day_block_exercises`.
+
+## Columns
+
+| Kind | Pattern | Example |
+| ---- | ------- | ------- |
+| FK | `{role}_id` | `program_id`, `week_id`, `program_week_day_block_id` |
+| Client link | `client_user_id` | not `client_id` |
+| Trainer link | `trainer_id` → `trainers` | not `trainer_user_id` |
+| Type | concrete name | `exercise_type`, `block_type` — not `type` |
+| Enum values | `snake_case` + CHECK | `email_password`, `published` |
 | Audit | `created_at`, `modified_at`, `created_by`, `modified_by` | |
 | Soft delete | `deleted_at` | |
-| Enums | `snake_case` + CHECK | `email_password`, `published` |
-| Type columns | concrete name | `exercise_type` not `type` |
-| UNIQUE | `{table}_{cols}_uniq` | |
-| INDEX | `{table}_{col(s)}_idx` | |
+
+## Ordering fields
+
+| Field | Scope | UNIQUE | Meaning |
+| ----- | ----- | ------ | ------- |
+| `sort_order` | siblings under same parent | no | UI/DnD position; app keeps `1..N` |
+| `week_number` | per `program_id` | yes | stable label |
+| `day_number` | per `week_id` | yes | stable label |
+| `version_number` | per `program_id` | yes | frozen publish label |
+
+`sort_order` is reused; scope = table + parent FK.
+
+## Constraints
+
+| Kind | Pattern |
+| ---- | ------- |
+| UNIQUE | `{table}_{cols}_uniq` |
+| INDEX | `{table}_{col(s)}_idx` |
+| CHECK enum | `{table}_{col}_check` |
 
 ## Program trees
 
 ```text
-programs → program_weeks → program_days → program_day_exercises
-program_versions → program_version_weeks → … → program_version_day_exercises
+programs → program_weeks → program_week_days → program_week_day_blocks
+  → program_week_day_block_exercises
+program_versions → program_version_weeks → program_version_week_days
+  → program_version_week_day_blocks → program_version_week_day_block_exercises
 program_assignments
 ```
 
 ## Workflow
 
-New migration → `db/queries/` → `sqlc generate` → `scripts/schema-sync.sh` → update feature doc tables (not full DDL in docs).
+Migration → `db/queries/` → `sqlc generate` → `make schema-sync` → feature doc table rows only.
 
-## Avoid (renamed in 000007)
+## Avoid (000007 renames)
 
 `refresh_sessions`, `invites`, `link_codes`, `trainer_user_id`, `exercises.type`, `added_by`.

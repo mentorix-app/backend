@@ -537,11 +537,19 @@ func TestService_Archive_invalidTransition(t *testing.T) {
 	}
 }
 
+func singleBlockInput(in DayExerciseInput) CreateDayBlockInput {
+	return CreateDayBlockInput{
+		BlockType: BlockTypeSingle,
+		Exercise:  &in,
+	}
+}
+
 func TestService_dayExerciseOperations(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	weekID := uuid.New()
 	dayID := uuid.New()
+	blockID := uuid.New()
 	itemID := uuid.New()
 	sets, reps := 3, 10
 	detail := Detail{Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft}}
@@ -552,33 +560,59 @@ func TestService_dayExerciseOperations(t *testing.T) {
 	svc := testService(store, nil)
 	in := DayExerciseInput{ExerciseID: uuid.New(), Sets: &sets, Reps: &reps}
 
-	if _, err := svc.AddDayExercise(context.Background(), userID, programID, weekID, dayID, in); err != nil {
-		t.Fatalf("AddDayExercise() error = %v", err)
+	if _, err := svc.CreateDayBlock(context.Background(), userID, programID, weekID, dayID, singleBlockInput(in)); err != nil {
+		t.Fatalf("CreateDayBlock() error = %v", err)
 	}
-	if _, err := svc.UpdateDayExercise(context.Background(), userID, programID, weekID, dayID, itemID, in); err != nil {
-		t.Fatalf("UpdateDayExercise() error = %v", err)
+	if _, err := svc.UpdateBlockExercise(context.Background(), userID, programID, weekID, blockID, itemID, in); err != nil {
+		t.Fatalf("UpdateBlockExercise() error = %v", err)
 	}
-	if _, err := svc.DeleteDayExercise(context.Background(), userID, programID, weekID, dayID, itemID); err != nil {
-		t.Fatalf("DeleteDayExercise() error = %v", err)
+	if _, err := svc.DeleteBlockExercise(context.Background(), userID, programID, weekID, blockID, itemID); err != nil {
+		t.Fatalf("DeleteBlockExercise() error = %v", err)
 	}
 	if _, err := svc.DeleteDay(context.Background(), userID, programID, weekID, dayID); err != nil {
 		t.Fatalf("DeleteDay() error = %v", err)
 	}
 }
 
-func TestService_AddDayExercise_validationError(t *testing.T) {
+func TestService_CreateDayBlock_validationError(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 	}, nil)
-	_, err := svc.AddDayExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), DayExerciseInput{})
+	_, err := svc.CreateDayBlock(context.Background(), userID, programID, uuid.New(), uuid.New(), CreateDayBlockInput{})
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
 }
 
-func TestService_AddDayExercise_success(t *testing.T) {
+func TestService_CreateDayBlock_rejectsGroupType(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	sets, reps := 3, 10
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+	}, nil)
+	_, err := svc.CreateDayBlock(context.Background(), userID, programID, uuid.New(), uuid.New(), CreateDayBlockInput{
+		BlockType: BlockTypeEMOM,
+	})
+	if err == nil {
+		t.Fatal("expected validation error for group block_type")
+	}
+	_, err = svc.CreateDayBlock(context.Background(), userID, programID, uuid.New(), uuid.New(), CreateDayBlockInput{
+		BlockType: BlockTypeEMOM,
+		Exercise: &DayExerciseInput{
+			ExerciseID: uuid.New(),
+			Sets:       &sets,
+			Reps:       &reps,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected validation error for group block_type with exercise")
+	}
+}
+
+func TestService_CreateDayBlock_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	sets, reps := 3, 10
@@ -587,20 +621,20 @@ func TestService_AddDayExercise_success(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail:  want,
 	}, nil)
-	got, err := svc.AddDayExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), DayExerciseInput{
+	got, err := svc.CreateDayBlock(context.Background(), userID, programID, uuid.New(), uuid.New(), singleBlockInput(DayExerciseInput{
 		ExerciseID: uuid.New(),
 		Sets:       &sets,
 		Reps:       &reps,
-	})
+	}))
 	if err != nil {
-		t.Fatalf("AddDayExercise() error = %v", err)
+		t.Fatalf("CreateDayBlock() error = %v", err)
 	}
 	if got.ID != programID {
 		t.Fatalf("id = %v", got.ID)
 	}
 }
 
-func TestService_UpdateDayExercise_success(t *testing.T) {
+func TestService_UpdateBlockExercise_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	sets, reps := 4, 12
@@ -609,20 +643,20 @@ func TestService_UpdateDayExercise_success(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail:  want,
 	}, nil)
-	got, err := svc.UpdateDayExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New(), DayExerciseInput{
+	got, err := svc.UpdateBlockExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New(), DayExerciseInput{
 		ExerciseID: uuid.New(),
 		Sets:       &sets,
 		Reps:       &reps,
 	})
 	if err != nil {
-		t.Fatalf("UpdateDayExercise() error = %v", err)
+		t.Fatalf("UpdateBlockExercise() error = %v", err)
 	}
 	if got.ID != programID {
 		t.Fatalf("id = %v", got.ID)
 	}
 }
 
-func TestService_DeleteDayExercise_success(t *testing.T) {
+func TestService_DeleteBlockExercise_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	want := Detail{Program: Program{ID: programID, Status: StatusDraft}}
@@ -630,9 +664,9 @@ func TestService_DeleteDayExercise_success(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail:  want,
 	}, nil)
-	got, err := svc.DeleteDayExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New())
+	got, err := svc.DeleteBlockExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New())
 	if err != nil {
-		t.Fatalf("DeleteDayExercise() error = %v", err)
+		t.Fatalf("DeleteBlockExercise() error = %v", err)
 	}
 	if got.ID != programID {
 		t.Fatalf("id = %v", got.ID)
@@ -733,23 +767,40 @@ func TestService_ReorderDays_success(t *testing.T) {
 	}
 }
 
-func TestService_ReorderWeekExercises_success(t *testing.T) {
+func TestService_ReorderDayBlocks_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	weekID := uuid.New()
 	dayID := uuid.New()
+	blockID := uuid.New()
+	want := Detail{Program: Program{ID: programID, Status: StatusDraft}}
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		detail:  want,
+	}, nil)
+	got, err := svc.ReorderDayBlocks(context.Background(), userID, programID, weekID, dayID, []uuid.UUID{blockID})
+	if err != nil {
+		t.Fatalf("ReorderDayBlocks() error = %v", err)
+	}
+	if got.ID != programID {
+		t.Errorf("id = %v", got.ID)
+	}
+}
+
+func TestService_ReorderBlockExercises_success(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	blockID := uuid.New()
 	itemID := uuid.New()
 	want := Detail{Program: Program{ID: programID, Status: StatusDraft}}
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail:  want,
 	}, nil)
-	got, err := svc.ReorderWeekExercises(context.Background(), userID, programID, weekID, []WeekExerciseReorderDay{{
-		DayID:           dayID,
-		ExerciseItemIDs: []uuid.UUID{itemID},
-	}})
+	got, err := svc.ReorderBlockExercises(context.Background(), userID, programID, weekID, blockID, []uuid.UUID{itemID})
 	if err != nil {
-		t.Fatalf("ReorderWeekExercises() error = %v", err)
+		t.Fatalf("ReorderBlockExercises() error = %v", err)
 	}
 	if got.ID != programID {
 		t.Errorf("id = %v", got.ID)
@@ -822,12 +873,12 @@ func (r *reorderDaysErrStore) ReorderDays(context.Context, uuid.UUID, uuid.UUID,
 	return Detail{}, r.reorderErr
 }
 
-type reorderExercisesErrStore struct {
+type reorderBlockExercisesErrStore struct {
 	fakeProgramStore
 	reorderErr error
 }
 
-func (r *reorderExercisesErrStore) ReorderWeekExercises(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []WeekExerciseReorderDay) (Detail, error) {
+func (r *reorderBlockExercisesErrStore) ReorderBlockExercises(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
 	return Detail{}, r.reorderErr
 }
 
@@ -876,18 +927,18 @@ func TestService_ReorderDays_notFound(t *testing.T) {
 	}
 }
 
-func TestService_ReorderWeekExercises_notFound(t *testing.T) {
+func TestService_ReorderBlockExercises_notFound(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := testService(&reorderExercisesErrStore{
+	svc := testService(&reorderBlockExercisesErrStore{
 		fakeProgramStore: fakeProgramStore{
 			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		},
 		reorderErr: pgx.ErrNoRows,
 	}, nil)
-	_, err := svc.ReorderWeekExercises(context.Background(), userID, programID, uuid.New(), []WeekExerciseReorderDay{})
+	_, err := svc.ReorderBlockExercises(context.Background(), userID, programID, uuid.New(), uuid.New(), nil)
 	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("ReorderWeekExercises() error = %v, want ErrNotFound", err)
+		t.Fatalf("ReorderBlockExercises() error = %v, want ErrNotFound", err)
 	}
 }
 
@@ -919,18 +970,18 @@ func TestService_ReorderDays_invalidReorder(t *testing.T) {
 	}
 }
 
-func TestService_ReorderWeekExercises_invalidReorder(t *testing.T) {
+func TestService_ReorderBlockExercises_invalidReorder(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	svc := testService(&reorderExercisesErrStore{
+	svc := testService(&reorderBlockExercisesErrStore{
 		fakeProgramStore: fakeProgramStore{
 			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		},
 		reorderErr: ErrInvalidReorder,
 	}, nil)
-	_, err := svc.ReorderWeekExercises(context.Background(), userID, programID, uuid.New(), nil)
+	_, err := svc.ReorderBlockExercises(context.Background(), userID, programID, uuid.New(), uuid.New(), nil)
 	if !errors.Is(err, ErrInvalidReorder) {
-		t.Fatalf("ReorderWeekExercises() error = %v, want ErrInvalidReorder", err)
+		t.Fatalf("ReorderBlockExercises() error = %v, want ErrInvalidReorder", err)
 	}
 }
 
@@ -1252,7 +1303,7 @@ func TestService_CleanupVersions_storeError(t *testing.T) {
 	}
 }
 
-func TestService_AddDayExercise_notFound(t *testing.T) {
+func TestService_CreateDayBlock_notFound(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	sets, reps := 3, 10
@@ -1260,17 +1311,17 @@ func TestService_AddDayExercise_notFound(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		err:     pgx.ErrNoRows,
 	}, nil)
-	_, err := svc.AddDayExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), DayExerciseInput{
+	_, err := svc.CreateDayBlock(context.Background(), userID, programID, uuid.New(), uuid.New(), singleBlockInput(DayExerciseInput{
 		ExerciseID: uuid.New(),
 		Sets:       &sets,
 		Reps:       &reps,
-	})
+	}))
 	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("AddDayExercise() error = %v, want ErrNotFound", err)
+		t.Fatalf("CreateDayBlock() error = %v, want ErrNotFound", err)
 	}
 }
 
-func TestService_UpdateDayExercise_notFound(t *testing.T) {
+func TestService_UpdateBlockExercise_notFound(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	sets, reps := 3, 10
@@ -1278,26 +1329,26 @@ func TestService_UpdateDayExercise_notFound(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		err:     pgx.ErrNoRows,
 	}, nil)
-	_, err := svc.UpdateDayExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New(), DayExerciseInput{
+	_, err := svc.UpdateBlockExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New(), DayExerciseInput{
 		ExerciseID: uuid.New(),
 		Sets:       &sets,
 		Reps:       &reps,
 	})
 	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("UpdateDayExercise() error = %v, want ErrNotFound", err)
+		t.Fatalf("UpdateBlockExercise() error = %v, want ErrNotFound", err)
 	}
 }
 
-func TestService_DeleteDayExercise_notFound(t *testing.T) {
+func TestService_DeleteBlockExercise_notFound(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		err:     pgx.ErrNoRows,
 	}, nil)
-	_, err := svc.DeleteDayExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New())
+	_, err := svc.DeleteBlockExercise(context.Background(), userID, programID, uuid.New(), uuid.New(), uuid.New())
 	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("DeleteDayExercise() error = %v, want ErrNotFound", err)
+		t.Fatalf("DeleteBlockExercise() error = %v, want ErrNotFound", err)
 	}
 }
 

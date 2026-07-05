@@ -8,6 +8,15 @@ import (
 	"mentorix-backend/internal/exercise"
 )
 
+func singleBlockDay(ex DayExercise) Day {
+	return Day{
+		Blocks: []DayBlock{{
+			BlockType: BlockTypeSingle,
+			Exercises: []DayExercise{ex},
+		}},
+	}
+}
+
 func validPublishDetail(name string) Detail {
 	category := CategoryWeightLoss
 	difficulty := exercise.DifficultyBeginner
@@ -17,14 +26,11 @@ func validPublishDetail(name string) Detail {
 		Program: Program{Name: name, Category: &category, Difficulty: &difficulty},
 		Weeks: []Week{{
 			WeekNumber: 1,
-			Days: []Day{{
-				DayNumber: 1,
-				Exercises: []DayExercise{{
-					ExerciseID: uuid.New(),
-					Sets:       &sets,
-					Reps:       &reps,
-				}},
-			}},
+			Days: []Day{singleBlockDay(DayExercise{
+				ExerciseID: uuid.New(),
+				Sets:       &sets,
+				Reps:       &reps,
+			})},
 		}},
 	}
 }
@@ -58,16 +64,25 @@ func TestValidatePublishDetail_missingCategory(t *testing.T) {
 	d := Detail{
 		Program: Program{Name: "Test", Difficulty: &difficulty},
 		Weeks: []Week{{
-			Days: []Day{{
-				Exercises: []DayExercise{{
-					ExerciseID: uuid.New(),
-					Sets:       &sets,
-					Reps:       &reps,
-				}},
-			}},
+			Days: []Day{singleBlockDay(DayExercise{
+				ExerciseID: uuid.New(),
+				Sets:       &sets,
+				Reps:       &reps,
+			})},
 		}},
 	}
 	if err := validatePublishDetail(d); err == nil {
 		t.Fatal("validatePublishDetail() error = nil, want validation error for missing category")
+	}
+}
+
+func TestBlockPatchInput_Validate_rejectsSingle(t *testing.T) {
+	single := BlockTypeSingle
+	if err := (BlockPatchInput{BlockType: &single}).Validate(); err == nil {
+		t.Fatal("expected validation error for single block_type in patch")
+	}
+	emom := BlockTypeEMOM
+	if err := (BlockPatchInput{BlockType: &emom}).Validate(); err != nil {
+		t.Fatalf("BlockPatchInput.Validate() error = %v, want nil for group type", err)
 	}
 }

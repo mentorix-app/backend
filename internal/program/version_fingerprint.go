@@ -25,18 +25,24 @@ type weekFingerprint struct {
 }
 
 type dayFingerprint struct {
-	DayNumber int                   `json:"day_number"`
-	SortOrder int                   `json:"sort_order"`
-	Exercises []exerciseFingerprint `json:"exercises"`
+	DayNumber int                 `json:"day_number"`
+	SortOrder int                 `json:"sort_order"`
+	Blocks    []blockFingerprint  `json:"blocks"`
+}
+
+type blockFingerprint struct {
+	BlockType   string                `json:"block_type"`
+	Instruction string                `json:"instruction"`
+	SortOrder   int                   `json:"sort_order"`
+	Exercises   []exerciseFingerprint `json:"exercises"`
 }
 
 type exerciseFingerprint struct {
-	ExerciseID  string   `json:"exercise_id"`
-	SortOrder   int      `json:"sort_order"`
-	Sets        *int     `json:"sets,omitempty"`
-	Reps        *int     `json:"reps,omitempty"`
-	WeightKg    *float64 `json:"weight_kg,omitempty"`
-	Instruction string   `json:"instruction"`
+	ExerciseID  string `json:"exercise_id"`
+	SortOrder   int    `json:"sort_order"`
+	Sets        *int   `json:"sets,omitempty"`
+	Reps        *int   `json:"reps,omitempty"`
+	Instruction string `json:"instruction"`
 }
 
 func DetailFingerprint(d Detail) (string, error) {
@@ -82,21 +88,33 @@ func DetailFingerprint(d Detail) (string, error) {
 			df := dayFingerprint{
 				DayNumber: day.DayNumber,
 				SortOrder: day.SortOrder,
-				Exercises: make([]exerciseFingerprint, 0, len(day.Exercises)),
+				Blocks:    make([]blockFingerprint, 0, len(day.Blocks)),
 			}
-			exercises := append([]DayExercise(nil), day.Exercises...)
-			sort.Slice(exercises, func(i, j int) bool {
-				return exercises[i].SortOrder < exercises[j].SortOrder
+			blocks := append([]DayBlock(nil), day.Blocks...)
+			sort.Slice(blocks, func(i, j int) bool {
+				return blocks[i].SortOrder < blocks[j].SortOrder
 			})
-			for _, ex := range exercises {
-				df.Exercises = append(df.Exercises, exerciseFingerprint{
-					ExerciseID:  ex.ExerciseID.String(),
-					SortOrder:   ex.SortOrder,
-					Sets:        ex.Sets,
-					Reps:        ex.Reps,
-					WeightKg:    ex.WeightKg,
-					Instruction: ex.Instruction,
+			for _, block := range blocks {
+				bf := blockFingerprint{
+					BlockType:   string(block.BlockType),
+					Instruction: block.Instruction,
+					SortOrder:   block.SortOrder,
+					Exercises:   make([]exerciseFingerprint, 0, len(block.Exercises)),
+				}
+				exercises := append([]DayExercise(nil), block.Exercises...)
+				sort.Slice(exercises, func(i, j int) bool {
+					return exercises[i].SortOrder < exercises[j].SortOrder
 				})
+				for _, ex := range exercises {
+					bf.Exercises = append(bf.Exercises, exerciseFingerprint{
+						ExerciseID:  ex.ExerciseID.String(),
+						SortOrder:   ex.SortOrder,
+						Sets:        ex.Sets,
+						Reps:        ex.Reps,
+						Instruction: ex.Instruction,
+					})
+				}
+				df.Blocks = append(df.Blocks, bf)
 			}
 			wf.Days = append(wf.Days, df)
 		}

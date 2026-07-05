@@ -165,7 +165,7 @@ func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, programID uui
 	weeks := make([]Week, 0, len(weekRows))
 	for _, w := range weekRows {
 		weekID := pgconv.FromPGUUID(w.ID)
-		days, err := s.listDaysWithExercises(ctx, weekID)
+		days, err := s.listDaysWithBlocks(ctx, weekID)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +180,7 @@ func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, programID uui
 	return weeks, nil
 }
 
-func (s *Store) listDaysWithExercises(ctx context.Context, weekID uuid.UUID) ([]Day, error) {
+func (s *Store) listDaysWithBlocks(ctx context.Context, weekID uuid.UUID) ([]Day, error) {
 	weekPG := pgconv.ToPGUUID(weekID)
 	dayRows, err := s.q.ListProgramDaysForWeek(ctx, weekPG)
 	if err != nil {
@@ -190,7 +190,7 @@ func (s *Store) listDaysWithExercises(ctx context.Context, weekID uuid.UUID) ([]
 	days := make([]Day, 0, len(dayRows))
 	for _, d := range dayRows {
 		dayID := pgconv.FromPGUUID(d.ID)
-		exercises, err := s.listDayExercises(ctx, dayID)
+		blocks, err := s.listDayBlocks(ctx, dayID)
 		if err != nil {
 			return nil, err
 		}
@@ -198,17 +198,43 @@ func (s *Store) listDaysWithExercises(ctx context.Context, weekID uuid.UUID) ([]
 			ID:        dayID,
 			DayNumber: int(d.DayNumber),
 			SortOrder: int(d.SortOrder),
-			Exercises: exercises,
+			Blocks:    blocks,
 			CreatedAt: d.CreatedAt.UTC(),
 		})
 	}
 	return days, nil
 }
 
-func (s *Store) listDayExercises(ctx context.Context, dayID uuid.UUID) ([]DayExercise, error) {
-	rows, err := s.q.ListDayExercises(ctx, pgconv.ToPGUUID(dayID))
+func (s *Store) listDayBlocks(ctx context.Context, dayID uuid.UUID) ([]DayBlock, error) {
+	dayPG := pgconv.ToPGUUID(dayID)
+	blockRows, err := s.q.ListDayBlocks(ctx, dayPG)
 	if err != nil {
-		return nil, fmt.Errorf("list day exercises: %w", err)
+		return nil, fmt.Errorf("list day blocks: %w", err)
+	}
+
+	out := make([]DayBlock, 0, len(blockRows))
+	for _, row := range blockRows {
+		blockID := pgconv.FromPGUUID(row.ID)
+		exercises, err := s.listBlockExercises(ctx, blockID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, DayBlock{
+			ID:          blockID,
+			BlockType:   BlockType(row.BlockType),
+			Instruction: row.Instruction,
+			SortOrder:   int(row.SortOrder),
+			Exercises:   exercises,
+			CreatedAt:   row.CreatedAt.UTC(),
+		})
+	}
+	return out, nil
+}
+
+func (s *Store) listBlockExercises(ctx context.Context, blockID uuid.UUID) ([]DayExercise, error) {
+	rows, err := s.q.ListBlockExercises(ctx, pgconv.ToPGUUID(blockID))
+	if err != nil {
+		return nil, fmt.Errorf("list block exercises: %w", err)
 	}
 
 	out := make([]DayExercise, 0, len(rows))
@@ -433,7 +459,7 @@ func (s *Store) ExerciseExists(ctx context.Context, exerciseID uuid.UUID) (bool,
 	return ok, nil
 }
 
-func (s *Store) AddDayExercise(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, in DayExerciseInput) (Detail, error) {
+func (s *Store) CreateDayBlock(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, in CreateDayBlockInput) (Detail, error) {
 	ok, err := s.DayBelongsToWeek(ctx, programID, weekID, dayID)
 	if err != nil {
 		return Detail{}, err
@@ -442,28 +468,57 @@ func (s *Store) AddDayExercise(ctx context.Context, userID, programID, weekID, d
 		return Detail{}, pgx.ErrNoRows
 	}
 
-	exists, err := s.ExerciseExists(ctx, in.ExerciseID)
+	blockType := BlockTypeSingle
+	if in.BlockType != "" && in.BlockType != BlockTypeSingle {
+		return Detail{}, fmt.Errorf("%w: only single blocks can be created directly; use merge for groups", ErrValidation)
+	}
+	if in.Exercise != nil {
+		exists, err := s.ExerciseExists(ctx, in.Exercise.ExerciseID)
+		if err != nil {
+			return Detail{}, err
+		}
+		if !exists {
+			return Detail{}, fmt.Errorf("%w: exercise not found", ErrValidation)
+		}
+	}
+
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	dayPG := pgconv.ToPGUUID(dayID)
+	blockID, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
+		ProgramWeekDayID: dayPG,
+		BlockType:    string(blockType),
+		Instruction:  "",
+		SortOrder:    1,
+	})
+	if err != nil {
+		return Detail{}, fmt.Errorf("insert day block: %w", err)
+	}
+	blockUUID := pgconv.FromPGUUID(blockID)
+
+	if in.Exercise != nil {
+		if err := qtx.InsertBlockExercise(ctx, blockExerciseInsertParams(blockID, 1, userID, *in.Exercise)); err != nil {
+			return Detail{}, fmt.Errorf("insert block exercise: %w", err)
+		}
+	}
+
+	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, blockUUID, in.SortOrder); err != nil {
 		return Detail{}, err
 	}
-	if !exists {
-		return Detail{}, fmt.Errorf("%w: exercise not found", ErrValidation)
-	}
 
-	dayPG := pgconv.ToPGUUID(dayID)
-	nextSort, err := s.q.NextDayExerciseSort(ctx, dayPG)
-	if err != nil {
-		return Detail{}, fmt.Errorf("next exercise sort: %w", err)
-	}
-
-	if err := s.q.InsertDayExercise(ctx, dayExerciseInsertParams(dayPG, nextSort, userID, in)); err != nil {
-		return Detail{}, fmt.Errorf("insert day exercise: %w", err)
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) UpdateDayExercise(ctx context.Context, userID, programID, weekID, dayID, itemID uuid.UUID, in DayExerciseInput) (Detail, error) {
-	ok, err := s.DayBelongsToWeek(ctx, programID, weekID, dayID)
+func (s *Store) UpdateBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID, in DayExerciseInput) (Detail, error) {
+	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -477,22 +532,29 @@ func (s *Store) UpdateDayExercise(ctx context.Context, userID, programID, weekID
 	}
 	if !exists {
 		return Detail{}, fmt.Errorf("%w: exercise not found", ErrValidation)
+	}
+
+	itemBlockID, err := s.exerciseBlockID(ctx, itemID)
+	if err != nil {
+		return Detail{}, err
+	}
+	if itemBlockID != blockID {
+		return Detail{}, pgx.ErrNoRows
 	}
 
 	now := time.Now().UTC()
-	rows, err := s.q.UpdateDayExercise(ctx, sqlc.UpdateDayExerciseParams{
-		ID:           pgconv.ToPGUUID(itemID),
-		ProgramDayID: pgconv.ToPGUUID(dayID),
-		ExerciseID:   pgconv.ToPGUUID(in.ExerciseID),
-		Sets:         intPtrToInt32(in.Sets),
-		Reps:         intPtrToInt32(in.Reps),
-		WeightKg:     pgconv.ToNumeric(in.WeightKg),
-		Instruction:  instructionString(in.Instruction),
-		ModifiedAt:   now,
-		ModifiedBy:   pgconv.ToPGUUID(userID),
+	rows, err := s.q.UpdateBlockExercise(ctx, sqlc.UpdateBlockExerciseParams{
+		ID:                pgconv.ToPGUUID(itemID),
+		ProgramWeekDayBlockID: pgconv.ToPGUUID(blockID),
+		ExerciseID:        pgconv.ToPGUUID(in.ExerciseID),
+		Sets:              intPtrToInt32(in.Sets),
+		Reps:              intPtrToInt32(in.Reps),
+		Instruction:       instructionString(in.Instruction),
+		ModifiedAt:        now,
+		ModifiedBy:        pgconv.ToPGUUID(userID),
 	})
 	if err != nil {
-		return Detail{}, fmt.Errorf("update day exercise: %w", err)
+		return Detail{}, fmt.Errorf("update block exercise: %w", err)
 	}
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
@@ -500,8 +562,8 @@ func (s *Store) UpdateDayExercise(ctx context.Context, userID, programID, weekID
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) DeleteDayExercise(ctx context.Context, programID, weekID, dayID, itemID uuid.UUID) (Detail, error) {
-	ok, err := s.DayBelongsToWeek(ctx, programID, weekID, dayID)
+func (s *Store) DeleteBlockExercise(ctx context.Context, programID, weekID, blockID, itemID uuid.UUID) (Detail, error) {
+	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -509,15 +571,58 @@ func (s *Store) DeleteDayExercise(ctx context.Context, programID, weekID, dayID,
 		return Detail{}, pgx.ErrNoRows
 	}
 
-	rows, err := s.q.DeleteDayExercise(ctx, sqlc.DeleteDayExerciseParams{
-		ID:           pgconv.ToPGUUID(itemID),
-		ProgramDayID: pgconv.ToPGUUID(dayID),
+	block, err := s.q.GetDayBlockByID(ctx, pgconv.ToPGUUID(blockID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, pgx.ErrNoRows
+		}
+		return Detail{}, fmt.Errorf("get day block: %w", err)
+	}
+
+	itemBlockID, err := s.exerciseBlockID(ctx, itemID)
+	if err != nil {
+		return Detail{}, err
+	}
+	if itemBlockID != blockID {
+		return Detail{}, pgx.ErrNoRows
+	}
+
+	dayID := pgconv.FromPGUUID(block.ProgramWeekDayID)
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	rows, err := qtx.DeleteBlockExercise(ctx, sqlc.DeleteBlockExerciseParams{
+		ID:                pgconv.ToPGUUID(itemID),
+		ProgramWeekDayBlockID: pgconv.ToPGUUID(blockID),
 	})
 	if err != nil {
-		return Detail{}, fmt.Errorf("delete day exercise: %w", err)
+		return Detail{}, fmt.Errorf("delete block exercise: %w", err)
 	}
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
+	}
+
+	if block.BlockType == string(BlockTypeSingle) {
+		if _, err := qtx.DeleteDayBlock(ctx, sqlc.DeleteDayBlockParams{
+			ID:           pgconv.ToPGUUID(blockID),
+			ProgramWeekDayID: block.ProgramWeekDayID,
+		}); err != nil {
+			return Detail{}, fmt.Errorf("delete empty single block: %w", err)
+		}
+		if err := normalizeDayBlockSort(ctx, qtx, dayID); err != nil {
+			return Detail{}, err
+		}
+	} else if err := normalizeBlockExerciseSort(ctx, qtx, blockID); err != nil {
+		return Detail{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }
@@ -614,8 +719,8 @@ func (s *Store) ReorderDays(ctx context.Context, programID, weekID uuid.UUID, da
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) ReorderWeekExercises(ctx context.Context, userID, programID, weekID uuid.UUID, days []WeekExerciseReorderDay) (Detail, error) {
-	ok, err := s.WeekBelongsToProgram(ctx, programID, weekID)
+func (s *Store) ReorderDayBlocks(ctx context.Context, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error) {
+	ok, err := s.DayBelongsToWeek(ctx, programID, weekID, dayID)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -623,7 +728,45 @@ func (s *Store) ReorderWeekExercises(ctx context.Context, userID, programID, wee
 		return Detail{}, pgx.ErrNoRows
 	}
 
-	if err := validateExerciseReorder(ctx, s.q, programID, weekID, days); err != nil {
+	if err := validateDayBlockReorder(ctx, s.q, dayID, blockIDs); err != nil {
+		return Detail{}, err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	dayPG := pgconv.ToPGUUID(dayID)
+	for i, blockID := range blockIDs {
+		pos := int32(i + 1)
+		if err := qtx.UpdateDayBlockOrder(ctx, sqlc.UpdateDayBlockOrderParams{
+			ID:           pgconv.ToPGUUID(blockID),
+			ProgramWeekDayID: dayPG,
+			SortOrder:    pos,
+		}); err != nil {
+			return Detail{}, fmt.Errorf("update block order: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
+	}
+	return s.GetDetail(ctx, programID)
+}
+
+func (s *Store) ReorderBlockExercises(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, itemIDs []uuid.UUID) (Detail, error) {
+	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
+	if err != nil {
+		return Detail{}, err
+	}
+	if !ok {
+		return Detail{}, pgx.ErrNoRows
+	}
+
+	if err := validateBlockExerciseReorder(ctx, s.q, blockID, itemIDs); err != nil {
 		return Detail{}, err
 	}
 
@@ -636,17 +779,16 @@ func (s *Store) ReorderWeekExercises(ctx context.Context, userID, programID, wee
 	qtx := s.q.WithTx(tx)
 	now := time.Now().UTC()
 	userPG := pgconv.ToPGUUID(userID)
-	for _, day := range days {
-		for i, itemID := range day.ExerciseItemIDs {
-			if err := qtx.UpdateDayExercisePlacement(ctx, sqlc.UpdateDayExercisePlacementParams{
-				ID:           pgconv.ToPGUUID(itemID),
-				ProgramDayID: pgconv.ToPGUUID(day.DayID),
-				SortOrder:    int32(i + 1),
-				ModifiedAt:   now,
-				ModifiedBy:   userPG,
-			}); err != nil {
-				return Detail{}, fmt.Errorf("update exercise placement: %w", err)
-			}
+	blockPG := pgconv.ToPGUUID(blockID)
+	for i, itemID := range itemIDs {
+		if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
+			ID:                pgconv.ToPGUUID(itemID),
+			ProgramWeekDayBlockID: blockPG,
+			SortOrder:         int32(i + 1),
+			ModifiedAt:        now,
+			ModifiedBy:        userPG,
+		}); err != nil {
+			return Detail{}, fmt.Errorf("update exercise placement: %w", err)
 		}
 	}
 
@@ -672,50 +814,60 @@ func validateDayReorder(ctx context.Context, q *sqlc.Queries, weekID uuid.UUID, 
 	return validateReorderIDs(existing, dayIDs, "day")
 }
 
-func validateExerciseReorder(ctx context.Context, q *sqlc.Queries, programID, weekID uuid.UUID, days []WeekExerciseReorderDay) error {
-	items, err := q.ListExerciseItemsByWeek(ctx, pgconv.ToPGUUID(weekID))
+func validateDayBlockReorder(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID, blockIDs []uuid.UUID) error {
+	existing, err := q.ListDayBlockIDsForDay(ctx, pgconv.ToPGUUID(dayID))
 	if err != nil {
-		return fmt.Errorf("list week exercises: %w", err)
+		return fmt.Errorf("list day blocks: %w", err)
 	}
+	return validateReorderIDs(existing, blockIDs, "block")
+}
 
-	expected := make(map[uuid.UUID]uuid.UUID, len(items))
-	for _, item := range items {
-		expected[pgconv.FromPGUUID(item.ID)] = pgconv.FromPGUUID(item.ProgramDayID)
+func validateBlockExerciseReorder(ctx context.Context, q *sqlc.Queries, blockID uuid.UUID, itemIDs []uuid.UUID) error {
+	rows, err := q.ListBlockExercises(ctx, pgconv.ToPGUUID(blockID))
+	if err != nil {
+		return fmt.Errorf("list block exercises: %w", err)
 	}
-
-	if len(expected) == 0 && len(days) == 0 {
-		return nil
+	expected := make([]pgtype.UUID, 0, len(rows))
+	for _, row := range rows {
+		expected = append(expected, row.ID)
 	}
+	got := make([]uuid.UUID, len(itemIDs))
+	copy(got, itemIDs)
+	return validateReorderIDs(expected, got, "exercise item")
+}
 
-	seen := make(map[uuid.UUID]struct{}, len(expected))
-	for _, day := range days {
-		ok, err := q.DayBelongsToWeek(ctx, sqlc.DayBelongsToWeekParams{
-			ID:        pgconv.ToPGUUID(day.DayID),
-			WeekID:    pgconv.ToPGUUID(weekID),
-			ProgramID: pgconv.ToPGUUID(programID),
-		})
-		if err != nil {
-			return fmt.Errorf("check program day: %w", err)
+func (s *Store) blockBelongsToWeek(ctx context.Context, programID, weekID, blockID uuid.UUID) (bool, error) {
+	ok, err := s.q.BlockBelongsToProgram(ctx, sqlc.BlockBelongsToProgramParams{
+		ID:        pgconv.ToPGUUID(blockID),
+		ProgramID: pgconv.ToPGUUID(programID),
+	})
+	if err != nil {
+		return false, fmt.Errorf("check block program: %w", err)
+	}
+	if !ok {
+		return false, nil
+	}
+	blocks, err := s.q.ListBlocksByWeek(ctx, pgconv.ToPGUUID(weekID))
+	if err != nil {
+		return false, fmt.Errorf("list blocks by week: %w", err)
+	}
+	for _, b := range blocks {
+		if pgconv.FromPGUUID(b.ID) == blockID {
+			return true, nil
 		}
-		if !ok {
-			return fmt.Errorf("%w: day does not belong to week", ErrInvalidReorder)
-		}
-
-		for _, itemID := range day.ExerciseItemIDs {
-			if _, exists := expected[itemID]; !exists {
-				return fmt.Errorf("%w: unknown exercise item", ErrInvalidReorder)
-			}
-			if _, dup := seen[itemID]; dup {
-				return fmt.Errorf("%w: duplicate exercise item", ErrInvalidReorder)
-			}
-			seen[itemID] = struct{}{}
-		}
 	}
+	return false, nil
+}
 
-	if len(seen) != len(expected) {
-		return fmt.Errorf("%w: exercise items must include all items in week", ErrInvalidReorder)
+func (s *Store) exerciseBlockID(ctx context.Context, itemID uuid.UUID) (uuid.UUID, error) {
+	meta, err := s.q.GetBlockExerciseMeta(ctx, pgconv.ToPGUUID(itemID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, pgx.ErrNoRows
+		}
+		return uuid.Nil, fmt.Errorf("get exercise meta: %w", err)
 	}
-	return nil
+	return pgconv.FromPGUUID(meta.ProgramWeekDayBlockID), nil
 }
 
 func validateReorderIDs(existing []pgtype.UUID, got []uuid.UUID, label string) error {
@@ -843,7 +995,7 @@ func programFromListRow(row sqlc.ListProgramsRow) Program {
 	)
 }
 
-func dayExerciseFromRow(row sqlc.ListDayExercisesRow) DayExercise {
+func dayExerciseFromRow(row sqlc.ListBlockExercisesRow) DayExercise {
 	return DayExercise{
 		ID:             pgconv.FromPGUUID(row.ID),
 		ExerciseID:     pgconv.FromPGUUID(row.ExerciseID),
@@ -852,24 +1004,22 @@ func dayExerciseFromRow(row sqlc.ListDayExercisesRow) DayExercise {
 		SortOrder:      int(row.SortOrder),
 		Sets:           int32PtrToInt(row.Sets),
 		Reps:           int32PtrToInt(row.Reps),
-		WeightKg:       pgconv.FromNumeric(row.WeightKg),
 		Instruction:    row.Instruction,
 		CreatedAt:      row.CreatedAt.UTC(),
 	}
 }
 
-func dayExerciseInsertParams(dayPG pgtype.UUID, sort int32, userID uuid.UUID, in DayExerciseInput) sqlc.InsertDayExerciseParams {
+func blockExerciseInsertParams(blockPG pgtype.UUID, sort int32, userID uuid.UUID, in DayExerciseInput) sqlc.InsertBlockExerciseParams {
 	now := time.Now().UTC()
-	return sqlc.InsertDayExerciseParams{
-		ProgramDayID: dayPG,
-		ExerciseID:   pgconv.ToPGUUID(in.ExerciseID),
-		SortOrder:    sort,
-		Sets:         intPtrToInt32(in.Sets),
-		Reps:         intPtrToInt32(in.Reps),
-		WeightKg:     pgconv.ToNumeric(in.WeightKg),
-		Instruction:  instructionString(in.Instruction),
-		ModifiedAt:   now,
-		ModifiedBy:   pgconv.ToPGUUID(userID),
+	return sqlc.InsertBlockExerciseParams{
+		ProgramWeekDayBlockID: blockPG,
+		ExerciseID:        pgconv.ToPGUUID(in.ExerciseID),
+		SortOrder:         sort,
+		Sets:              intPtrToInt32(in.Sets),
+		Reps:              intPtrToInt32(in.Reps),
+		Instruction:       instructionString(in.Instruction),
+		ModifiedAt:        now,
+		ModifiedBy:        pgconv.ToPGUUID(userID),
 	}
 }
 

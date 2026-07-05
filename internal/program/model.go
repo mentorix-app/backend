@@ -83,9 +83,17 @@ type DayExercise struct {
 	SortOrder      int       `json:"sort_order"`
 	Sets           *int      `json:"sets,omitempty"`
 	Reps           *int      `json:"reps,omitempty"`
-	WeightKg       *float64  `json:"weight_kg,omitempty"`
 	Instruction    string    `json:"instruction"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+type DayBlock struct {
+	ID          uuid.UUID     `json:"id"`
+	BlockType   BlockType     `json:"block_type"`
+	Instruction string        `json:"instruction"`
+	SortOrder   int           `json:"sort_order"`
+	Exercises   []DayExercise `json:"exercises"`
+	CreatedAt   time.Time     `json:"created_at"`
 }
 
 type Week struct {
@@ -97,11 +105,11 @@ type Week struct {
 }
 
 type Day struct {
-	ID        uuid.UUID     `json:"id"`
-	DayNumber int           `json:"day_number"`
-	SortOrder int           `json:"sort_order"`
-	Exercises []DayExercise `json:"exercises"`
-	CreatedAt time.Time     `json:"created_at"`
+	ID        uuid.UUID  `json:"id"`
+	DayNumber int        `json:"day_number"`
+	SortOrder int        `json:"sort_order"`
+	Blocks    []DayBlock `json:"blocks"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type Detail struct {
@@ -123,13 +131,42 @@ type DayExerciseInput struct {
 	ExerciseID  uuid.UUID
 	Sets        *int
 	Reps        *int
-	WeightKg    *float64
 	Instruction *string
 }
 
-type WeekExerciseReorderDay struct {
-	DayID           uuid.UUID
-	ExerciseItemIDs []uuid.UUID
+type CreateDayBlockInput struct {
+	BlockType BlockType
+	SortOrder int // 0 = append to day
+	Exercise  *DayExerciseInput
+}
+
+func (in CreateDayBlockInput) ValidateDraft() error {
+	blockType := in.BlockType
+	if blockType == "" {
+		blockType = BlockTypeSingle
+	}
+	if blockType != BlockTypeSingle {
+		return fmt.Errorf("%w: only single blocks can be created directly; use merge for groups", ErrValidation)
+	}
+	if in.Exercise == nil {
+		return fmt.Errorf("%w: exercise is required for single block", ErrValidation)
+	}
+	return in.Exercise.ValidateDraft()
+}
+
+type BlockPatchInput struct {
+	BlockType   *BlockType
+	Instruction *string
+}
+
+type WeekBlockReorderDay struct {
+	DayID     uuid.UUID
+	BlockIDs  []uuid.UUID
+}
+
+type BlockExerciseReorder struct {
+	BlockID           uuid.UUID
+	ExerciseItemIDs   []uuid.UUID
 }
 
 func (s Status) valid() bool {
@@ -171,8 +208,17 @@ func (in DayExerciseInput) ValidateDraft() error {
 	if in.Reps != nil && *in.Reps <= 0 {
 		return fmt.Errorf("%w: reps must be positive", ErrValidation)
 	}
-	if in.WeightKg != nil && *in.WeightKg < 0 {
-		return fmt.Errorf("%w: weight_kg cannot be negative", ErrValidation)
+	return nil
+}
+
+func (in BlockPatchInput) Validate() error {
+	if in.BlockType != nil {
+		if !in.BlockType.valid() {
+			return fmt.Errorf("%w: invalid block_type", ErrValidation)
+		}
+		if !in.BlockType.isGroup() {
+			return fmt.Errorf("%w: single block_type cannot be set via patch", ErrValidation)
+		}
 	}
 	return nil
 }
@@ -206,19 +252,35 @@ func validatePublishDetail(d Detail) error {
 	for _, week := range d.Weeks {
 		hasTrainingDay := false
 		for _, day := range week.Days {
-			if len(day.Exercises) == 0 {
-				continue
+			dayHasExercises := false
+			for _, block := range day.Blocks {
+				if block.BlockType == BlockTypeSingle {
+					if len(block.Exercises) != 1 {
+						return fmt.Errorf("%w: single block must have exactly one exercise", ErrValidation)
+					}
+					dayHasExercises = true
+					in := DayExerciseInput{
+						ExerciseID: block.Exercises[0].ExerciseID,
+						Sets:       block.Exercises[0].Sets,
+						Reps:       block.Exercises[0].Reps,
+					}
+					if err := in.ValidatePublish(); err != nil {
+						return err
+					}
+					continue
+				}
+				if len(block.Exercises) < 1 {
+					return fmt.Errorf("%w: group block must have at least one exercise", ErrValidation)
+				}
+				dayHasExercises = true
+				for _, ex := range block.Exercises {
+					if ex.ExerciseID == uuid.Nil {
+						return fmt.Errorf("%w: exercise_id is required", ErrValidation)
+					}
+				}
 			}
-			hasTrainingDay = true
-			for _, ex := range day.Exercises {
-				in := DayExerciseInput{
-					ExerciseID: ex.ExerciseID,
-					Sets:       ex.Sets,
-					Reps:       ex.Reps,
-				}
-				if err := in.ValidatePublish(); err != nil {
-					return err
-				}
+			if dayHasExercises {
+				hasTrainingDay = true
 			}
 		}
 		if !hasTrainingDay {

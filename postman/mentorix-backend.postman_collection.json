@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "e5f6a7b8-c9d0-1234-ef01-567890123456",
     "name": "Mentorix Backend",
-    "description": "Коллекция по коду (`cmd/api`, `internal/auth`, `internal/admin`, `internal/exercise`, `internal/program`, `internal/health`).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\n## Порядок smoke-теста (Programs)\n1. Health → Login\n2. POST /programs (сохраняет program_id, program_week_id, program_day_id; name=\"\")\n3. PATCH /programs/:id\n4. POST .../weeks/:week_id/days/:day_id/exercises (нужен exercise_id)\n5. PUT .../exercises/:item_id (опционально)\n6. POST /programs/:id/publish\n7. POST /programs/:id/archive (опционально)\n8. DELETE /programs/:id",
+    "description": "Коллекция по коду (`cmd/api`, `internal/auth`, `internal/admin`, `internal/exercise`, `internal/program`, `internal/health`).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\n## Порядок smoke-теста (Programs)\n1. Health → Login\n2. POST /programs (сохраняет program_id, program_week_id, program_day_id; name=\"\")\n3. PATCH /programs/:id\n4. POST .../weeks/:week_id/days/:day_id/blocks (single + exercise; нужен exercise_id)\n5. PUT .../blocks/:block_id/exercises/:item_id (опционально)\n6. POST /programs/:id/publish\n7. POST /programs/:id/archive (опционально)\n8. DELETE /programs/:id",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -824,15 +824,15 @@
           "response": []
         },
         {
-          "name": "PUT /programs/:id/weeks/:week_id/exercises/reorder",
+          "name": "PUT /programs/:id/weeks/:week_id/blocks/:block_id/exercises/reorder",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id') || !pm.environment.get('program_day_exercise_id')) {",
-                  "    throw new Error('program_id/program_week_id/program_day_id/program_day_exercise_id пустые — выполни POST .../exercises');",
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_block_id') || !pm.environment.get('program_day_exercise_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_block_id/program_day_exercise_id пустые — выполни POST .../exercises');",
                   "}"
                 ]
               }
@@ -847,10 +847,116 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"days\": [\n    {\n      \"day_id\": \"{{program_day_id}}\",\n      \"exercise_item_ids\": [\"{{program_day_exercise_id}}\"]\n    }\n  ]\n}"
+              "raw": "{\n  \"exercise_item_ids\": [\"{{program_day_exercise_id}}\"]\n}"
             },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/exercises/reorder",
-            "description": "Переупорядочить упражнения внутри недели (снимок days + exercise_item_ids)"
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}/exercises/reorder",
+            "description": "Переупорядочить упражнения внутри блока"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /programs/:id/weeks/:week_id/days/:day_id/blocks/reorder",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"block_ids\": [\"{{program_day_block_id}}\"]\n}" },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/blocks/reorder",
+            "description": "Переупорядочить блоки в дне"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/blocks/merge",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"block_ids\": [\"{{program_day_block_id}}\", \"{{program_day_block_id}}\"]\n}" },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/blocks/merge",
+            "description": "Объединить блоки в группу"
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /programs/:id/weeks/:week_id/blocks/:block_id",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"block_type\": \"complex\",\n  \"instruction\": \"\"\n}" },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}",
+            "description": "Обновить тип или instruction блока"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/ungroup",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}/ungroup",
+            "description": "Разгруппировать блок"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /programs/:id/weeks/:week_id/blocks/:block_id",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}",
+            "description": "Удалить групповой блок"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 3,\n  \"reps\": 10\n}" },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}/exercises",
+            "description": "Добавить упражнение в групповой блок"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/move",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"target_day_id\": \"{{program_day_id}}\"\n}" },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}/move",
+            "description": "Перенести блок в другой день недели"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/extract",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}/exercises/{{program_day_exercise_id}}/extract",
+            "description": "Извлечь упражнение из группы в single-блок"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/move",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"target_block_id\": \"{{program_day_block_id}}\"\n}" },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}/exercises/{{program_day_exercise_id}}/move",
+            "description": "Переместить упражнение в другой блок"
           },
           "response": []
         },
@@ -909,7 +1015,7 @@
           "response": []
         },
         {
-          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/exercises",
+          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/blocks",
           "event": [
             {
               "listen": "prerequest",
@@ -934,8 +1040,12 @@
                   "    const b = pm.response.json();",
                   "    const week = (b.weeks || []).find(w => w.id === pm.environment.get('program_week_id'));",
                   "    const day = week && week.days ? week.days.find(d => d.id === pm.environment.get('program_day_id')) : null;",
-                  "    if (day && day.exercises && day.exercises.length > 0) {",
-                  "        pm.environment.set('program_day_exercise_id', day.exercises[day.exercises.length - 1].id);",
+                  "    if (day && day.blocks && day.blocks.length > 0) {",
+                  "        const block = day.blocks[day.blocks.length - 1];",
+                  "        pm.environment.set('program_day_block_id', block.id);",
+                  "        if (block.exercises && block.exercises.length > 0) {",
+                  "            pm.environment.set('program_day_exercise_id', block.exercises[block.exercises.length - 1].id);",
+                  "        }",
                   "    }",
                   "}"
                 ]
@@ -951,23 +1061,23 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 3,\n  \"reps\": 10,\n  \"weight_kg\": 70,\n  \"instruction\": \"Контролируй негативную фазу\"\n}"
+              "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": 3,\n    \"reps\": 10,\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
             },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/exercises",
-            "description": "Добавить упражнение в день"
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/blocks",
+            "description": "Создать single-блок с упражнением"
           },
           "response": []
         },
         {
-          "name": "PUT /programs/:id/weeks/:week_id/days/:day_id/exercises/:item_id",
+          "name": "PUT /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id') || !pm.environment.get('program_day_exercise_id')) {",
-                  "    throw new Error('program_id/program_week_id/program_day_id/program_day_exercise_id пустые — выполни POST .../exercises');",
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_block_id') || !pm.environment.get('program_day_exercise_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_block_id/program_day_exercise_id пустые — выполни POST .../blocks');",
                   "}",
                   "if (!pm.environment.get('exercise_id')) {",
                   "    throw new Error('exercise_id пустой — нужен POST /exercises или задай UUID');",
@@ -994,23 +1104,23 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 4,\n  \"reps\": 8,\n  \"weight_kg\": 75,\n  \"instruction\": \"Обновлённая инструкция\"\n}"
+              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 4,\n  \"reps\": 8,\n  \"instruction\": \"Обновлённая инструкция\"\n}"
             },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/exercises/{{program_day_exercise_id}}",
-            "description": "Обновить упражнение в дне"
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}/exercises/{{program_day_exercise_id}}",
+            "description": "Обновить упражнение в блоке"
           },
           "response": []
         },
         {
-          "name": "DELETE /programs/:id/weeks/:week_id/days/:day_id/exercises/:item_id",
+          "name": "DELETE /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_id') || !pm.environment.get('program_day_exercise_id')) {",
-                  "    throw new Error('program_id/program_week_id/program_day_id/program_day_exercise_id пустые — выполни POST .../exercises');",
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_day_block_id') || !pm.environment.get('program_day_exercise_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_day_block_id/program_day_exercise_id пустые — выполни POST .../blocks');",
                   "}"
                 ]
               }
@@ -1032,8 +1142,8 @@
             },
             "method": "DELETE",
             "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_day_id}}/exercises/{{program_day_exercise_id}}",
-            "description": "Удалить упражнение из дня. После удаления для publish снова добавь упражнение."
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_day_block_id}}/exercises/{{program_day_exercise_id}}",
+            "description": "Удалить упражнение из блока (single-блок удалится целиком)"
           },
           "response": []
         },

@@ -50,22 +50,28 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
 	sets, reps := 3, 12
-	weight := 60.0
 	instruction := "controlled"
-	withExercise, err := svc.AddDayExercise(ctx, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+	withExercise, err := createSingleBlock(ctx, svc, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID:  catalogExercise.ID,
 		Sets:        &sets,
 		Reps:        &reps,
-		WeightKg:    &weight,
 		Instruction: &instruction,
 	})
 	if err != nil {
 		t.Fatalf("AddDayExercise() error = %v", err)
 	}
-	itemID := withExercise.Weeks[0].Days[0].Exercises[0].ID
+	ex, ok := firstDayExercise(withExercise.Weeks[0].Days[0])
+	if !ok {
+		t.Fatal("expected exercise on day")
+	}
+	block, ok := firstDayBlock(withExercise.Weeks[0].Days[0])
+	if !ok {
+		t.Fatal("expected block on day")
+	}
+	itemID := ex.ID
 
 	newSets := 4
-	updated, err := svc.UpdateDayExercise(ctx, trainerID, draft.ID, weekID, dayID, itemID, program.DayExerciseInput{
+	updated, err := svc.UpdateBlockExercise(ctx, trainerID, draft.ID, weekID, block.ID, itemID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &newSets,
 		Reps:       &reps,
@@ -73,15 +79,19 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateDayExercise() error = %v", err)
 	}
-	if *updated.Weeks[0].Days[0].Exercises[0].Sets != newSets {
-		t.Fatalf("sets = %d, want %d", *updated.Weeks[0].Days[0].Exercises[0].Sets, newSets)
+	updatedEx, ok := firstDayExercise(updated.Weeks[0].Days[0])
+	if !ok {
+		t.Fatal("expected exercise after update")
+	}
+	if *updatedEx.Sets != newSets {
+		t.Fatalf("sets = %d, want %d", *updatedEx.Sets, newSets)
 	}
 
-	without, err := svc.DeleteDayExercise(ctx, trainerID, draft.ID, weekID, dayID, itemID)
+	without, err := svc.DeleteBlockExercise(ctx, trainerID, draft.ID, weekID, block.ID, itemID)
 	if err != nil {
-		t.Fatalf("DeleteDayExercise() error = %v", err)
+		t.Fatalf("DeleteBlockExercise() error = %v", err)
 	}
-	if len(without.Weeks[0].Days[0].Exercises) != 0 {
+	if dayExerciseCount(without.Weeks[0].Days[0]) != 0 {
 		t.Fatal("expected exercise removed from day")
 	}
 
@@ -100,11 +110,10 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 		t.Fatalf("name = %q", updatedMeta.Name)
 	}
 
-	withExercise, err = svc.AddDayExercise(ctx, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+	withExercise, err = createSingleBlock(ctx, svc, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID:  catalogExercise.ID,
 		Sets:        &sets,
 		Reps:        &reps,
-		WeightKg:    &weight,
 		Instruction: &instruction,
 	})
 	if err != nil {
@@ -210,7 +219,7 @@ func TestProgramService_ListAndArchive(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if _, err := svc.AddDayExercise(ctx, trainerID, draftID, weekID, dayID, program.DayExerciseInput{
+	if _, err := createSingleBlock(ctx, svc, trainerID, draftID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -318,9 +327,9 @@ func TestProgramService_reorderAndDeleteGuards(t *testing.T) {
 		t.Fatalf("ReorderDays() error = %v, want ErrNotFound", err)
 	}
 
-	_, err = svc.ReorderWeekExercises(ctx, trainerID, draft.ID, uuid.New(), nil)
+	_, err = svc.ReorderBlockExercises(ctx, trainerID, draft.ID, uuid.New(), uuid.New(), nil)
 	if !errors.Is(err, program.ErrNotFound) {
-		t.Fatalf("ReorderWeekExercises() error = %v, want ErrNotFound", err)
+		t.Fatalf("ReorderBlockExercises() error = %v, want ErrNotFound", err)
 	}
 
 	_, err = svc.DeleteWeek(ctx, trainerID, draft.ID, uuid.New())
@@ -397,14 +406,14 @@ func TestProgramService_publishWithTwoWeeks(t *testing.T) {
 	day1ID := withWeek2.Weeks[0].Days[0].ID
 	day2ID := withWeek2.Weeks[1].Days[0].ID
 
-	if _, err := svc.AddDayExercise(ctx, trainerID, draft.ID, week1ID, day1ID, program.DayExerciseInput{
+	if _, err := createSingleBlock(ctx, svc, trainerID, draft.ID, week1ID, day1ID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
 	}); err != nil {
 		t.Fatalf("AddDayExercise week1 error = %v", err)
 	}
-	if _, err := svc.AddDayExercise(ctx, trainerID, draft.ID, week2ID, day2ID, program.DayExerciseInput{
+	if _, err := createSingleBlock(ctx, svc, trainerID, draft.ID, week2ID, day2ID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -471,7 +480,7 @@ func TestProgramService_ClientProgramAssignment(t *testing.T) {
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
 	sets, reps := 3, 10
-	if _, err := svc.AddDayExercise(ctx, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
+	if _, err := createSingleBlock(ctx, svc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -581,7 +590,7 @@ func TestProgramService_AssignmentSyncAndVersionCleanup(t *testing.T) {
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
 	sets, reps := 3, 10
-	if _, err := svc.AddDayExercise(ctx, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
+	if _, err := createSingleBlock(ctx, svc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -775,7 +784,7 @@ func TestProgramService_CleanupVersions_skipsAssignedVersion(t *testing.T) {
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
 	sets, reps := 3, 10
-	if _, err := svc.AddDayExercise(ctx, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
+	if _, err := createSingleBlock(ctx, svc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -1025,12 +1034,15 @@ func TestProgramService_SetClientAssignment_wrongOwner(t *testing.T) {
 		t.Fatalf("create exercise: %v", err)
 	}
 	sets, reps := 3, 10
-	if _, err := ownerSvc.AddDayExercise(ctx, ownerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
-		ExerciseID: catalogExercise.ID,
-		Sets:       &sets,
-		Reps:       &reps,
+	if _, err := ownerSvc.CreateDayBlock(ctx, ownerUserID, draft.ID, weekID, dayID, program.CreateDayBlockInput{
+		BlockType: program.BlockTypeSingle,
+		Exercise: &program.DayExerciseInput{
+			ExerciseID: catalogExercise.ID,
+			Sets:       &sets,
+			Reps:       &reps,
+		},
 	}); err != nil {
-		t.Fatalf("AddDayExercise: %v", err)
+		t.Fatalf("CreateDayBlock: %v", err)
 	}
 	name := "Owner Program"
 	category := program.CategoryMuscleGain

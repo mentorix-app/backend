@@ -26,12 +26,21 @@ type programStore interface {
 	DeleteWeek(ctx context.Context, programID, weekID uuid.UUID) (Detail, error)
 	AddDay(ctx context.Context, programID, weekID uuid.UUID) (Detail, error)
 	DeleteDay(ctx context.Context, programID, weekID, dayID uuid.UUID) (Detail, error)
-	AddDayExercise(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, in DayExerciseInput) (Detail, error)
-	UpdateDayExercise(ctx context.Context, userID, programID, weekID, dayID, itemID uuid.UUID, in DayExerciseInput) (Detail, error)
-	DeleteDayExercise(ctx context.Context, programID, weekID, dayID, itemID uuid.UUID) (Detail, error)
+	CreateDayBlock(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, in CreateDayBlockInput) (Detail, error)
+	AddBlockExercise(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, in DayExerciseInput) (Detail, error)
+	UpdateBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID, in DayExerciseInput) (Detail, error)
+	DeleteBlockExercise(ctx context.Context, programID, weekID, blockID, itemID uuid.UUID) (Detail, error)
+	PatchDayBlock(ctx context.Context, programID, weekID, blockID uuid.UUID, in BlockPatchInput) (Detail, error)
+	MergeDayBlocks(ctx context.Context, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error)
+	UngroupDayBlock(ctx context.Context, programID, weekID, blockID uuid.UUID) (Detail, error)
+	MoveDayBlock(ctx context.Context, programID, weekID, blockID, targetDayID uuid.UUID, insertSort int) (Detail, error)
+	ExtractBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID, insertSort int) (Detail, error)
+	MoveExerciseToBlock(ctx context.Context, userID, programID, weekID, blockID, itemID, targetBlockID uuid.UUID) (Detail, error)
+	DeleteDayBlock(ctx context.Context, programID, weekID, blockID uuid.UUID) (Detail, error)
 	ReorderWeeks(ctx context.Context, programID uuid.UUID, weekIDs []uuid.UUID) (Detail, error)
 	ReorderDays(ctx context.Context, programID, weekID uuid.UUID, dayIDs []uuid.UUID) (Detail, error)
-	ReorderWeekExercises(ctx context.Context, userID, programID, weekID uuid.UUID, days []WeekExerciseReorderDay) (Detail, error)
+	ReorderDayBlocks(ctx context.Context, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error)
+	ReorderBlockExercises(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, itemIDs []uuid.UUID) (Detail, error)
 	TrainerIDForUser(ctx context.Context, userID uuid.UUID) (uuid.UUID, error)
 	GetClientProgramAssignment(ctx context.Context, trainerID, clientUserID uuid.UUID) (*Assignment, error)
 	SetClientProgramAssignment(ctx context.Context, trainerUserID, trainerID, clientUserID uuid.UUID, programID *uuid.UUID) (*Assignment, error)
@@ -274,14 +283,14 @@ func (s *Service) DeleteDay(ctx context.Context, userID, programID, weekID, dayI
 	return d, nil
 }
 
-func (s *Service) AddDayExercise(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, in DayExerciseInput) (Detail, error) {
+func (s *Service) CreateDayBlock(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, in CreateDayBlockInput) (Detail, error) {
 	if err := in.ValidateDraft(); err != nil {
 		return Detail{}, err
 	}
 	if err := s.ensureMutable(ctx, userID, programID); err != nil {
 		return Detail{}, err
 	}
-	d, err := s.store.AddDayExercise(ctx, userID, programID, weekID, dayID, in)
+	d, err := s.store.CreateDayBlock(ctx, userID, programID, weekID, dayID, in)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound
@@ -291,14 +300,14 @@ func (s *Service) AddDayExercise(ctx context.Context, userID, programID, weekID,
 	return d, nil
 }
 
-func (s *Service) UpdateDayExercise(ctx context.Context, userID, programID, weekID, dayID, itemID uuid.UUID, in DayExerciseInput) (Detail, error) {
+func (s *Service) UpdateBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID, in DayExerciseInput) (Detail, error) {
 	if err := in.ValidateDraft(); err != nil {
 		return Detail{}, err
 	}
 	if err := s.ensureMutable(ctx, userID, programID); err != nil {
 		return Detail{}, err
 	}
-	d, err := s.store.UpdateDayExercise(ctx, userID, programID, weekID, dayID, itemID, in)
+	d, err := s.store.UpdateBlockExercise(ctx, userID, programID, weekID, blockID, itemID, in)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound
@@ -308,11 +317,11 @@ func (s *Service) UpdateDayExercise(ctx context.Context, userID, programID, week
 	return d, nil
 }
 
-func (s *Service) DeleteDayExercise(ctx context.Context, userID, programID, weekID, dayID, itemID uuid.UUID) (Detail, error) {
+func (s *Service) DeleteBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID) (Detail, error) {
 	if err := s.ensureMutable(ctx, userID, programID); err != nil {
 		return Detail{}, err
 	}
-	d, err := s.store.DeleteDayExercise(ctx, programID, weekID, dayID, itemID)
+	d, err := s.store.DeleteBlockExercise(ctx, programID, weekID, blockID, itemID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound
@@ -347,11 +356,143 @@ func (s *Service) ReorderDays(ctx context.Context, userID, programID, weekID uui
 	return d, nil
 }
 
-func (s *Service) ReorderWeekExercises(ctx context.Context, userID, programID, weekID uuid.UUID, days []WeekExerciseReorderDay) (Detail, error) {
+func (s *Service) ReorderDayBlocks(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error) {
 	if err := s.ensureMutable(ctx, userID, programID); err != nil {
 		return Detail{}, err
 	}
-	d, err := s.store.ReorderWeekExercises(ctx, userID, programID, weekID, days)
+	d, err := s.store.ReorderDayBlocks(ctx, programID, weekID, dayID, blockIDs)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) ReorderBlockExercises(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, itemIDs []uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.ReorderBlockExercises(ctx, userID, programID, weekID, blockID, itemIDs)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) AddBlockExercise(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, in DayExerciseInput) (Detail, error) {
+	if err := in.ValidateDraft(); err != nil {
+		return Detail{}, err
+	}
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.AddBlockExercise(ctx, userID, programID, weekID, blockID, in)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) PatchDayBlock(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, in BlockPatchInput) (Detail, error) {
+	if err := in.Validate(); err != nil {
+		return Detail{}, err
+	}
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.PatchDayBlock(ctx, programID, weekID, blockID, in)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) MergeDayBlocks(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.MergeDayBlocks(ctx, programID, weekID, dayID, blockIDs)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) UngroupDayBlock(ctx context.Context, userID, programID, weekID, blockID uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.UngroupDayBlock(ctx, programID, weekID, blockID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) MoveDayBlock(ctx context.Context, userID, programID, weekID, blockID, targetDayID uuid.UUID, insertSort int) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.MoveDayBlock(ctx, programID, weekID, blockID, targetDayID, insertSort)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) ExtractBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID, insertSort int) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, insertSort)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) MoveExerciseToBlock(ctx context.Context, userID, programID, weekID, blockID, itemID, targetBlockID uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.MoveExerciseToBlock(ctx, userID, programID, weekID, blockID, itemID, targetBlockID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) DeleteDayBlock(ctx context.Context, userID, programID, weekID, blockID uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.DeleteDayBlock(ctx, programID, weekID, blockID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound

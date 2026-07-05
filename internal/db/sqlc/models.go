@@ -76,31 +76,6 @@ type MentorixProgramAssignment struct {
 	ModifiedAt       time.Time   `json:"modified_at"`
 }
 
-type MentorixProgramDay struct {
-	ID         pgtype.UUID `json:"id"`
-	ProgramID  pgtype.UUID `json:"program_id"`
-	DayNumber  int32       `json:"day_number"`
-	SortOrder  int32       `json:"sort_order"`
-	CreatedAt  time.Time   `json:"created_at"`
-	ModifiedAt time.Time   `json:"modified_at"`
-	ModifiedBy pgtype.UUID `json:"modified_by"`
-	WeekID     pgtype.UUID `json:"week_id"`
-}
-
-type MentorixProgramDayExercise struct {
-	ID           pgtype.UUID    `json:"id"`
-	ProgramDayID pgtype.UUID    `json:"program_day_id"`
-	ExerciseID   pgtype.UUID    `json:"exercise_id"`
-	SortOrder    int32          `json:"sort_order"`
-	Sets         *int32         `json:"sets"`
-	Reps         *int32         `json:"reps"`
-	WeightKg     pgtype.Numeric `json:"weight_kg"`
-	Instruction  string         `json:"instruction"`
-	CreatedAt    time.Time      `json:"created_at"`
-	ModifiedAt   time.Time      `json:"modified_at"`
-	ModifiedBy   pgtype.UUID    `json:"modified_by"`
-}
-
 type MentorixProgramVersion struct {
 	ID                 pgtype.UUID `json:"id"`
 	ProgramID          pgtype.UUID `json:"program_id"`
@@ -118,7 +93,15 @@ type MentorixProgramVersion struct {
 	ContentFingerprint string      `json:"content_fingerprint"`
 }
 
-type MentorixProgramVersionDay struct {
+type MentorixProgramVersionWeek struct {
+	ID               pgtype.UUID `json:"id"`
+	ProgramVersionID pgtype.UUID `json:"program_version_id"`
+	WeekNumber       int32       `json:"week_number"`
+	SortOrder        int32       `json:"sort_order"`
+	CreatedAt        time.Time   `json:"created_at"`
+}
+
+type MentorixProgramVersionWeekDay struct {
 	ID                   pgtype.UUID `json:"id"`
 	ProgramVersionID     pgtype.UUID `json:"program_version_id"`
 	ProgramVersionWeekID pgtype.UUID `json:"program_version_week_id"`
@@ -127,24 +110,24 @@ type MentorixProgramVersionDay struct {
 	CreatedAt            time.Time   `json:"created_at"`
 }
 
-type MentorixProgramVersionDayExercise struct {
-	ID                  pgtype.UUID    `json:"id"`
-	ProgramVersionDayID pgtype.UUID    `json:"program_version_day_id"`
-	ExerciseID          pgtype.UUID    `json:"exercise_id"`
-	SortOrder           int32          `json:"sort_order"`
-	Sets                *int32         `json:"sets"`
-	Reps                *int32         `json:"reps"`
-	WeightKg            pgtype.Numeric `json:"weight_kg"`
-	Instruction         string         `json:"instruction"`
-	CreatedAt           time.Time      `json:"created_at"`
+type MentorixProgramVersionWeekDayBlock struct {
+	ID                      pgtype.UUID `json:"id"`
+	ProgramVersionWeekDayID pgtype.UUID `json:"program_version_week_day_id"`
+	BlockType               string      `json:"block_type"`
+	Instruction             string      `json:"instruction"`
+	SortOrder               int32       `json:"sort_order"`
+	CreatedAt               time.Time   `json:"created_at"`
 }
 
-type MentorixProgramVersionWeek struct {
-	ID               pgtype.UUID `json:"id"`
-	ProgramVersionID pgtype.UUID `json:"program_version_id"`
-	WeekNumber       int32       `json:"week_number"`
-	SortOrder        int32       `json:"sort_order"`
-	CreatedAt        time.Time   `json:"created_at"`
+type MentorixProgramVersionWeekDayBlockExercise struct {
+	ID                           pgtype.UUID `json:"id"`
+	ExerciseID                   pgtype.UUID `json:"exercise_id"`
+	SortOrder                    int32       `json:"sort_order"`
+	Sets                         *int32      `json:"sets"`
+	Reps                         *int32      `json:"reps"`
+	Instruction                  string      `json:"instruction"`
+	CreatedAt                    time.Time   `json:"created_at"`
+	ProgramVersionWeekDayBlockID pgtype.UUID `json:"program_version_week_day_block_id"`
 }
 
 type MentorixProgramWeek struct {
@@ -155,6 +138,39 @@ type MentorixProgramWeek struct {
 	CreatedAt  time.Time   `json:"created_at"`
 	ModifiedAt time.Time   `json:"modified_at"`
 	ModifiedBy pgtype.UUID `json:"modified_by"`
+}
+
+type MentorixProgramWeekDay struct {
+	ID         pgtype.UUID `json:"id"`
+	ProgramID  pgtype.UUID `json:"program_id"`
+	DayNumber  int32       `json:"day_number"`
+	SortOrder  int32       `json:"sort_order"`
+	CreatedAt  time.Time   `json:"created_at"`
+	ModifiedAt time.Time   `json:"modified_at"`
+	ModifiedBy pgtype.UUID `json:"modified_by"`
+	WeekID     pgtype.UUID `json:"week_id"`
+}
+
+type MentorixProgramWeekDayBlock struct {
+	ID               pgtype.UUID `json:"id"`
+	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
+	BlockType        string      `json:"block_type"`
+	Instruction      string      `json:"instruction"`
+	SortOrder        int32       `json:"sort_order"`
+	CreatedAt        time.Time   `json:"created_at"`
+}
+
+type MentorixProgramWeekDayBlockExercise struct {
+	ID                    pgtype.UUID `json:"id"`
+	ExerciseID            pgtype.UUID `json:"exercise_id"`
+	SortOrder             int32       `json:"sort_order"`
+	Sets                  *int32      `json:"sets"`
+	Reps                  *int32      `json:"reps"`
+	Instruction           string      `json:"instruction"`
+	CreatedAt             time.Time   `json:"created_at"`
+	ModifiedAt            time.Time   `json:"modified_at"`
+	ModifiedBy            pgtype.UUID `json:"modified_by"`
+	ProgramWeekDayBlockID pgtype.UUID `json:"program_week_day_block_id"`
 }
 
 type MentorixTrainer struct {

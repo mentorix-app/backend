@@ -112,15 +112,15 @@ func (f *fakeProgramStore) DeleteDay(context.Context, uuid.UUID, uuid.UUID, uuid
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) AddDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+func (f *fakeProgramStore) CreateDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, CreateDayBlockInput) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) UpdateDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+func (f *fakeProgramStore) UpdateBlockExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) DeleteDayExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) DeleteBlockExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
@@ -132,7 +132,43 @@ func (f *fakeProgramStore) ReorderDays(context.Context, uuid.UUID, uuid.UUID, []
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) ReorderWeekExercises(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []WeekExerciseReorderDay) (Detail, error) {
+func (f *fakeProgramStore) AddBlockExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, DayExerciseInput) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) PatchDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, BlockPatchInput) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) MergeDayBlocks(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) UngroupDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) MoveDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, int) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) ExtractBlockExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, int) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) MoveExerciseToBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) DeleteDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) ReorderDayBlocks(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) ReorderBlockExercises(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
@@ -211,7 +247,10 @@ func publishableWeek(dayExercises []DayExercise) Week {
 		Days: []Day{{
 			DayNumber: 1,
 			SortOrder: 1,
-			Exercises: dayExercises,
+			Blocks: []DayBlock{{
+				BlockType: BlockTypeSingle,
+				Exercises: dayExercises,
+			}},
 		}},
 	}
 }

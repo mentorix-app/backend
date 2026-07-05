@@ -28,13 +28,11 @@ func TestValidatePublishDetail_invalidSetsReps(t *testing.T) {
 		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
 		Weeks: []Week{{
 			WeekNumber: 1,
-			Days: []Day{{
-				Exercises: []DayExercise{{
-					ExerciseID: uuid.New(),
-					Sets:       &zero,
-					Reps:       &zero,
-				}},
-			}},
+			Days: []Day{singleBlockDay(DayExercise{
+				ExerciseID: uuid.New(),
+				Sets:       &zero,
+				Reps:       &zero,
+			})},
 		}},
 	}
 	if err := validatePublishDetail(d); err == nil {
@@ -68,7 +66,6 @@ func TestUpdateInput_Validate_invalidDifficulty(t *testing.T) {
 }
 
 func TestDayExerciseInput_ValidateDraft_errors(t *testing.T) {
-	neg := -1.0
 	tests := []struct {
 		name string
 		in   DayExerciseInput
@@ -85,10 +82,10 @@ func TestDayExerciseInput_ValidateDraft_errors(t *testing.T) {
 			},
 		},
 		{
-			name: "negative weight",
+			name: "zero reps",
 			in: DayExerciseInput{
 				ExerciseID: uuid.New(),
-				WeightKg:   &neg,
+				Reps:       intPtr(0),
 			},
 		},
 	}
@@ -114,10 +111,13 @@ func TestValidatePublishDetail_skipsDaysWithoutExercises(t *testing.T) {
 				{
 					DayNumber: 2,
 					SortOrder: 2,
-					Exercises: []DayExercise{{
-						ExerciseID: uuid.New(),
-						Sets:       &sets,
-						Reps:       &reps,
+					Blocks: []DayBlock{{
+						BlockType: BlockTypeSingle,
+						Exercises: []DayExercise{{
+							ExerciseID: uuid.New(),
+							Sets:       &sets,
+							Reps:       &reps,
+						}},
 					}},
 				},
 			},
@@ -135,13 +135,11 @@ func TestValidatePublishDetail_missingDifficulty(t *testing.T) {
 		Program: Program{Name: "Plan", Category: &category},
 		Weeks: []Week{{
 			WeekNumber: 1,
-			Days: []Day{{
-				Exercises: []DayExercise{{
-					ExerciseID: uuid.New(),
-					Sets:       &sets,
-					Reps:       &reps,
-				}},
-			}},
+			Days: []Day{singleBlockDay(DayExercise{
+				ExerciseID: uuid.New(),
+				Sets:       &sets,
+				Reps:       &reps,
+			})},
 		}},
 	}
 	if err := validatePublishDetail(d); err == nil {
@@ -154,13 +152,11 @@ func TestValidatePublishDetail_missingMetadata(t *testing.T) {
 	base := Detail{
 		Weeks: []Week{{
 			WeekNumber: 1,
-			Days: []Day{{
-				Exercises: []DayExercise{{
-					ExerciseID: uuid.New(),
-					Sets:       &sets,
-					Reps:       &reps,
-				}},
-			}},
+			Days: []Day{singleBlockDay(DayExercise{
+				ExerciseID: uuid.New(),
+				Sets:       &sets,
+				Reps:       &reps,
+			})},
 		}},
 	}
 	category := CategoryMuscleGain

@@ -51,11 +51,16 @@ func publishableDetail(userID, programID uuid.UUID) Detail {
 	d.Category = &cat
 	d.Difficulty = &diff
 	sets, reps := 3, 10
-	d.Weeks[0].Days[0].Exercises = []DayExercise{{
-		ID:         uuid.New(),
-		ExerciseID: uuid.New(),
-		Sets:       &sets,
-		Reps:       &reps,
+	blockID := uuid.New()
+	d.Weeks[0].Days[0].Blocks = []DayBlock{{
+		ID:        blockID,
+		BlockType: BlockTypeSingle,
+		Exercises: []DayExercise{{
+			ID:         uuid.New(),
+			ExerciseID: uuid.New(),
+			Sets:       &sets,
+			Reps:       &reps,
+		}},
 	}}
 	return d
 }
@@ -126,7 +131,7 @@ func programContext(e *echo.Echo, method, path, body string, userID uuid.UUID, p
 	if len(params) > 0 {
 		names := make([]string, 0, len(params))
 		values := make([]string, 0, len(params))
-		for _, key := range []string{"id", "week_id", "day_id", "item_id", "version_id", "client_user_id"} {
+		for _, key := range []string{"id", "week_id", "day_id", "block_id", "item_id", "version_id", "client_user_id"} {
 			if v, ok := params[key]; ok {
 				names = append(names, key)
 				values = append(values, v)
@@ -639,24 +644,26 @@ func TestHandlers_ReorderDays_mapsInvalidReorder(t *testing.T) {
 	assertHTTPError(t, err, http.StatusBadRequest)
 }
 
-func TestHandlers_ReorderWeekExercises_mapsInvalidReorder(t *testing.T) {
+func TestHandlers_ReorderBlockExercises_mapsInvalidReorder(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	weekID := uuid.New()
-	store := &reorderExercisesErrStore{
+	blockID := uuid.New()
+	store := &reorderBlockExercisesErrStore{
 		fakeProgramStore: fakeProgramStore{
 			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		},
 		reorderErr: ErrInvalidReorder,
 	}
 	h := programHandler(store)
-	body := `{"days":[{"day_id":"` + uuid.New().String() + `","exercise_item_ids":["` + uuid.New().String() + `"]}]}`
+	body := `{"exercise_item_ids":["` + uuid.New().String() + `"]}`
 	e := echo.New()
-	c, _ := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/exercises/reorder", body, userID, map[string]string{
-		"id":      programID.String(),
-		"week_id": weekID.String(),
+	c, _ := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises/reorder", body, userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
 	})
-	err := h.ReorderWeekExercises(c)
+	err := h.ReorderBlockExercises(c)
 	assertHTTPError(t, err, http.StatusBadRequest)
 }
 
@@ -682,25 +689,26 @@ func TestHandlers_ReorderDays(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 }
 
-func TestHandlers_ReorderWeekExercises(t *testing.T) {
+func TestHandlers_ReorderBlockExercises(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	detail := sampleDetail(userID, programID)
 	weekID := detail.Weeks[0].ID
-	dayID := detail.Weeks[0].Days[0].ID
+	blockID := uuid.New()
 	itemID := uuid.New()
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
-	body := `{"days":[{"day_id":"` + dayID.String() + `","exercise_item_ids":["` + itemID.String() + `"]}]}`
+	body := `{"exercise_item_ids":["` + itemID.String() + `"]}`
 	e := echo.New()
-	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/exercises/reorder", body, userID, map[string]string{
-		"id":      programID.String(),
-		"week_id": weekID.String(),
+	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises/reorder", body, userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
 	})
 
-	if err := h.ReorderWeekExercises(c); err != nil {
-		t.Fatalf("ReorderWeekExercises: %v", err)
+	if err := h.ReorderBlockExercises(c); err != nil {
+		t.Fatalf("ReorderBlockExercises: %v", err)
 	}
 	assertStatus(t, rec, http.StatusOK)
 }
@@ -747,7 +755,7 @@ func TestHandlers_DeleteDay(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 }
 
-func TestHandlers_AddDayExercise(t *testing.T) {
+func TestHandlers_CreateDayBlock(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	exerciseID := uuid.New()
@@ -757,85 +765,85 @@ func TestHandlers_AddDayExercise(t *testing.T) {
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
-	body := `{"exercise_id":"` + exerciseID.String() + `","sets":3,"reps":10}`
+	body := `{"block_type":"single","exercise":{"exercise_id":"` + exerciseID.String() + `","sets":3,"reps":10}}`
 	e := echo.New()
-	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/exercises", body, userID, map[string]string{
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/blocks", body, userID, map[string]string{
 		"id":      programID.String(),
 		"week_id": weekID.String(),
 		"day_id":  dayID.String(),
 	})
 
-	if err := h.AddDayExercise(c); err != nil {
-		t.Fatalf("AddDayExercise: %v", err)
+	if err := h.CreateDayBlock(c); err != nil {
+		t.Fatalf("CreateDayBlock: %v", err)
 	}
 	assertStatus(t, rec, http.StatusCreated)
 }
 
-func TestHandlers_AddDayExercise_invalidExerciseID(t *testing.T) {
+func TestHandlers_CreateDayBlock_invalidExerciseID(t *testing.T) {
 	h := programHandler(&fakeProgramStore{})
 	e := echo.New()
-	body := `{"exercise_id":"bad","sets":3,"reps":10}`
-	c, _ := programContext(e, http.MethodPost, "/programs/"+uuid.New().String()+"/weeks/"+uuid.New().String()+"/days/"+uuid.New().String()+"/exercises", body, uuid.New(), map[string]string{
+	body := `{"block_type":"single","exercise":{"exercise_id":"bad","sets":3,"reps":10}}`
+	c, _ := programContext(e, http.MethodPost, "/programs/"+uuid.New().String()+"/weeks/"+uuid.New().String()+"/days/"+uuid.New().String()+"/blocks", body, uuid.New(), map[string]string{
 		"id":      uuid.New().String(),
 		"week_id": uuid.New().String(),
 		"day_id":  uuid.New().String(),
 	})
 
-	err := h.AddDayExercise(c)
+	err := h.CreateDayBlock(c)
 	assertHTTPError(t, err, http.StatusBadRequest)
 }
 
-func TestHandlers_UpdateDayExercise(t *testing.T) {
+func TestHandlers_UpdateBlockExercise(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
+	blockID := uuid.New()
 	itemID := uuid.New()
 	exerciseID := uuid.New()
 	detail := sampleDetail(userID, programID)
 	weekID := detail.Weeks[0].ID
-	dayID := detail.Weeks[0].Days[0].ID
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
 	body := `{"exercise_id":"` + exerciseID.String() + `","sets":4,"reps":8}`
 	e := echo.New()
-	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/exercises/"+itemID.String(), body, userID, map[string]string{
-		"id":      programID.String(),
-		"week_id": weekID.String(),
-		"day_id":  dayID.String(),
-		"item_id": itemID.String(),
+	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises/"+itemID.String(), body, userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
+		"item_id":  itemID.String(),
 	})
 
-	if err := h.UpdateDayExercise(c); err != nil {
-		t.Fatalf("UpdateDayExercise: %v", err)
+	if err := h.UpdateBlockExercise(c); err != nil {
+		t.Fatalf("UpdateBlockExercise: %v", err)
 	}
 	assertStatus(t, rec, http.StatusOK)
 }
 
-func TestHandlers_DeleteDayExercise(t *testing.T) {
+func TestHandlers_DeleteBlockExercise(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
+	blockID := uuid.New()
 	itemID := uuid.New()
 	detail := sampleDetail(userID, programID)
 	weekID := detail.Weeks[0].ID
-	dayID := detail.Weeks[0].Days[0].ID
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
 	e := echo.New()
-	c, rec := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/exercises/"+itemID.String(), "", userID, map[string]string{
-		"id":      programID.String(),
-		"week_id": weekID.String(),
-		"day_id":  dayID.String(),
-		"item_id": itemID.String(),
+	c, rec := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises/"+itemID.String(), "", userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
+		"item_id":  itemID.String(),
 	})
 
-	if err := h.DeleteDayExercise(c); err != nil {
-		t.Fatalf("DeleteDayExercise: %v", err)
+	if err := h.DeleteBlockExercise(c); err != nil {
+		t.Fatalf("DeleteBlockExercise: %v", err)
 	}
 	assertStatus(t, rec, http.StatusOK)
 }
 
-func TestHandlers_DeleteDayExercise_notFound(t *testing.T) {
+func TestHandlers_DeleteBlockExercise_notFound(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	detail := sampleDetail(userID, programID)
@@ -843,14 +851,14 @@ func TestHandlers_DeleteDayExercise_notFound(t *testing.T) {
 	h := programHandler(store)
 
 	e := echo.New()
-	c, _ := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+uuid.New().String()+"/days/"+uuid.New().String()+"/exercises/"+uuid.New().String(), "", userID, map[string]string{
-		"id":      programID.String(),
-		"week_id": uuid.New().String(),
-		"day_id":  uuid.New().String(),
-		"item_id": uuid.New().String(),
+	c, _ := programContext(e, http.MethodDelete, "/programs/"+programID.String()+"/weeks/"+uuid.New().String()+"/blocks/"+uuid.New().String()+"/exercises/"+uuid.New().String(), "", userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  uuid.New().String(),
+		"block_id": uuid.New().String(),
+		"item_id":  uuid.New().String(),
 	})
 
-	err := h.DeleteDayExercise(c)
+	err := h.DeleteBlockExercise(c)
 	assertHTTPError(t, err, http.StatusNotFound)
 }
 
@@ -941,7 +949,7 @@ func TestHandlers_Publish_mapsValidationError(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail: Detail{
 			Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
-			Weeks:   []Week{{WeekNumber: 1, Days: []Day{{DayNumber: 1, Exercises: []DayExercise{}}}}},
+			Weeks:   []Week{{WeekNumber: 1, Days: []Day{{DayNumber: 1, Blocks: []DayBlock{{BlockType: BlockTypeComplex}}}}}},
 		},
 	}
 	h := programHandler(store)

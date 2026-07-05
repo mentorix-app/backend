@@ -999,14 +999,15 @@ paths:
         "409":
           description: Cannot delete the last day in week
 
-  /programs/{id}/weeks/{week_id}/exercises/reorder:
+  /programs/{id}/weeks/{week_id}/days/{day_id}/blocks/reorder:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
       - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayId"
     put:
       tags: [programs]
-      summary: Reorder or move exercises within a program week
-      operationId: reorderProgramWeekExercises
+      summary: Reorder blocks within a program day
+      operationId: reorderProgramDayBlocks
       security:
         - bearerAuth: []
       requestBody:
@@ -1014,7 +1015,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProgramWeekExercisesReorder"
+              $ref: "#/components/schemas/ProgramDayBlocksReorder"
       responses:
         "200":
           description: Updated program
@@ -1029,17 +1030,253 @@ paths:
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program or week not found
+          description: Program, week, or day not found
 
-  /programs/{id}/weeks/{week_id}/days/{day_id}/exercises:
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/exercises/reorder:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+    put:
+      tags: [programs]
+      summary: Reorder exercises within a program day block
+      operationId: reorderProgramBlockExercises
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramBlockExercisesReorder"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, or block not found
+
+  /programs/{id}/weeks/{week_id}/days/{day_id}/blocks:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
       - $ref: "#/components/parameters/ProgramWeekId"
       - $ref: "#/components/parameters/ProgramDayId"
     post:
       tags: [programs]
-      summary: Add exercise to program day
-      operationId: addProgramDayExercise
+      summary: Create program day block
+      description: >
+        Creates a single block (one exercise) in the day. Group blocks are
+        created only via merge.
+      operationId: createProgramDayBlock
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramDayBlockCreate"
+      responses:
+        "201":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, or day not found
+
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/exercises/{item_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+      - $ref: "#/components/parameters/ProgramDayExerciseId"
+    put:
+      tags: [programs]
+      summary: Update exercise in program day block
+      operationId: updateProgramBlockExercise
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramDayExerciseUpsert"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, block, or exercise item not found
+    delete:
+      tags: [programs]
+      summary: Remove exercise from program day block
+      description: Deleting the only exercise from a `single` block removes the block.
+      operationId: deleteProgramBlockExercise
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, block, or exercise item not found
+
+  /programs/{id}/weeks/{week_id}/days/{day_id}/blocks/merge:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayId"
+    post:
+      tags: [programs]
+      summary: Merge program day blocks into one group
+      operationId: mergeProgramDayBlocks
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramDayBlocksMerge"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, or day not found
+
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+    patch:
+      tags: [programs]
+      summary: Update group block type or instruction
+      description: >
+        For group blocks only. `single` cannot be set via patch; use ungroup or extract.
+      operationId: patchProgramDayBlock
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramDayBlockPatch"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, or block not found
+    delete:
+      tags: [programs]
+      summary: Delete a group block from program day
+      description: Only non-single blocks can be deleted directly.
+      operationId: deleteProgramDayBlock
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, or block not found
+
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/ungroup:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+    post:
+      tags: [programs]
+      summary: Split group block into single blocks
+      operationId: ungroupProgramDayBlock
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, or block not found
+
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/exercises:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+    post:
+      tags: [programs]
+      summary: Add exercise to a program day group block
+      operationId: addProgramBlockExercise
       security:
         - bearerAuth: []
       requestBody:
@@ -1062,18 +1299,17 @@ paths:
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program, week, or day not found
+          description: Program, week, or block not found
 
-  /programs/{id}/weeks/{week_id}/days/{day_id}/exercises/{item_id}:
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/move:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
       - $ref: "#/components/parameters/ProgramWeekId"
-      - $ref: "#/components/parameters/ProgramDayId"
-      - $ref: "#/components/parameters/ProgramDayExerciseId"
-    put:
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+    post:
       tags: [programs]
-      summary: Update exercise in program day
-      operationId: updateProgramDayExercise
+      summary: Move a block to another day in the same week
+      operationId: moveProgramDayBlock
       security:
         - bearerAuth: []
       requestBody:
@@ -1081,7 +1317,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProgramDayExerciseUpsert"
+              $ref: "#/components/schemas/ProgramDayBlockMove"
       responses:
         "200":
           description: Updated program
@@ -1096,14 +1332,25 @@ paths:
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program, week, day, or exercise item not found
+          description: Program, week, or block not found
 
-    delete:
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/exercises/{item_id}/extract:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+      - $ref: "#/components/parameters/ProgramDayExerciseId"
+    post:
       tags: [programs]
-      summary: Remove exercise from program day
-      operationId: deleteProgramDayExercise
+      summary: Extract exercise from group into a new single block
+      operationId: extractProgramBlockExercise
       security:
         - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramBlockExerciseExtract"
       responses:
         "200":
           description: Updated program
@@ -1111,12 +1358,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           description: Forbidden (not owner and not admin)
         "404":
-          description: Program, week, day, or exercise item not found
+          description: Program, week, block, or exercise item not found
+
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/exercises/{item_id}/move:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+      - $ref: "#/components/parameters/ProgramDayExerciseId"
+    post:
+      tags: [programs]
+      summary: Move exercise into another block in the same week
+      operationId: moveProgramExerciseToBlock
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramExerciseMove"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, or exercise item not found
 
 components:
   securitySchemes:
@@ -1225,6 +1508,14 @@ components:
 
     ProgramDayExerciseId:
       name: item_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ProgramDayBlockId:
+      name: block_id
       in: path
       required: true
       schema:
@@ -1641,19 +1932,64 @@ components:
         reps:
           type: integer
           nullable: true
-        weight_kg:
-          type: number
-          format: double
-          nullable: true
         instruction:
           type: string
         created_at:
           type: string
           format: date-time
 
+    ProgramDayBlock:
+      type: object
+      required: [id, block_type, instruction, sort_order, exercises, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        block_type:
+          $ref: "#/components/schemas/ProgramBlockType"
+        instruction:
+          type: string
+        sort_order:
+          type: integer
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramDayExercise"
+        created_at:
+          type: string
+          format: date-time
+
+    ProgramBlockType:
+      type: string
+      enum:
+        - single
+        - emom
+        - amrap
+        - for_time
+        - intervals
+        - chipper
+        - ladder
+        - death_by
+        - superset
+        - complex
+
+    ProgramBlockGroupType:
+      type: string
+      enum:
+        - emom
+        - amrap
+        - for_time
+        - intervals
+        - chipper
+        - ladder
+        - death_by
+        - superset
+        - complex
+      description: Group block types only; `single` is not patchable.
+
     ProgramDay:
       type: object
-      required: [id, day_number, sort_order, exercises, created_at]
+      required: [id, day_number, sort_order, blocks, created_at]
       properties:
         id:
           type: string
@@ -1662,10 +1998,10 @@ components:
           type: integer
         sort_order:
           type: integer
-        exercises:
+        blocks:
           type: array
           items:
-            $ref: "#/components/schemas/ProgramDayExercise"
+            $ref: "#/components/schemas/ProgramDayBlock"
         created_at:
           type: string
           format: date-time
@@ -1720,24 +2056,97 @@ components:
             type: string
             format: uuid
 
-    ProgramWeekExercisesReorder:
+    ProgramDayBlockCreate:
       type: object
-      required: [days]
+      required: [exercise]
       properties:
-        days:
+        block_type:
+          type: string
+          enum: [single]
+          default: single
+          description: Only `single` is allowed; omit or use default.
+        sort_order:
+          type: integer
+          minimum: 1
+          description: >
+            Optional 1-based position in the day. Omit to append at the end.
+        exercise:
+          $ref: "#/components/schemas/ProgramDayExerciseUpsert"
+      description: >
+        Adds one exercise to the day as a `single` block. To create a group,
+        add singles and call merge.
+
+    ProgramDayBlocksReorder:
+      type: object
+      required: [block_ids]
+      properties:
+        block_ids:
           type: array
           items:
-            type: object
-            required: [day_id, exercise_item_ids]
-            properties:
-              day_id:
-                type: string
-                format: uuid
-              exercise_item_ids:
-                type: array
-                items:
-                  type: string
-                  format: uuid
+            type: string
+            format: uuid
+
+    ProgramBlockExercisesReorder:
+      type: object
+      required: [exercise_item_ids]
+      properties:
+        exercise_item_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    ProgramDayBlocksMerge:
+      type: object
+      required: [block_ids]
+      properties:
+        block_ids:
+          type: array
+          minItems: 2
+          items:
+            type: string
+            format: uuid
+
+    ProgramDayBlockPatch:
+      type: object
+      properties:
+        block_type:
+          $ref: "#/components/schemas/ProgramBlockGroupType"
+        instruction:
+          type: string
+      description: Patch group block metadata. At least one field required.
+
+    ProgramDayBlockMove:
+      type: object
+      required: [target_day_id]
+      properties:
+        target_day_id:
+          type: string
+          format: uuid
+        sort_order:
+          type: integer
+          minimum: 1
+          description: >
+            Optional 1-based position among blocks in the target day.
+            Omit to append at the end.
+
+    ProgramBlockExerciseExtract:
+      type: object
+      properties:
+        sort_order:
+          type: integer
+          minimum: 1
+          description: >
+            Optional 1-based position for the new single block in the day.
+            Omit to append at the end.
+
+    ProgramExerciseMove:
+      type: object
+      required: [target_block_id]
+      properties:
+        target_block_id:
+          type: string
+          format: uuid
 
     ProgramListResponse:
       type: object
@@ -1789,10 +2198,6 @@ components:
           type: integer
           minimum: 1
           nullable: true
-        weight_kg:
-          type: number
-          format: double
-          minimum: 0
         instruction:
           type: string
 

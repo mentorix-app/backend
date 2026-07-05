@@ -69,7 +69,6 @@ done
 
 for f in .cursor/rules/*.mdc; do
   [[ -f "$f" ]] || continue
-  [[ "$(basename "$f")" == "best-practices.mdc" ]] && continue
   check_lines "$f" 120 "rule"
 done
 

@@ -1,0 +1,86 @@
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  RENAME CONSTRAINT program_version_week_day_block_exercises_program_version_week_day_block_id_fkey
+  TO program_version_day_exercises_program_version_day_block_id_fkey;
+
+ALTER INDEX mentorix.program_version_week_day_block_exercises_program_version_week_day_block_id_idx
+  RENAME TO program_version_day_exercises_program_version_day_block_id_idx;
+
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  RENAME COLUMN program_version_week_day_block_id TO program_version_day_block_id;
+
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  RENAME TO program_version_day_exercises;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME CONSTRAINT program_version_week_day_blocks_program_version_week_day_id_fkey
+  TO program_version_day_blocks_program_version_day_id_fkey;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME CONSTRAINT program_version_week_day_blocks_block_type_check
+  TO program_version_day_blocks_block_type_check;
+
+ALTER INDEX mentorix.program_version_week_day_blocks_program_version_week_day_id_idx
+  RENAME TO program_version_day_blocks_program_version_day_id_idx;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME COLUMN program_version_week_day_id TO program_version_day_id;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME TO program_version_day_blocks;
+
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_week_days_week_day_number_uniq
+  TO program_version_days_week_day_number_uniq;
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_week_days_program_version_week_id_fkey
+  TO program_version_days_program_version_week_id_fkey;
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_week_days_program_version_id_fkey
+  TO program_version_days_program_version_id_fkey;
+
+ALTER INDEX mentorix.program_version_week_days_program_version_week_id_idx
+  RENAME TO program_version_days_program_version_week_id_idx;
+ALTER INDEX mentorix.program_version_week_days_program_version_id_idx
+  RENAME TO program_version_days_program_version_id_idx;
+
+ALTER TABLE mentorix.program_version_week_days RENAME TO program_version_days;
+
+ALTER TABLE mentorix.program_week_day_block_exercises
+  RENAME CONSTRAINT program_week_day_block_exercises_program_week_day_block_id_fkey
+  TO program_day_exercises_program_day_block_id_fkey;
+
+ALTER INDEX mentorix.program_week_day_block_exercises_program_week_day_block_id_idx
+  RENAME TO program_day_exercises_program_day_block_id_idx;
+
+ALTER TABLE mentorix.program_week_day_block_exercises
+  RENAME COLUMN program_week_day_block_id TO program_day_block_id;
+
+ALTER TABLE mentorix.program_week_day_block_exercises RENAME TO program_day_exercises;
+
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME CONSTRAINT program_week_day_blocks_program_week_day_id_fkey
+  TO program_day_blocks_program_day_id_fkey;
+
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME CONSTRAINT program_week_day_blocks_block_type_check
+  TO program_day_blocks_block_type_check;
+
+ALTER INDEX mentorix.program_week_day_blocks_program_week_day_id_idx
+  RENAME TO program_day_blocks_program_day_id_idx;
+
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME COLUMN program_week_day_id TO program_day_id;
+
+ALTER TABLE mentorix.program_week_day_blocks RENAME TO program_day_blocks;
+
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_week_days_week_day_number_uniq TO program_days_week_day_number_uniq;
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_week_days_program_id_fkey TO program_days_program_id_fkey;
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_week_days_week_id_fkey TO program_days_week_id_fkey;
+
+ALTER INDEX mentorix.program_week_days_week_id_idx RENAME TO program_days_week_id_idx;
+ALTER INDEX mentorix.program_week_days_program_id_idx RENAME TO program_days_program_id_idx;
+
+ALTER TABLE mentorix.program_week_days RENAME TO program_days;

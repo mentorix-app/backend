@@ -468,3 +468,278 @@ CREATE INDEX program_assignments_client_user_id_idx ON mentorix.program_assignme
 -- >>> 000013_program_versions_content_fingerprint.up.sql
 ALTER TABLE mentorix.program_versions
   ADD COLUMN content_fingerprint text NOT NULL DEFAULT '';
+
+-- >>> 000014_program_day_blocks.up.sql
+CREATE TABLE mentorix.program_day_blocks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  program_day_id uuid NOT NULL REFERENCES mentorix.program_days(id) ON DELETE CASCADE,
+  block_type text NOT NULL DEFAULT 'single',
+  instruction text NOT NULL DEFAULT '',
+  sort_order int NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT program_day_blocks_block_type_check CHECK (
+    block_type IN (
+      'single', 'emom', 'amrap', 'for_time', 'intervals',
+      'chipper', 'ladder', 'death_by', 'superset', 'complex'
+    )
+  )
+);
+
+CREATE INDEX program_day_blocks_program_day_id_idx
+  ON mentorix.program_day_blocks (program_day_id);
+
+ALTER TABLE mentorix.program_day_exercises
+  ADD COLUMN program_day_block_id uuid NULL;
+
+DO $$
+DECLARE
+  r RECORD;
+  new_block_id uuid;
+BEGIN
+  FOR r IN
+    SELECT id, program_day_id, sort_order, created_at
+    FROM mentorix.program_day_exercises
+    ORDER BY program_day_id, sort_order, created_at
+  LOOP
+    INSERT INTO mentorix.program_day_blocks (
+      program_day_id, block_type, instruction, sort_order, created_at
+    ) VALUES (
+      r.program_day_id, 'single', '', r.sort_order, r.created_at
+    ) RETURNING id INTO new_block_id;
+
+    UPDATE mentorix.program_day_exercises
+    SET program_day_block_id = new_block_id
+    WHERE id = r.id;
+  END LOOP;
+END $$;
+
+ALTER TABLE mentorix.program_day_exercises
+  ALTER COLUMN program_day_block_id SET NOT NULL;
+
+ALTER TABLE mentorix.program_day_exercises
+  ADD CONSTRAINT program_day_exercises_program_day_block_id_fkey
+  FOREIGN KEY (program_day_block_id) REFERENCES mentorix.program_day_blocks(id) ON DELETE CASCADE;
+
+DROP INDEX IF EXISTS mentorix.program_day_exercises_program_day_id_idx;
+
+ALTER TABLE mentorix.program_day_exercises
+  DROP COLUMN program_day_id;
+
+ALTER TABLE mentorix.program_day_exercises
+  DROP COLUMN weight_kg;
+
+CREATE INDEX program_day_exercises_program_day_block_id_idx
+  ON mentorix.program_day_exercises (program_day_block_id);
+
+CREATE TABLE mentorix.program_version_day_blocks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  program_version_day_id uuid NOT NULL REFERENCES mentorix.program_version_days(id) ON DELETE CASCADE,
+  block_type text NOT NULL DEFAULT 'single',
+  instruction text NOT NULL DEFAULT '',
+  sort_order int NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT program_version_day_blocks_block_type_check CHECK (
+    block_type IN (
+      'single', 'emom', 'amrap', 'for_time', 'intervals',
+      'chipper', 'ladder', 'death_by', 'superset', 'complex'
+    )
+  )
+);
+
+CREATE INDEX program_version_day_blocks_program_version_day_id_idx
+  ON mentorix.program_version_day_blocks (program_version_day_id);
+
+ALTER TABLE mentorix.program_version_day_exercises
+  ADD COLUMN program_version_day_block_id uuid NULL;
+
+DO $$
+DECLARE
+  r RECORD;
+  new_block_id uuid;
+BEGIN
+  FOR r IN
+    SELECT id, program_version_day_id, sort_order, created_at
+    FROM mentorix.program_version_day_exercises
+    ORDER BY program_version_day_id, sort_order, created_at
+  LOOP
+    INSERT INTO mentorix.program_version_day_blocks (
+      program_version_day_id, block_type, instruction, sort_order, created_at
+    ) VALUES (
+      r.program_version_day_id, 'single', '', r.sort_order, r.created_at
+    ) RETURNING id INTO new_block_id;
+
+    UPDATE mentorix.program_version_day_exercises
+    SET program_version_day_block_id = new_block_id
+    WHERE id = r.id;
+  END LOOP;
+END $$;
+
+ALTER TABLE mentorix.program_version_day_exercises
+  ALTER COLUMN program_version_day_block_id SET NOT NULL;
+
+ALTER TABLE mentorix.program_version_day_exercises
+  ADD CONSTRAINT program_version_day_exercises_program_version_day_block_id_fkey
+  FOREIGN KEY (program_version_day_block_id) REFERENCES mentorix.program_version_day_blocks(id) ON DELETE CASCADE;
+
+DROP INDEX IF EXISTS mentorix.program_version_day_exercises_program_version_day_id_idx;
+
+ALTER TABLE mentorix.program_version_day_exercises
+  DROP COLUMN program_version_day_id;
+
+ALTER TABLE mentorix.program_version_day_exercises
+  DROP COLUMN weight_kg;
+
+CREATE INDEX program_version_day_exercises_program_version_day_block_id_idx
+  ON mentorix.program_version_day_exercises (program_version_day_block_id);
+
+-- >>> 000015_normalize_block_sort.up.sql
+WITH ranked_blocks AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY program_day_id
+      ORDER BY sort_order ASC, created_at ASC
+    ) AS new_sort
+  FROM mentorix.program_day_blocks
+)
+UPDATE mentorix.program_day_blocks pdb
+SET sort_order = ranked_blocks.new_sort
+FROM ranked_blocks
+WHERE pdb.id = ranked_blocks.id;
+
+WITH ranked_exercises AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY program_day_block_id
+      ORDER BY sort_order ASC, created_at ASC
+    ) AS new_sort
+  FROM mentorix.program_day_exercises
+)
+UPDATE mentorix.program_day_exercises pde
+SET sort_order = ranked_exercises.new_sort
+FROM ranked_exercises
+WHERE pde.id = ranked_exercises.id;
+
+WITH ranked_version_blocks AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY program_version_day_id
+      ORDER BY sort_order ASC, created_at ASC
+    ) AS new_sort
+  FROM mentorix.program_version_day_blocks
+)
+UPDATE mentorix.program_version_day_blocks pvb
+SET sort_order = ranked_version_blocks.new_sort
+FROM ranked_version_blocks
+WHERE pvb.id = ranked_version_blocks.id;
+
+WITH ranked_version_exercises AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      PARTITION BY program_version_day_block_id
+      ORDER BY sort_order ASC, created_at ASC
+    ) AS new_sort
+  FROM mentorix.program_version_day_exercises
+)
+UPDATE mentorix.program_version_day_exercises pve
+SET sort_order = ranked_version_exercises.new_sort
+FROM ranked_version_exercises
+WHERE pve.id = ranked_version_exercises.id;
+
+-- >>> 000016_program_week_day_naming.up.sql
+-- Align draft + version program day trees with immediate-parent table naming.
+
+-- Draft: days
+ALTER TABLE mentorix.program_days RENAME TO program_week_days;
+
+ALTER INDEX mentorix.program_days_program_id_idx
+  RENAME TO program_week_days_program_id_idx;
+ALTER INDEX mentorix.program_days_week_id_idx
+  RENAME TO program_week_days_week_id_idx;
+
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_days_week_id_fkey TO program_week_days_week_id_fkey;
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_days_week_day_number_uniq TO program_week_days_week_day_number_uniq;
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_days_week_id_fkey TO program_week_days_week_id_fkey;
+ALTER TABLE mentorix.program_week_days
+  RENAME CONSTRAINT program_days_program_id_fkey TO program_week_days_program_id_fkey;
+
+-- Draft: blocks
+ALTER TABLE mentorix.program_day_blocks RENAME TO program_week_day_blocks;
+
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME COLUMN program_day_id TO program_week_day_id;
+
+ALTER INDEX mentorix.program_day_blocks_program_day_id_idx
+  RENAME TO program_week_day_blocks_program_week_day_id_idx;
+
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME CONSTRAINT program_day_blocks_block_type_check TO program_week_day_blocks_block_type_check;
+ALTER TABLE mentorix.program_week_day_blocks
+  RENAME CONSTRAINT program_day_blocks_program_day_id_fkey
+  TO program_week_day_blocks_program_week_day_id_fkey;
+
+-- Draft: block exercises
+ALTER TABLE mentorix.program_day_exercises RENAME TO program_week_day_block_exercises;
+
+ALTER TABLE mentorix.program_week_day_block_exercises
+  RENAME COLUMN program_day_block_id TO program_week_day_block_id;
+
+ALTER INDEX mentorix.program_day_exercises_program_day_block_id_idx
+  RENAME TO program_week_day_block_exercises_program_week_day_block_id_idx;
+
+ALTER TABLE mentorix.program_week_day_block_exercises
+  RENAME CONSTRAINT program_day_exercises_program_day_block_id_fkey
+  TO program_week_day_block_exercises_program_week_day_block_id_fkey;
+
+-- Version: days
+ALTER TABLE mentorix.program_version_days RENAME TO program_version_week_days;
+
+ALTER INDEX mentorix.program_version_days_program_version_id_idx
+  RENAME TO program_version_week_days_program_version_id_idx;
+ALTER INDEX mentorix.program_version_days_program_version_week_id_idx
+  RENAME TO program_version_week_days_program_version_week_id_idx;
+
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_days_program_version_id_fkey
+  TO program_version_week_days_program_version_id_fkey;
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_days_program_version_week_id_fkey
+  TO program_version_week_days_program_version_week_id_fkey;
+ALTER TABLE mentorix.program_version_week_days
+  RENAME CONSTRAINT program_version_days_week_day_number_uniq
+  TO program_version_week_days_week_day_number_uniq;
+
+-- Version: blocks
+ALTER TABLE mentorix.program_version_day_blocks RENAME TO program_version_week_day_blocks;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME COLUMN program_version_day_id TO program_version_week_day_id;
+
+ALTER INDEX mentorix.program_version_day_blocks_program_version_day_id_idx
+  RENAME TO program_version_week_day_blocks_program_version_week_day_id_idx;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME CONSTRAINT program_version_day_blocks_block_type_check
+  TO program_version_week_day_blocks_block_type_check;
+ALTER TABLE mentorix.program_version_week_day_blocks
+  RENAME CONSTRAINT program_version_day_blocks_program_version_day_id_fkey
+  TO program_version_week_day_blocks_program_version_week_day_id_fkey;
+
+-- Version: block exercises
+ALTER TABLE mentorix.program_version_day_exercises RENAME TO program_version_week_day_block_exercises;
+
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  RENAME COLUMN program_version_day_block_id TO program_version_week_day_block_id;
+
+ALTER INDEX mentorix.program_version_day_exercises_program_version_day_block_id_idx
+  RENAME TO program_version_week_day_block_exercises_program_version_week_day_block_id_idx;
+
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  RENAME CONSTRAINT program_version_day_exercises_program_version_day_block_id_fkey
+  TO program_version_week_day_block_exercises_program_version_week_day_block_id_fkey;

@@ -243,10 +243,13 @@ func createProgram(ctx context.Context, svc *program.Service, userID uuid.UUID, 
 				return fmt.Errorf("exercise %q not found", exName)
 			}
 			sets, reps := 3, 8+i%3
-			_, err := svc.AddDayExercise(ctx, userID, draft.ID, weekID, dayID, program.DayExerciseInput{
-				ExerciseID: exID,
-				Sets:       &sets,
-				Reps:       &reps,
+			_, err := svc.CreateDayBlock(ctx, userID, draft.ID, weekID, dayID, program.CreateDayBlockInput{
+				BlockType: program.BlockTypeSingle,
+				Exercise: &program.DayExerciseInput{
+					ExerciseID: exID,
+					Sets:       &sets,
+					Reps:       &reps,
+				},
 			})
 			if err != nil {
 				return err

@@ -82,7 +82,7 @@ func TestProgramStore_CreateDraftAndPublish(t *testing.T) {
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
 	sets, reps := 3, 10
-	withExercise, err := progStore.AddDayExercise(ctx, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+	withExercise, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -90,8 +90,11 @@ func TestProgramStore_CreateDraftAndPublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddDayExercise() error = %v", err)
 	}
-	if len(withExercise.Weeks[0].Days[0].Exercises) != 1 {
-		t.Fatalf("day exercises len = %d, want 1", len(withExercise.Weeks[0].Days[0].Exercises))
+	if dayBlockCount(withExercise.Weeks[0].Days[0]) != 1 {
+		t.Fatalf("day blocks len = %d, want 1", dayBlockCount(withExercise.Weeks[0].Days[0]))
+	}
+	if dayExerciseCount(withExercise.Weeks[0].Days[0]) != 1 {
+		t.Fatalf("day exercises len = %d, want 1", dayExerciseCount(withExercise.Weeks[0].Days[0]))
 	}
 
 	published, err := svc.Publish(ctx, trainerID, draft.ID)
@@ -198,7 +201,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	dayID := draft.Weeks[0].Days[dayIdx].ID
 
 	sets, reps := 4, 8
-	withExercise, err := progStore.AddDayExercise(ctx, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+	withExercise, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -207,18 +210,26 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 		t.Fatalf("AddDayExercise: %v", err)
 	}
 	var itemID uuid.UUID
+	var blockID uuid.UUID
 	for _, day := range withExercise.Weeks[0].Days {
-		if day.ID == dayID && len(day.Exercises) > 0 {
-			itemID = day.Exercises[0].ID
+		if day.ID == dayID {
+			ex, ok := firstDayExercise(day)
+			if ok {
+				itemID = ex.ID
+			}
+			b, ok := firstDayBlock(day)
+			if ok {
+				blockID = b.ID
+			}
 			break
 		}
 	}
-	if itemID == uuid.Nil {
-		t.Fatal("expected exercise on day")
+	if itemID == uuid.Nil || blockID == uuid.Nil {
+		t.Fatal("expected exercise and block on day")
 	}
 
 	newSets := 5
-	updatedExercise, err := progStore.UpdateDayExercise(ctx, trainerID, draft.ID, weekID, dayID, itemID, program.DayExerciseInput{
+	updatedExercise, err := progStore.UpdateBlockExercise(ctx, trainerID, draft.ID, weekID, blockID, itemID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &newSets,
 		Reps:       &reps,
@@ -228,8 +239,11 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	}
 	var updatedSets int
 	for _, day := range updatedExercise.Weeks[0].Days {
-		if day.ID == dayID && len(day.Exercises) > 0 {
-			updatedSets = *day.Exercises[0].Sets
+		if day.ID == dayID {
+			ex, ok := firstDayExercise(day)
+			if ok {
+				updatedSets = *ex.Sets
+			}
 			break
 		}
 	}
@@ -237,14 +251,14 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 		t.Fatalf("sets = %d, want %d", updatedSets, newSets)
 	}
 
-	withoutExercise, err := progStore.DeleteDayExercise(ctx, draft.ID, weekID, dayID, itemID)
+	withoutExercise, err := progStore.DeleteBlockExercise(ctx, draft.ID, weekID, blockID, itemID)
 	if err != nil {
-		t.Fatalf("DeleteDayExercise: %v", err)
+		t.Fatalf("DeleteBlockExercise: %v", err)
 	}
 	var exercisesLeft int
 	for _, day := range withoutExercise.Weeks[0].Days {
 		if day.ID == dayID {
-			exercisesLeft = len(day.Exercises)
+			exercisesLeft = dayExerciseCount(day)
 			break
 		}
 	}
@@ -370,7 +384,7 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 	sets, reps := 3, 10
 	dayA := reorderedDays.Weeks[0].Days[0].ID
 	dayB := reorderedDays.Weeks[0].Days[1].ID
-	withExA, err := progStore.AddDayExercise(ctx, trainerID, draft.ID, week2ID, dayA, program.DayExerciseInput{
+	withExA, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, week2ID, dayA, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -378,18 +392,21 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddDayExercise dayA: %v", err)
 	}
-	var itemA uuid.UUID
+	var blockA uuid.UUID
 	for _, day := range withExA.Weeks[0].Days {
-		if day.ID == dayA && len(day.Exercises) > 0 {
-			itemA = day.Exercises[0].ID
+		if day.ID == dayA {
+			b, ok := firstDayBlock(day)
+			if ok {
+				blockA = b.ID
+			}
 			break
 		}
 	}
-	if itemA == uuid.Nil {
-		t.Fatal("expected exercise on dayA")
+	if blockA == uuid.Nil {
+		t.Fatal("expected block on dayA")
 	}
 
-	withExB, err := progStore.AddDayExercise(ctx, trainerID, draft.ID, week2ID, dayB, program.DayExerciseInput{
+	withExB, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, week2ID, dayB, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
 		Reps:       &reps,
@@ -397,53 +414,67 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddDayExercise dayB: %v", err)
 	}
-	var itemB uuid.UUID
+	var blockB uuid.UUID
 	for _, day := range withExB.Weeks[0].Days {
-		if day.ID == dayB && len(day.Exercises) > 0 {
-			itemB = day.Exercises[0].ID
-			break
-		}
-	}
-	if itemB == uuid.Nil {
-		t.Fatal("expected exercise on dayB")
-	}
-
-	_, err = progStore.ReorderWeekExercises(ctx, trainerID, draft.ID, week2ID, []program.WeekExerciseReorderDay{
-		{DayID: uuid.New(), ExerciseItemIDs: []uuid.UUID{itemA}},
-	})
-	if !errors.Is(err, program.ErrInvalidReorder) {
-		t.Fatalf("ReorderWeekExercises foreign day error = %v, want ErrInvalidReorder", err)
-	}
-
-	_, err = progStore.ReorderWeekExercises(ctx, trainerID, draft.ID, week2ID, []program.WeekExerciseReorderDay{
-		{DayID: dayB, ExerciseItemIDs: []uuid.UUID{uuid.New()}},
-	})
-	if !errors.Is(err, program.ErrInvalidReorder) {
-		t.Fatalf("ReorderWeekExercises unknown item error = %v, want ErrInvalidReorder", err)
-	}
-
-	moved, err := progStore.ReorderWeekExercises(ctx, trainerID, draft.ID, week2ID, []program.WeekExerciseReorderDay{
-		{DayID: dayB, ExerciseItemIDs: []uuid.UUID{itemA, itemB}},
-	})
-	if err != nil {
-		t.Fatalf("ReorderWeekExercises: %v", err)
-	}
-	var dayBExercises int
-	for _, day := range moved.Weeks[0].Days {
 		if day.ID == dayB {
-			dayBExercises = len(day.Exercises)
+			b, ok := firstDayBlock(day)
+			if ok {
+				blockB = b.ID
+			}
 			break
 		}
 	}
-	if dayBExercises != 2 {
-		t.Fatalf("dayB exercises = %d, want 2", dayBExercises)
+	if blockB == uuid.Nil {
+		t.Fatal("expected block on dayB")
 	}
 
-	_, err = progStore.ReorderWeekExercises(ctx, trainerID, draft.ID, week2ID, []program.WeekExerciseReorderDay{
-		{DayID: dayB, ExerciseItemIDs: []uuid.UUID{itemA}},
-	})
+	_, err = progStore.ReorderBlockExercises(ctx, trainerID, draft.ID, week2ID, uuid.New(), nil)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("ReorderBlockExercises unknown block error = %v, want ErrNoRows", err)
+	}
+
+	_, err = progStore.ReorderBlockExercises(ctx, trainerID, draft.ID, week2ID, blockB, []uuid.UUID{uuid.New()})
 	if !errors.Is(err, program.ErrInvalidReorder) {
-		t.Fatalf("ReorderWeekExercises partial list error = %v, want ErrInvalidReorder", err)
+		t.Fatalf("ReorderBlockExercises unknown item error = %v, want ErrInvalidReorder", err)
+	}
+
+	moved, err := progStore.MoveDayBlock(ctx, draft.ID, week2ID, blockA, dayB, 0)
+	if err != nil {
+		t.Fatalf("MoveDayBlock: %v", err)
+	}
+	dayBAfterMove, ok := findDay(moved.Weeks[0], dayB)
+	if !ok {
+		t.Fatal("dayB not found")
+	}
+	if dayBlockCount(dayBAfterMove) != 2 {
+		t.Fatalf("dayB blocks = %d, want 2", dayBlockCount(dayBAfterMove))
+	}
+
+	blockIDs := make([]uuid.UUID, 0, 2)
+	for _, b := range dayBAfterMove.Blocks {
+		blockIDs = append(blockIDs, b.ID)
+	}
+	merged, err := progStore.MergeDayBlocks(ctx, draft.ID, week2ID, dayB, blockIDs)
+	if err != nil {
+		t.Fatalf("MergeDayBlocks: %v", err)
+	}
+	dayBMerged, ok := findDay(merged.Weeks[0], dayB)
+	if !ok {
+		t.Fatal("dayB not found after merge")
+	}
+	var groupBlock program.DayBlock
+	for _, b := range dayBMerged.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			groupBlock = b
+			break
+		}
+	}
+	if len(groupBlock.Exercises) < 2 {
+		t.Fatalf("group exercises = %d, want at least 2", len(groupBlock.Exercises))
+	}
+	_, err = progStore.ReorderBlockExercises(ctx, trainerID, draft.ID, week2ID, groupBlock.ID, []uuid.UUID{groupBlock.Exercises[0].ID})
+	if !errors.Is(err, program.ErrInvalidReorder) {
+		t.Fatalf("ReorderBlockExercises partial list error = %v, want ErrInvalidReorder", err)
 	}
 
 	afterDeleteWeek, err := progStore.DeleteWeek(ctx, draft.ID, week2ID)

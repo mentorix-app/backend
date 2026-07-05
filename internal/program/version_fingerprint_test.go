@@ -23,16 +23,12 @@ func TestDetailFingerprint_stableForSameContent(t *testing.T) {
 		Weeks: []Week{{
 			WeekNumber: 1,
 			SortOrder:  1,
-			Days: []Day{{
-				DayNumber: 1,
-				SortOrder: 1,
-				Exercises: []DayExercise{{
-					ExerciseID: exerciseID,
-					SortOrder:  1,
-					Sets:       &sets,
-					Reps:       &reps,
-				}},
-			}},
+			Days: []Day{singleBlockDay(DayExercise{
+				ExerciseID: exerciseID,
+				SortOrder:  1,
+				Sets:       &sets,
+				Reps:       &reps,
+			})},
 		}},
 	}
 

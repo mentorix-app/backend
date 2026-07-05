@@ -5,11 +5,11 @@
 
 ## Назначение
 
-Шаблоны программ тренера: недели → дни → упражнения; publish создаёт замороженные `program_versions`.
+Шаблоны программ тренера: недели → дни → блоки → упражнения; publish создаёт замороженные `program_versions`.
 
 ## БД
 
-`programs`, `program_weeks`, `program_days`, `program_day_exercises`, `program_versions` (+ дерево), `program_assignments`.
+`programs`, `program_weeks`, `program_week_days`, `program_week_day_blocks`, `program_week_day_block_exercises`, `program_versions` (+ version-дерево), `program_assignments`.
 
 ## API
 
@@ -20,10 +20,11 @@
 - `POST /programs` → `draft`, пустое `name`, Week 1 / Day 1 автоматически.
 - Статусы: `draft` → `published` → `archived`; нет `published` → `draft`.
 - Publish из `archived` — только смена статуса, без новой версии.
-- Publish (draft): валидация name/category/difficulty, ≥1 неделя, в каждом дне ≥1 упражнение, sets/reps > 0.
+- Publish (draft): валидация name/category/difficulty, ≥1 неделя; в каждом непустом дне — блоки с упражнениями (`single`: 1 упражнение; группа: ≥1); sets/reps > 0 для single.
 - Published: in-place edit + `has_unpublished_changes`; publish-update — новая версия.
 - Trainer видит свои; admin — все.
 
 ## См. также
 
+- [program-blocks.md](program-blocks.md) — блоки в дне
 - [trainer-clients.md](trainer-clients.md) — назначение клиенту
