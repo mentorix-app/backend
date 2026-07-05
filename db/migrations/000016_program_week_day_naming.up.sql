@@ -13,8 +13,6 @@ ALTER TABLE mentorix.program_week_days
 ALTER TABLE mentorix.program_week_days
   RENAME CONSTRAINT program_days_week_day_number_uniq TO program_week_days_week_day_number_uniq;
 ALTER TABLE mentorix.program_week_days
-  RENAME CONSTRAINT program_days_week_id_fkey TO program_week_days_week_id_fkey;
-ALTER TABLE mentorix.program_week_days
   RENAME CONSTRAINT program_days_program_id_fkey TO program_week_days_program_id_fkey;
 
 -- Draft: blocks

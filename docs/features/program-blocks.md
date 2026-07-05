@@ -27,6 +27,8 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | `instruction` | text DEFAULT `''` | |
 | `sort_order` | int | порядок в дне |
 | `created_at` | timestamptz | |
+| `modified_at` | timestamptz | |
+| `modified_by` | uuid FK → `users` | nullable |
 
 `block_type`: `single`, `emom`, `amrap`, `for_time`, `intervals`, `chipper`, `ladder`, `death_by`, `superset`, `complex`.
 

@@ -63,6 +63,7 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 			TrainerID:    pgconv.ToPGUUID(trainerID),
 			ClientUserID: pgconv.ToPGUUID(clientUserID),
 			ModifiedAt:   now,
+			ModifiedBy:   pgconv.ToPGUUID(trainerUserID),
 		}); err != nil {
 			return nil, fmt.Errorf("cancel active assignments: %w", err)
 		}
@@ -101,6 +102,7 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 		TrainerID:    pgconv.ToPGUUID(trainerID),
 		ClientUserID: pgconv.ToPGUUID(clientUserID),
 		ModifiedAt:   now,
+		ModifiedBy:   pgconv.ToPGUUID(trainerUserID),
 	}); err != nil {
 		return nil, fmt.Errorf("cancel active assignments: %w", err)
 	}
@@ -112,7 +114,9 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 		ClientUserID:     pgconv.ToPGUUID(clientUserID),
 		Status:           string(AssignmentStatusActive),
 		AssignedAt:       now,
+		CreatedBy:        pgconv.ToPGUUID(trainerUserID),
 		ModifiedAt:       now,
+		ModifiedBy:       pgconv.ToPGUUID(trainerUserID),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("insert program assignment: %w", err)
@@ -201,7 +205,7 @@ func (s *Store) ListProgramAssignments(ctx context.Context, programID uuid.UUID)
 	return AssignmentListResult{Items: items, LatestProgramVersionID: latestID}, nil
 }
 
-func (s *Store) SyncProgramAssignments(ctx context.Context, programID uuid.UUID, req AssignmentSyncRequest) (AssignmentSyncResult, error) {
+func (s *Store) SyncProgramAssignments(ctx context.Context, userID, programID uuid.UUID, req AssignmentSyncRequest) (AssignmentSyncResult, error) {
 	latest, err := s.q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(programID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -245,6 +249,7 @@ func (s *Store) SyncProgramAssignments(ctx context.Context, programID uuid.UUID,
 			ID:               row.ID,
 			ProgramVersionID: latest.ID,
 			ModifiedAt:       now,
+			ModifiedBy:       pgconv.ToPGUUID(userID),
 		})
 		if err != nil {
 			return fmt.Errorf("update assignment version: %w", err)

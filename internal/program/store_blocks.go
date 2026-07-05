@@ -68,7 +68,7 @@ func (s *Store) AddBlockExercise(ctx context.Context, userID, programID, weekID,
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) PatchDayBlock(ctx context.Context, programID, weekID, blockID uuid.UUID, in BlockPatchInput) (Detail, error) {
+func (s *Store) PatchDayBlock(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, in BlockPatchInput) (Detail, error) {
 	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
 	if err != nil {
 		return Detail{}, err
@@ -89,11 +89,14 @@ func (s *Store) PatchDayBlock(ctx context.Context, programID, weekID, blockID uu
 		v := string(*in.BlockType)
 		blockType = &v
 	}
+	modifiedAt, modifiedBy := dayBlockAudit(userID)
 	rows, err := s.q.UpdateDayBlock(ctx, sqlc.UpdateDayBlockParams{
-		ID:           pgconv.ToPGUUID(blockID),
+		ID:               pgconv.ToPGUUID(blockID),
 		ProgramWeekDayID: block.ProgramWeekDayID,
-		BlockType:    blockType,
-		Instruction:  in.Instruction,
+		BlockType:        blockType,
+		Instruction:      in.Instruction,
+		ModifiedAt:       modifiedAt,
+		ModifiedBy:       modifiedBy,
 	})
 	if err != nil {
 		return Detail{}, fmt.Errorf("update day block: %w", err)
@@ -104,7 +107,7 @@ func (s *Store) PatchDayBlock(ctx context.Context, programID, weekID, blockID uu
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) MergeDayBlocks(ctx context.Context, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error) {
+func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error) {
 	if len(blockIDs) < 2 {
 		return Detail{}, fmt.Errorf("%w: at least two blocks required", ErrValidation)
 	}
@@ -132,11 +135,14 @@ func (s *Store) MergeDayBlocks(ctx context.Context, programID, weekID, dayID uui
 	mergedInstruction := mergeBlockInstructions(blocks)
 
 	blockType := string(BlockTypeComplex)
+	modifiedAt, modifiedBy := dayBlockAudit(userID)
 	if _, err := qtx.UpdateDayBlock(ctx, sqlc.UpdateDayBlockParams{
-		ID:           pgconv.ToPGUUID(primary.ID),
+		ID:               pgconv.ToPGUUID(primary.ID),
 		ProgramWeekDayID: pgconv.ToPGUUID(dayID),
-		BlockType:    &blockType,
-		Instruction:  &mergedInstruction,
+		BlockType:        &blockType,
+		Instruction:      &mergedInstruction,
+		ModifiedAt:       modifiedAt,
+		ModifiedBy:       modifiedBy,
 	}); err != nil {
 		return Detail{}, fmt.Errorf("update primary block: %w", err)
 	}
@@ -183,7 +189,7 @@ func (s *Store) MergeDayBlocks(ctx context.Context, programID, weekID, dayID uui
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) UngroupDayBlock(ctx context.Context, programID, weekID, blockID uuid.UUID) (Detail, error) {
+func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, blockID uuid.UUID) (Detail, error) {
 	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
 	if err != nil {
 		return Detail{}, err
@@ -238,12 +244,7 @@ func (s *Store) UngroupDayBlock(ctx context.Context, programID, weekID, blockID 
 
 	newBlockIDs := make([]uuid.UUID, 0, len(exercises))
 	for _, ex := range exercises {
-		newBlockID, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
-			ProgramWeekDayID: dayPG,
-			BlockType:    string(BlockTypeSingle),
-			Instruction:  "",
-			SortOrder:    1,
-		})
+		newBlockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
 		if err != nil {
 			return Detail{}, fmt.Errorf("insert single block: %w", err)
 		}
@@ -260,7 +261,7 @@ func (s *Store) UngroupDayBlock(ctx context.Context, programID, weekID, blockID 
 	}
 
 	ids = append(ids[:groupIdx], append(newBlockIDs, ids[groupIdx+1:]...)...)
-	if err := applyDayBlockOrder(ctx, qtx, dayID, ids); err != nil {
+	if err := applyDayBlockOrder(ctx, qtx, dayID, ids, userID); err != nil {
 		return Detail{}, err
 	}
 
@@ -277,7 +278,7 @@ func (s *Store) UngroupDayBlock(ctx context.Context, programID, weekID, blockID 
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) MoveDayBlock(ctx context.Context, programID, weekID, blockID, targetDayID uuid.UUID, insertSort int) (Detail, error) {
+func (s *Store) MoveDayBlock(ctx context.Context, userID, programID, weekID, blockID, targetDayID uuid.UUID, insertSort int) (Detail, error) {
 	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
 	if err != nil {
 		return Detail{}, err
@@ -315,11 +316,11 @@ func (s *Store) MoveDayBlock(ctx context.Context, programID, weekID, blockID, ta
 			return Detail{}, err
 		}
 		sourceIDs = removeUUID(sourceIDs, blockID)
-		if err := applyDayBlockOrder(ctx, qtx, sourceDayID, sourceIDs); err != nil {
+		if err := applyDayBlockOrder(ctx, qtx, sourceDayID, sourceIDs, userID); err != nil {
 			return Detail{}, err
 		}
 	}
-	if err := insertBlockIntoDayOrder(ctx, qtx, targetDayID, blockID, insertSort); err != nil {
+	if err := insertBlockIntoDayOrder(ctx, qtx, targetDayID, blockID, insertSort, userID); err != nil {
 		return Detail{}, err
 	}
 
@@ -366,12 +367,7 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 
 	qtx := s.q.WithTx(tx)
 	dayPG := pgconv.ToPGUUID(dayID)
-	newBlockID, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
-		ProgramWeekDayID: dayPG,
-		BlockType:    string(BlockTypeSingle),
-		Instruction:  "",
-		SortOrder:    1,
-	})
+	newBlockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("insert single block: %w", err)
 	}
@@ -387,7 +383,7 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 		return Detail{}, fmt.Errorf("extract exercise: %w", err)
 	}
 
-	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, pgconv.FromPGUUID(newBlockID), insertSort); err != nil {
+	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, pgconv.FromPGUUID(newBlockID), insertSort, userID); err != nil {
 		return Detail{}, err
 	}
 	if err := normalizeBlockExerciseSort(ctx, qtx, pgconv.FromPGUUID(meta.ProgramWeekDayBlockID)); err != nil {

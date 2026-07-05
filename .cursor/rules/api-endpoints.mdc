@@ -38,6 +38,7 @@ Shared auth DTOs: [internal/auth/apitypes.go](../../internal/auth/apitypes.go).
 | Partial update | `PATCH` |
 | Delete | `DELETE` |
 | Reorder (full id list) | `PUT` … `/reorder` |
+| Bulk delete (body id list) | `DELETE` on collection, e.g. `DELETE /exercises` |
 
 ## Route shape
 

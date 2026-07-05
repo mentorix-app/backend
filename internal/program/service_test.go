@@ -136,19 +136,19 @@ func (f *fakeProgramStore) AddBlockExercise(context.Context, uuid.UUID, uuid.UUI
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) PatchDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, BlockPatchInput) (Detail, error) {
+func (f *fakeProgramStore) PatchDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, BlockPatchInput) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) MergeDayBlocks(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) MergeDayBlocks(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) UngroupDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) UngroupDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) MoveDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, int) (Detail, error) {
+func (f *fakeProgramStore) MoveDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, int) (Detail, error) {
 	return f.detail, f.err
 }
 
@@ -164,7 +164,7 @@ func (f *fakeProgramStore) DeleteDayBlock(context.Context, uuid.UUID, uuid.UUID,
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) ReorderDayBlocks(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) ReorderDayBlocks(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
@@ -188,7 +188,7 @@ func (f *fakeProgramStore) ListProgramAssignments(context.Context, uuid.UUID) (A
 	return AssignmentListResult{}, f.err
 }
 
-func (f *fakeProgramStore) SyncProgramAssignments(context.Context, uuid.UUID, AssignmentSyncRequest) (AssignmentSyncResult, error) {
+func (f *fakeProgramStore) SyncProgramAssignments(context.Context, uuid.UUID, uuid.UUID, AssignmentSyncRequest) (AssignmentSyncResult, error) {
 	return AssignmentSyncResult{}, f.err
 }
 

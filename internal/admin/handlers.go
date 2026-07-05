@@ -3,7 +3,6 @@ package admin
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -32,14 +31,6 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.POST("/users/:user_id/roles/admin", h.GrantAdmin)
 }
 
-type userResponse struct {
-	UserID    string    `json:"user_id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	Roles     []string  `json:"roles"`
-}
-
 func (h *Handlers) GrantAdmin(c echo.Context) error {
 	targetUserID, err := uuid.Parse(c.Param("user_id"))
 	if err != nil {
@@ -52,7 +43,7 @@ func (h *Handlers) GrantAdmin(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "grant admin failed")
 	}
-	return c.JSON(http.StatusOK, userResponse{
+	return c.JSON(http.StatusOK, auth.MeResponse{
 		UserID:    targetUserID.String(),
 		Email:     profile.Email,
 		Name:      profile.Name,

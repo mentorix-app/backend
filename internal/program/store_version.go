@@ -208,6 +208,7 @@ func (s *Store) ListProgramVersions(ctx context.Context, programID uuid.UUID) (V
 			ID:              pgconv.FromPGUUID(row.ID),
 			VersionNumber:   int(row.VersionNumber),
 			PublishedAt:     row.PublishedAt.UTC(),
+			CreatedAt:       row.CreatedAt.UTC(),
 			AssignmentCount: int(row.AssignmentCount),
 			CanDelete:       row.AssignmentCount == 0 && total > 1,
 		})

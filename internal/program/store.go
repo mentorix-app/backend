@@ -498,12 +498,7 @@ func (s *Store) CreateDayBlock(ctx context.Context, userID, programID, weekID, d
 
 	qtx := s.q.WithTx(tx)
 	dayPG := pgconv.ToPGUUID(dayID)
-	blockID, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
-		ProgramWeekDayID: dayPG,
-		BlockType:    string(blockType),
-		Instruction:  "",
-		SortOrder:    1,
-	})
+	blockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(blockType), "", 1, userID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("insert day block: %w", err)
 	}
@@ -515,7 +510,7 @@ func (s *Store) CreateDayBlock(ctx context.Context, userID, programID, weekID, d
 		}
 	}
 
-	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, blockUUID, in.SortOrder); err != nil {
+	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, blockUUID, in.SortOrder, userID); err != nil {
 		return Detail{}, err
 	}
 
@@ -727,7 +722,7 @@ func (s *Store) ReorderDays(ctx context.Context, programID, weekID uuid.UUID, da
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) ReorderDayBlocks(ctx context.Context, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error) {
+func (s *Store) ReorderDayBlocks(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error) {
 	ok, err := s.DayBelongsToWeek(ctx, programID, weekID, dayID)
 	if err != nil {
 		return Detail{}, err
@@ -748,12 +743,15 @@ func (s *Store) ReorderDayBlocks(ctx context.Context, programID, weekID, dayID u
 
 	qtx := s.q.WithTx(tx)
 	dayPG := pgconv.ToPGUUID(dayID)
+	modifiedAt, modifiedBy := dayBlockAudit(userID)
 	for i, blockID := range blockIDs {
 		pos := int32(i + 1)
 		if err := qtx.UpdateDayBlockOrder(ctx, sqlc.UpdateDayBlockOrderParams{
-			ID:           pgconv.ToPGUUID(blockID),
+			ID:               pgconv.ToPGUUID(blockID),
 			ProgramWeekDayID: dayPG,
-			SortOrder:    pos,
+			SortOrder:        pos,
+			ModifiedAt:       modifiedAt,
+			ModifiedBy:       modifiedBy,
 		}); err != nil {
 			return Detail{}, fmt.Errorf("update block order: %w", err)
 		}

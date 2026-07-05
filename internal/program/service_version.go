@@ -20,7 +20,7 @@ func (s *Service) SyncAssignments(ctx context.Context, userID, programID uuid.UU
 	if err := validateAssignmentSyncRequest(req); err != nil {
 		return AssignmentSyncResult{}, err
 	}
-	return s.store.SyncProgramAssignments(ctx, programID, req)
+	return s.store.SyncProgramAssignments(ctx, userID, programID, req)
 }
 
 func validateAssignmentSyncRequest(req AssignmentSyncRequest) error {

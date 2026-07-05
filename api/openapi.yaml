@@ -2315,6 +2315,7 @@ components:
         - id
         - version_number
         - published_at
+        - created_at
         - assignment_count
         - can_delete
       properties:
@@ -2325,6 +2326,9 @@ components:
           type: integer
           minimum: 1
         published_at:
+          type: string
+          format: date-time
+        created_at:
           type: string
           format: date-time
         assignment_count:

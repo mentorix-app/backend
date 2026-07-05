@@ -284,9 +284,18 @@ FROM mentorix.program_week_day_blocks
 WHERE id = $1
 `
 
-func (q *Queries) GetDayBlockByID(ctx context.Context, id pgtype.UUID) (MentorixProgramWeekDayBlock, error) {
+type GetDayBlockByIDRow struct {
+	ID               pgtype.UUID `json:"id"`
+	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
+	BlockType        string      `json:"block_type"`
+	Instruction      string      `json:"instruction"`
+	SortOrder        int32       `json:"sort_order"`
+	CreatedAt        time.Time   `json:"created_at"`
+}
+
+func (q *Queries) GetDayBlockByID(ctx context.Context, id pgtype.UUID) (GetDayBlockByIDRow, error) {
 	row := q.db.QueryRow(ctx, getDayBlockByID, id)
-	var i MentorixProgramWeekDayBlock
+	var i GetDayBlockByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProgramWeekDayID,
@@ -383,8 +392,8 @@ func (q *Queries) InsertBlockExercise(ctx context.Context, arg InsertBlockExerci
 
 const insertDayBlock = `-- name: InsertDayBlock :one
 INSERT INTO mentorix.program_week_day_blocks (
-  program_week_day_id, block_type, instruction, sort_order
-) VALUES ($1, $2, $3, $4)
+  program_week_day_id, block_type, instruction, sort_order, modified_at, modified_by
+) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id
 `
 
@@ -393,6 +402,8 @@ type InsertDayBlockParams struct {
 	BlockType        string      `json:"block_type"`
 	Instruction      string      `json:"instruction"`
 	SortOrder        int32       `json:"sort_order"`
+	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
 }
 
 func (q *Queries) InsertDayBlock(ctx context.Context, arg InsertDayBlockParams) (pgtype.UUID, error) {
@@ -401,6 +412,8 @@ func (q *Queries) InsertDayBlock(ctx context.Context, arg InsertDayBlockParams) 
 		arg.BlockType,
 		arg.Instruction,
 		arg.SortOrder,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -567,15 +580,24 @@ WHERE pd.week_id = $1
 ORDER BY pd.sort_order ASC, pd.day_number ASC, pdb.sort_order ASC, pdb.created_at ASC
 `
 
-func (q *Queries) ListBlocksByWeek(ctx context.Context, weekID pgtype.UUID) ([]MentorixProgramWeekDayBlock, error) {
+type ListBlocksByWeekRow struct {
+	ID               pgtype.UUID `json:"id"`
+	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
+	BlockType        string      `json:"block_type"`
+	Instruction      string      `json:"instruction"`
+	SortOrder        int32       `json:"sort_order"`
+	CreatedAt        time.Time   `json:"created_at"`
+}
+
+func (q *Queries) ListBlocksByWeek(ctx context.Context, weekID pgtype.UUID) ([]ListBlocksByWeekRow, error) {
 	rows, err := q.db.Query(ctx, listBlocksByWeek, weekID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []MentorixProgramWeekDayBlock{}
+	items := []ListBlocksByWeekRow{}
 	for rows.Next() {
-		var i MentorixProgramWeekDayBlock
+		var i ListBlocksByWeekRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProgramWeekDayID,
@@ -1125,13 +1147,17 @@ func (q *Queries) UpdateBlockExercisePlacement(ctx context.Context, arg UpdateBl
 const updateDayBlock = `-- name: UpdateDayBlock :execrows
 UPDATE mentorix.program_week_day_blocks SET
   block_type = COALESCE($1, block_type),
-  instruction = COALESCE($2, instruction)
-WHERE id = $3 AND program_week_day_id = $4
+  instruction = COALESCE($2, instruction),
+  modified_at = $3,
+  modified_by = $4
+WHERE id = $5 AND program_week_day_id = $6
 `
 
 type UpdateDayBlockParams struct {
 	BlockType        *string     `json:"block_type"`
 	Instruction      *string     `json:"instruction"`
+	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
 	ID               pgtype.UUID `json:"id"`
 	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
 }
@@ -1140,6 +1166,8 @@ func (q *Queries) UpdateDayBlock(ctx context.Context, arg UpdateDayBlockParams) 
 	result, err := q.db.Exec(ctx, updateDayBlock,
 		arg.BlockType,
 		arg.Instruction,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
 		arg.ID,
 		arg.ProgramWeekDayID,
 	)
@@ -1151,7 +1179,9 @@ func (q *Queries) UpdateDayBlock(ctx context.Context, arg UpdateDayBlockParams) 
 
 const updateDayBlockOrder = `-- name: UpdateDayBlockOrder :exec
 UPDATE mentorix.program_week_day_blocks SET
-  sort_order = $3
+  sort_order = $3,
+  modified_at = $4,
+  modified_by = $5
 WHERE id = $1 AND program_week_day_id = $2
 `
 
@@ -1159,17 +1189,27 @@ type UpdateDayBlockOrderParams struct {
 	ID               pgtype.UUID `json:"id"`
 	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
 	SortOrder        int32       `json:"sort_order"`
+	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
 }
 
 func (q *Queries) UpdateDayBlockOrder(ctx context.Context, arg UpdateDayBlockOrderParams) error {
-	_, err := q.db.Exec(ctx, updateDayBlockOrder, arg.ID, arg.ProgramWeekDayID, arg.SortOrder)
+	_, err := q.db.Exec(ctx, updateDayBlockOrder,
+		arg.ID,
+		arg.ProgramWeekDayID,
+		arg.SortOrder,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
+	)
 	return err
 }
 
 const updateDayBlockPlacement = `-- name: UpdateDayBlockPlacement :exec
 UPDATE mentorix.program_week_day_blocks SET
   program_week_day_id = $2,
-  sort_order = $3
+  sort_order = $3,
+  modified_at = $4,
+  modified_by = $5
 WHERE id = $1
 `
 
@@ -1177,10 +1217,18 @@ type UpdateDayBlockPlacementParams struct {
 	ID               pgtype.UUID `json:"id"`
 	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
 	SortOrder        int32       `json:"sort_order"`
+	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
 }
 
 func (q *Queries) UpdateDayBlockPlacement(ctx context.Context, arg UpdateDayBlockPlacementParams) error {
-	_, err := q.db.Exec(ctx, updateDayBlockPlacement, arg.ID, arg.ProgramWeekDayID, arg.SortOrder)
+	_, err := q.db.Exec(ctx, updateDayBlockPlacement,
+		arg.ID,
+		arg.ProgramWeekDayID,
+		arg.SortOrder,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
+	)
 	return err
 }
 

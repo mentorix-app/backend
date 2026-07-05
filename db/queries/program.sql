@@ -201,14 +201,16 @@ WHERE program_week_day_id = $1;
 
 -- name: InsertDayBlock :one
 INSERT INTO mentorix.program_week_day_blocks (
-  program_week_day_id, block_type, instruction, sort_order
-) VALUES ($1, $2, $3, $4)
+  program_week_day_id, block_type, instruction, sort_order, modified_at, modified_by
+) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id;
 
 -- name: UpdateDayBlock :execrows
 UPDATE mentorix.program_week_day_blocks SET
   block_type = COALESCE(sqlc.narg('block_type'), block_type),
-  instruction = COALESCE(sqlc.narg('instruction'), instruction)
+  instruction = COALESCE(sqlc.narg('instruction'), instruction),
+  modified_at = sqlc.arg('modified_at'),
+  modified_by = sqlc.arg('modified_by')
 WHERE id = sqlc.arg('id') AND program_week_day_id = sqlc.arg('program_week_day_id');
 
 -- name: DeleteDayBlock :execrows
@@ -217,13 +219,17 @@ WHERE id = $1 AND program_week_day_id = $2;
 
 -- name: UpdateDayBlockOrder :exec
 UPDATE mentorix.program_week_day_blocks SET
-  sort_order = $3
+  sort_order = $3,
+  modified_at = $4,
+  modified_by = $5
 WHERE id = $1 AND program_week_day_id = $2;
 
 -- name: UpdateDayBlockPlacement :exec
 UPDATE mentorix.program_week_day_blocks SET
   program_week_day_id = $2,
-  sort_order = $3
+  sort_order = $3,
+  modified_at = $4,
+  modified_by = $5
 WHERE id = $1;
 
 -- name: ListDayBlockIDsForDay :many

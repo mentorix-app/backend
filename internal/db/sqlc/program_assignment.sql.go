@@ -15,7 +15,8 @@ import (
 const cancelActiveProgramAssignmentsForTrainerClient = `-- name: CancelActiveProgramAssignmentsForTrainerClient :execrows
 UPDATE mentorix.program_assignments
 SET status = 'cancelled',
-    modified_at = $3
+    modified_at = $3,
+    modified_by = $4
 WHERE trainer_id = $1
   AND client_user_id = $2
   AND status = 'active'
@@ -25,10 +26,16 @@ type CancelActiveProgramAssignmentsForTrainerClientParams struct {
 	TrainerID    pgtype.UUID `json:"trainer_id"`
 	ClientUserID pgtype.UUID `json:"client_user_id"`
 	ModifiedAt   time.Time   `json:"modified_at"`
+	ModifiedBy   pgtype.UUID `json:"modified_by"`
 }
 
 func (q *Queries) CancelActiveProgramAssignmentsForTrainerClient(ctx context.Context, arg CancelActiveProgramAssignmentsForTrainerClientParams) (int64, error) {
-	result, err := q.db.Exec(ctx, cancelActiveProgramAssignmentsForTrainerClient, arg.TrainerID, arg.ClientUserID, arg.ModifiedAt)
+	result, err := q.db.Exec(ctx, cancelActiveProgramAssignmentsForTrainerClient,
+		arg.TrainerID,
+		arg.ClientUserID,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -64,7 +71,7 @@ func (q *Queries) CountActiveProgramAssignmentsByVersionID(ctx context.Context, 
 }
 
 const getActiveProgramAssignmentByTrainerClient = `-- name: GetActiveProgramAssignmentByTrainerClient :one
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
 FROM mentorix.program_assignments
 WHERE trainer_id = $1
   AND client_user_id = $2
@@ -89,12 +96,14 @@ func (q *Queries) GetActiveProgramAssignmentByTrainerClient(ctx context.Context,
 		&i.AssignedAt,
 		&i.CreatedAt,
 		&i.ModifiedAt,
+		&i.CreatedBy,
+		&i.ModifiedBy,
 	)
 	return i, err
 }
 
 const getProgramAssignmentByID = `-- name: GetProgramAssignmentByID :one
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
 FROM mentorix.program_assignments
 WHERE id = $1
 `
@@ -112,6 +121,8 @@ func (q *Queries) GetProgramAssignmentByID(ctx context.Context, id pgtype.UUID) 
 		&i.AssignedAt,
 		&i.CreatedAt,
 		&i.ModifiedAt,
+		&i.CreatedBy,
+		&i.ModifiedBy,
 	)
 	return i, err
 }
@@ -137,9 +148,11 @@ INSERT INTO mentorix.program_assignments (
   client_user_id,
   status,
   assigned_at,
-  modified_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at
+  created_by,
+  modified_at,
+  modified_by
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
 `
 
 type InsertProgramAssignmentParams struct {
@@ -149,7 +162,9 @@ type InsertProgramAssignmentParams struct {
 	ClientUserID     pgtype.UUID `json:"client_user_id"`
 	Status           string      `json:"status"`
 	AssignedAt       time.Time   `json:"assigned_at"`
+	CreatedBy        pgtype.UUID `json:"created_by"`
 	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
 }
 
 func (q *Queries) InsertProgramAssignment(ctx context.Context, arg InsertProgramAssignmentParams) (MentorixProgramAssignment, error) {
@@ -160,7 +175,9 @@ func (q *Queries) InsertProgramAssignment(ctx context.Context, arg InsertProgram
 		arg.ClientUserID,
 		arg.Status,
 		arg.AssignedAt,
+		arg.CreatedBy,
 		arg.ModifiedAt,
+		arg.ModifiedBy,
 	)
 	var i MentorixProgramAssignment
 	err := row.Scan(
@@ -173,12 +190,14 @@ func (q *Queries) InsertProgramAssignment(ctx context.Context, arg InsertProgram
 		&i.AssignedAt,
 		&i.CreatedAt,
 		&i.ModifiedAt,
+		&i.CreatedBy,
+		&i.ModifiedBy,
 	)
 	return i, err
 }
 
 const listActiveProgramAssignmentsByProgramID = `-- name: ListActiveProgramAssignmentsByProgramID :many
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
 FROM mentorix.program_assignments
 WHERE program_id = $1
   AND status = 'active'
@@ -204,6 +223,8 @@ func (q *Queries) ListActiveProgramAssignmentsByProgramID(ctx context.Context, p
 			&i.AssignedAt,
 			&i.CreatedAt,
 			&i.ModifiedAt,
+			&i.CreatedBy,
+			&i.ModifiedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -216,7 +237,7 @@ func (q *Queries) ListActiveProgramAssignmentsByProgramID(ctx context.Context, p
 }
 
 const listProgramAssignmentsByProgramID = `-- name: ListProgramAssignmentsByProgramID :many
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
 FROM mentorix.program_assignments
 WHERE program_id = $1
 ORDER BY assigned_at DESC
@@ -241,6 +262,8 @@ func (q *Queries) ListProgramAssignmentsByProgramID(ctx context.Context, program
 			&i.AssignedAt,
 			&i.CreatedAt,
 			&i.ModifiedAt,
+			&i.CreatedBy,
+			&i.ModifiedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -274,7 +297,8 @@ func (q *Queries) TrainerClientLinkActive(ctx context.Context, arg TrainerClient
 const updateProgramAssignmentVersion = `-- name: UpdateProgramAssignmentVersion :execrows
 UPDATE mentorix.program_assignments
 SET program_version_id = $2,
-    modified_at = $3
+    modified_at = $3,
+    modified_by = $4
 WHERE id = $1
   AND status = 'active'
 `
@@ -283,10 +307,16 @@ type UpdateProgramAssignmentVersionParams struct {
 	ID               pgtype.UUID `json:"id"`
 	ProgramVersionID pgtype.UUID `json:"program_version_id"`
 	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
 }
 
 func (q *Queries) UpdateProgramAssignmentVersion(ctx context.Context, arg UpdateProgramAssignmentVersionParams) (int64, error) {
-	result, err := q.db.Exec(ctx, updateProgramAssignmentVersion, arg.ID, arg.ProgramVersionID, arg.ModifiedAt)
+	result, err := q.db.Exec(ctx, updateProgramAssignmentVersion,
+		arg.ID,
+		arg.ProgramVersionID,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
+	)
 	if err != nil {
 		return 0, err
 	}

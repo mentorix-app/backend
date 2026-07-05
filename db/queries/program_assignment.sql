@@ -6,8 +6,10 @@ INSERT INTO mentorix.program_assignments (
   client_user_id,
   status,
   assigned_at,
-  modified_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
+  created_by,
+  modified_at,
+  modified_by
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING *;
 
 -- name: GetProgramAssignmentByID :one
@@ -25,7 +27,8 @@ WHERE trainer_id = $1
 -- name: CancelActiveProgramAssignmentsForTrainerClient :execrows
 UPDATE mentorix.program_assignments
 SET status = 'cancelled',
-    modified_at = $3
+    modified_at = $3,
+    modified_by = $4
 WHERE trainer_id = $1
   AND client_user_id = $2
   AND status = 'active';
@@ -52,7 +55,8 @@ WHERE program_id = $1
 -- name: UpdateProgramAssignmentVersion :execrows
 UPDATE mentorix.program_assignments
 SET program_version_id = $2,
-    modified_at = $3
+    modified_at = $3,
+    modified_by = $4
 WHERE id = $1
   AND status = 'active';
 

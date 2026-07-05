@@ -13,6 +13,26 @@ import (
 	"mentorix-backend/internal/db/sqlc"
 )
 
+func dayBlockAudit(userID uuid.UUID) (time.Time, pgtype.UUID) {
+	now := time.Now().UTC()
+	if userID == uuid.Nil {
+		return now, pgtype.UUID{}
+	}
+	return now, pgconv.ToPGUUID(userID)
+}
+
+func insertDayBlockParams(dayID pgtype.UUID, blockType, instruction string, sortOrder int32, userID uuid.UUID) sqlc.InsertDayBlockParams {
+	modifiedAt, modifiedBy := dayBlockAudit(userID)
+	return sqlc.InsertDayBlockParams{
+		ProgramWeekDayID: dayID,
+		BlockType:        blockType,
+		Instruction:      instruction,
+		SortOrder:        sortOrder,
+		ModifiedAt:       modifiedAt,
+		ModifiedBy:       modifiedBy,
+	}
+}
+
 func clampInsertPosition(position, max int) int {
 	if position <= 0 || position > max {
 		return max
@@ -54,14 +74,17 @@ func listDayBlockUUIDs(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID) ([
 	return out, nil
 }
 
-func applyDayBlockOrder(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID, blockIDs []uuid.UUID) error {
+func applyDayBlockOrder(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID, blockIDs []uuid.UUID, userID uuid.UUID) error {
 	dayPG := pgconv.ToPGUUID(dayID)
+	modifiedAt, modifiedBy := dayBlockAudit(userID)
 	for i, blockID := range blockIDs {
 		pos := int32(i + 1)
 		if err := q.UpdateDayBlockPlacement(ctx, sqlc.UpdateDayBlockPlacementParams{
-			ID:           pgconv.ToPGUUID(blockID),
+			ID:               pgconv.ToPGUUID(blockID),
 			ProgramWeekDayID: dayPG,
-			SortOrder:    pos,
+			SortOrder:        pos,
+			ModifiedAt:       modifiedAt,
+			ModifiedBy:       modifiedBy,
 		}); err != nil {
 			return fmt.Errorf("update block placement: %w", err)
 		}
@@ -69,7 +92,7 @@ func applyDayBlockOrder(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID, b
 	return nil
 }
 
-func insertBlockIntoDayOrder(ctx context.Context, q *sqlc.Queries, dayID, blockID uuid.UUID, position int) error {
+func insertBlockIntoDayOrder(ctx context.Context, q *sqlc.Queries, dayID, blockID uuid.UUID, position int, userID uuid.UUID) error {
 	ids, err := listDayBlockUUIDs(ctx, q, dayID)
 	if err != nil {
 		return err
@@ -77,7 +100,7 @@ func insertBlockIntoDayOrder(ctx context.Context, q *sqlc.Queries, dayID, blockI
 	ids = removeUUID(ids, blockID)
 	position = clampInsertPosition(position, len(ids)+1)
 	ids = insertUUIDAt(ids, blockID, position)
-	return applyDayBlockOrder(ctx, q, dayID, ids)
+	return applyDayBlockOrder(ctx, q, dayID, ids, userID)
 }
 
 func normalizeDayBlockSort(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID) error {
@@ -85,7 +108,7 @@ func normalizeDayBlockSort(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID
 	if err != nil {
 		return err
 	}
-	return applyDayBlockOrder(ctx, q, dayID, ids)
+	return applyDayBlockOrder(ctx, q, dayID, ids, uuid.Nil)
 }
 
 func normalizeBlockExerciseSort(ctx context.Context, q *sqlc.Queries, blockID uuid.UUID) error {
@@ -100,7 +123,7 @@ func normalizeBlockExerciseSort(ctx context.Context, q *sqlc.Queries, blockID uu
 			ID:                    row.ID,
 			ProgramWeekDayBlockID: blockPG,
 			SortOrder:             int32(i + 1),
-			ModifiedAt:              now,
+			ModifiedAt:            now,
 			ModifiedBy:            pgtype.UUID{},
 		}); err != nil {
 			return fmt.Errorf("normalize exercise sort: %w", err)

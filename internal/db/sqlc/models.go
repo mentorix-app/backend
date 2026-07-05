@@ -74,6 +74,8 @@ type MentorixProgramAssignment struct {
 	AssignedAt       time.Time   `json:"assigned_at"`
 	CreatedAt        time.Time   `json:"created_at"`
 	ModifiedAt       time.Time   `json:"modified_at"`
+	CreatedBy        pgtype.UUID `json:"created_by"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
 }
 
 type MentorixProgramVersion struct {
@@ -158,6 +160,8 @@ type MentorixProgramWeekDayBlock struct {
 	Instruction      string      `json:"instruction"`
 	SortOrder        int32       `json:"sort_order"`
 	CreatedAt        time.Time   `json:"created_at"`
+	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
 }
 
 type MentorixProgramWeekDayBlockExercise struct {

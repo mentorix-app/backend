@@ -19,4 +19,4 @@
 | Render dev | [environments.md](environments.md) |
 | Dev seed | [environments.md](environments.md) |
 
-_Миграции: версия 16 (`./scripts/migrate-check.sh`)._
+_Миграции: версия 17 (`./scripts/migrate-check.sh`)._

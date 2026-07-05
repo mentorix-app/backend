@@ -51,6 +51,7 @@ type VersionSummary struct {
 	ID              uuid.UUID `json:"id"`
 	VersionNumber   int       `json:"version_number"`
 	PublishedAt     time.Time `json:"published_at"`
+	CreatedAt       time.Time `json:"created_at"`
 	AssignmentCount int       `json:"assignment_count"`
 	CanDelete       bool      `json:"can_delete"`
 }

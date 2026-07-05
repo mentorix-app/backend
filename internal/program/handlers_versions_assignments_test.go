@@ -51,7 +51,7 @@ func (s *assignmentVersionStore) ListProgramAssignments(context.Context, uuid.UU
 	return s.assignments, s.assignmentsErr
 }
 
-func (s *assignmentVersionStore) SyncProgramAssignments(context.Context, uuid.UUID, AssignmentSyncRequest) (AssignmentSyncResult, error) {
+func (s *assignmentVersionStore) SyncProgramAssignments(context.Context, uuid.UUID, uuid.UUID, AssignmentSyncRequest) (AssignmentSyncResult, error) {
 	return s.syncResult, s.syncErr
 }
 
