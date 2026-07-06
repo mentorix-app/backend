@@ -921,6 +921,12 @@ func TestProgramStore_blockValidationErrors(t *testing.T) {
 		t.Fatalf("MoveExerciseToBlock into single error = %v, want ErrValidation", err)
 	}
 
+	instr := "test"
+	_, err = progStore.PatchDayBlock(ctx, trainerID, draft.ID, weekID, block.ID, program.BlockPatchInput{Instruction: &instr})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("PatchDayBlock single error = %v, want ErrValidation", err)
+	}
+
 	_, err = progStore.AddBlockExercise(ctx, trainerID, draft.ID, weekID, block.ID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,

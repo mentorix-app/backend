@@ -3,6 +3,7 @@ package program
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -521,6 +522,32 @@ func TestHandlers_ReorderWeeks_mapsInvalidReorder(t *testing.T) {
 	})
 	err := h.ReorderWeeks(c)
 	assertHTTPError(t, err, http.StatusBadRequest)
+}
+
+func TestHandlers_ReorderWeeks_countMismatchMessage(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	store := &reorderWeeksErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+		reorderErr: fmt.Errorf("%w: week count mismatch", ErrInvalidReorder),
+	}
+	h := programHandler(store)
+	body := `{"week_ids":["` + uuid.New().String() + `"]}`
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/reorder", body, userID, map[string]string{
+		"id": programID.String(),
+	})
+	err := h.ReorderWeeks(c)
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("error = %v, want 400", err)
+	}
+	msg, ok := he.Message.(string)
+	if !ok || !strings.Contains(msg, "week count mismatch") {
+		t.Fatalf("message = %v, want week count mismatch", he.Message)
+	}
 }
 
 func TestHandlers_DeleteWeek_success(t *testing.T) {

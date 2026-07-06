@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "e5f6a7b8-c9d0-1234-ef01-567890123456",
     "name": "Mentorix Backend",
-    "description": "Коллекция по коду (`cmd/api`, `internal/auth`, `internal/admin`, `internal/exercise`, `internal/program`, `internal/health`).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\n## Порядок smoke-теста (Programs)\n1. Health → Login\n2. POST /programs (сохраняет program_id, program_week_id, program_week_day_id; name=\"\")\n3. PATCH /programs/:id\n4. POST .../weeks/:week_id/days/:day_id/blocks (single + exercise; нужен exercise_id)\n5. PUT .../blocks/:block_id/exercises/:item_id (опционально)\n6. POST /programs/:id/publish\n7. POST /programs/:id/archive (опционально)\n8. DELETE /programs/:id",
+    "description": "Коллекция Mentorix Backend. **Выполняй папки сверху вниз** (кроме Optional и Teardown).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\n## Линейный walkthrough\n1. **Health** (2 запроса)\n2. **Auth** — Login → Me → … → Refresh\n3. **Exercises** — GET подхватит `exercise_id` из сида\n4. **Programs** — полный сценарий до DELETE программы\n5. **Teardown** — logout в самом конце\n\n**Optional** — примеры, destructive DELETE, Trainer (`client_user_id` вручную), Admin.\n\nПеременные окружения заполняются test/collection prerequest скриптами.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -20,6 +20,136 @@
           "}",
           "if (base.endsWith('/')) {",
           "    pm.environment.set('base_url', base.replace(/\\/+$/, ''));",
+          "}",
+          "",
+          "function mentorixFetchProgram(cb) {",
+          "    const programId = pm.environment.get('program_id');",
+          "    const token = pm.environment.get('access_token');",
+          "    if (!programId) {",
+          "        throw new Error('program_id пустой — выполни POST /programs');",
+          "    }",
+          "    if (!token) {",
+          "        throw new Error('access_token пустой — выполни POST /auth/login');",
+          "    }",
+          "    pm.sendRequest({",
+          "        url: pm.environment.get('base_url') + '/programs/' + programId,",
+          "        method: 'GET',",
+          "        header: { Authorization: 'Bearer ' + token }",
+          "    }, (err, res) => {",
+          "        if (err) { throw err; }",
+          "        if (res.code !== 200) {",
+          "            throw new Error('GET /programs/' + programId + ' failed: HTTP ' + res.code);",
+          "        }",
+          "        cb(res.json());",
+          "    });",
+          "}",
+          "",
+          "function mentorixSwapPair(ids) {",
+          "    if (ids.length < 2) { return ids; }",
+          "    const out = ids.slice();",
+          "    const tmp = out[0];",
+          "    out[0] = out[1];",
+          "    out[1] = tmp;",
+          "    return out;",
+          "}",
+          "",
+          "function mentorixReverse(ids) {",
+          "    return ids.slice().reverse();",
+          "}",
+          "",
+          "function mentorixFindWeek(program, weekId) {",
+          "    const week = (program.weeks || []).find((w) => w.id === weekId);",
+          "    if (!week) {",
+          "        throw new Error('week ' + weekId + ' not found — проверь program_week_id');",
+          "    }",
+          "    return week;",
+          "}",
+          "",
+          "function mentorixFindDay(week, dayId) {",
+          "    const day = (week.days || []).find((d) => d.id === dayId);",
+          "    if (!day) {",
+          "        throw new Error('day ' + dayId + ' not found — проверь program_week_day_id');",
+          "    }",
+          "    return day;",
+          "}",
+          "",
+          "function mentorixFindBlock(week, blockId) {",
+          "    for (const day of week.days || []) {",
+          "        for (const block of day.blocks || []) {",
+          "            if (block.id === blockId) { return block; }",
+          "        }",
+          "    }",
+          "    throw new Error('block ' + blockId + ' not found — выполни POST .../blocks');",
+          "}",
+          "",
+          "const mentorixRequestName = pm.info && pm.info.requestName ? pm.info.requestName : '';",
+          "",
+          "if (mentorixRequestName === 'PUT /programs/:id/weeks/reorder') {",
+          "    mentorixFetchProgram((program) => {",
+          "        const ids = (program.weeks || []).map((w) => w.id);",
+          "        if (ids.length === 0) {",
+          "            throw new Error('program has no weeks');",
+          "        }",
+          "        pm.environment.set('mentorix_reorder_week_ids', JSON.stringify(mentorixSwapPair(ids)));",
+          "    });",
+          "} else if (mentorixRequestName === 'PUT /programs/:id/weeks/:week_id/days/reorder') {",
+          "    const weekId = pm.environment.get('program_week_id');",
+          "    if (!weekId) {",
+          "        throw new Error('program_week_id пустой — выполни POST /programs');",
+          "    }",
+          "    mentorixFetchProgram((program) => {",
+          "        const week = mentorixFindWeek(program, weekId);",
+          "        const ids = (week.days || []).map((d) => d.id);",
+          "        if (ids.length === 0) {",
+          "            throw new Error('week has no days');",
+          "        }",
+          "        pm.environment.set('mentorix_reorder_day_ids', JSON.stringify(mentorixReverse(ids)));",
+          "    });",
+          "} else if (mentorixRequestName === 'PUT /programs/:id/weeks/:week_id/days/:day_id/blocks/reorder') {",
+          "    const weekId = pm.environment.get('program_week_id');",
+          "    const dayId = pm.environment.get('program_week_day_id');",
+          "    if (!weekId || !dayId) {",
+          "        throw new Error('program_week_id/program_week_day_id пустые — выполни POST /programs');",
+          "    }",
+          "    mentorixFetchProgram((program) => {",
+          "        const week = mentorixFindWeek(program, weekId);",
+          "        const day = mentorixFindDay(week, dayId);",
+          "        const ids = (day.blocks || []).map((b) => b.id);",
+          "        if (ids.length === 0) {",
+          "            throw new Error('day has no blocks — выполни POST .../blocks');",
+          "        }",
+          "        pm.environment.set('mentorix_reorder_block_ids', JSON.stringify(mentorixReverse(ids)));",
+          "    });",
+          "} else if (mentorixRequestName === 'PUT /programs/:id/weeks/:week_id/blocks/:block_id/exercises/reorder') {",
+          "    const weekId = pm.environment.get('program_week_id');",
+          "    const blockId = pm.environment.get('program_week_day_block_id');",
+          "    if (!weekId || !blockId) {",
+          "        throw new Error('program_week_id/program_week_day_block_id пустые — выполни POST .../blocks');",
+          "    }",
+          "    mentorixFetchProgram((program) => {",
+          "        const week = mentorixFindWeek(program, weekId);",
+          "        const block = mentorixFindBlock(week, blockId);",
+          "        const ids = (block.exercises || []).map((e) => e.id);",
+          "        if (ids.length === 0) {",
+          "            throw new Error('block has no exercises');",
+          "        }",
+          "        pm.environment.set('mentorix_reorder_exercise_item_ids', JSON.stringify(mentorixReverse(ids)));",
+          "    });",
+          "} else if (mentorixRequestName === 'POST /programs/:id/weeks/:week_id/days/:day_id/blocks/merge') {",
+          "    const weekId = pm.environment.get('program_week_id');",
+          "    const dayId = pm.environment.get('program_week_day_id');",
+          "    if (!weekId || !dayId) {",
+          "        throw new Error('program_week_id/program_week_day_id пустые — выполни POST /programs');",
+          "    }",
+          "    mentorixFetchProgram((program) => {",
+          "        const week = mentorixFindWeek(program, weekId);",
+          "        const day = mentorixFindDay(week, dayId);",
+          "        const ids = (day.blocks || []).map((b) => b.id);",
+          "        if (ids.length < 2) {",
+          "            throw new Error('нужно 2 блока — выполни POST .../blocks дважды');",
+          "        }",
+          "        pm.environment.set('mentorix_merge_block_ids', JSON.stringify(ids.slice(0, 2)));",
+          "    });",
           "}"
         ]
       }
@@ -32,7 +162,9 @@
         {
           "name": "GET /health",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/health",
@@ -43,7 +175,9 @@
         {
           "name": "GET /health/ready",
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/health/ready",
@@ -56,39 +190,6 @@
     {
       "name": "Auth",
       "item": [
-        {
-          "name": "POST /auth/register",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    const b = pm.response.json();",
-                  "    pm.environment.set('access_token', b.access_token);",
-                  "    pm.environment.set('user_id', b.user_id);",
-                  "}",
-                  "pm.test('status is 201 or 409', function () {",
-                  "    pm.expect([201, 409]).to.include(pm.response.code);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\",\n  \"name\": \"Test Trainer\"\n}"
-            },
-            "url": "{{base_url}}/auth/register",
-            "description": "Source: `internal/auth/handlers.go` → Register\n\nBody: email, password (min 8 chars), optional name\n201: access_token, token_type, expires_at, user_id, email + Set-Cookie mentorix_refresh\n400: invalid email/password\n409: email already registered\n429: rate limit"
-          },
-          "response": []
-        },
         {
           "name": "POST /auth/login",
           "event": [
@@ -111,39 +212,22 @@
             }
           ],
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
             },
             "url": "{{base_url}}/auth/login",
             "description": "Source: `internal/auth/handlers.go` → Login\n\n200: access_token + Set-Cookie mentorix_refresh\n401: invalid email or password"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /auth/refresh",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "    pm.environment.set('access_token', pm.response.json().access_token);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": { "type": "noauth" },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/auth/refresh",
-            "description": "Source: `internal/auth/handlers.go` → Refresh\n\nCookie: mentorix_refresh (HttpOnly, path /auth)\n200: новый access_token\n401: missing/invalid refresh token"
           },
           "response": []
         },
@@ -177,7 +261,13 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "GET",
             "header": [],
@@ -191,10 +281,21 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Updated Trainer\"\n}"
@@ -205,85 +306,55 @@
           "response": []
         },
         {
-          "name": "POST /auth/logout",
+          "name": "POST /auth/register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const b = pm.response.json();",
+                  "    pm.environment.set('access_token', b.access_token);",
+                  "    pm.environment.set('user_id', b.user_id);",
+                  "}",
+                  "pm.test('status is 201, 409 or 429', function () {",
+                  "    pm.expect([201, 409, 429]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
           "request": {
-            "auth": { "type": "noauth" },
+            "auth": {
+              "type": "noauth"
+            },
             "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/auth/logout",
-            "description": "Source: `internal/auth/handlers.go` → Logout\n\nCookie: mentorix_refresh\n204: No Content"
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\",\n  \"name\": \"Test Trainer\"\n}"
+            },
+            "url": "{{base_url}}/auth/register",
+            "description": "Source: `internal/auth/handlers.go` → Register\n\nBody: email, password (min 8 chars), optional name\n201: access_token, token_type, expires_at, user_id, email + Set-Cookie mentorix_refresh\n400: invalid email/password\n409: email already registered\n429: rate limit"
           },
           "response": []
         },
         {
-          "name": "POST /auth/logout-all",
+          "name": "POST /auth/refresh",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('access_token')) {",
-                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
-                  "}"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 204', () => pm.response.to.have.status(204));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/auth/logout-all",
-            "description": "Source: `internal/auth/handlers.go` → LogoutAll\n\nHeader: Authorization: Bearer <access_token>\n204: No Content"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Admin",
-      "item": [
-        {
-          "name": "POST /admin/users/:user_id/roles/admin",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('access_token')) {",
-                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
-                  "}",
-                  "const target = pm.environment.get('target_user_id') || pm.environment.get('user_id');",
-                  "if (!target) {",
-                  "    throw new Error('target_user_id или user_id пустой — выполни Register/Login или задай target_user_id');",
-                  "}",
-                  "pm.variables.set('grant_admin_user_id', target);"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "if (pm.response.code === 200) {",
-                  "    const b = pm.response.json();",
-                  "    pm.test('roles include admin', () => pm.expect(b.roles).to.include('admin'));",
+                  "    pm.environment.set('access_token', pm.response.json().access_token);",
                   "}"
                 ]
               }
@@ -291,13 +362,12 @@
           ],
           "request": {
             "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "type": "noauth"
             },
             "method": "POST",
             "header": [],
-            "url": "{{base_url}}/admin/users/{{grant_admin_user_id}}/roles/admin",
-            "description": "Source: `internal/admin/handlers.go` → GrantAdmin\n\nBearer + role trainer|admin\n200: user_id, email, created_at, roles\n400: invalid user_id\n403: trainer role required\n404: user not found"
+            "url": "{{base_url}}/auth/refresh",
+            "description": "Source: `internal/auth/handlers.go` → Refresh\n\nCookie: mentorix_refresh (HttpOnly, path /auth)\n200: новый access_token\n401: missing/invalid refresh token"
           },
           "response": []
         }
@@ -330,6 +400,9 @@
                   "    const b = pm.response.json();",
                   "    pm.test('items array', () => pm.expect(b.items).to.be.an('array'));",
                   "    pm.test('pagination object', () => pm.expect(b.pagination).to.be.an('object'));",
+                  "    if (!pm.environment.get('exercise_id') && b.items && b.items.length > 0) {",
+                  "        pm.environment.set('exercise_id', b.items[0].id);",
+                  "    }",
                   "}"
                 ]
               }
@@ -338,39 +411,18 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/exercises?page=1&limit=20&sort_by=name&sort_order=asc",
             "description": "Source: `internal/exercise/handlers.go` → List\n\nBearer (any authenticated role)\n\nQuery (defaults from `list_params.go`):\n- page=1, limit=20 (max 100)\n- sort_by: name|name_ru|created_at|modified_at|difficulty|type|muscle_group|equipment\n- sort_order: asc|desc\n- q: search name/name_ru\n- type, muscle_group, difficulty, equipment (single value)\n- equipment=none → без оборудования\n\n200: {items: Exercise[], pagination: {page, limit, total, total_pages}}"
-          },
-          "response": []
-        },
-        {
-          "name": "GET /exercises (with filters example)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('access_token')) {",
-                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/exercises?page=1&limit=20&q=squat&type=strength&muscle_group=legs&difficulty=intermediate&equipment=barbell&sort_by=equipment&sort_order=asc",
-            "description": "Пример GET /exercises с q и фильтрами. Редактируй query в URL."
           },
           "response": []
         },
@@ -395,54 +447,18 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/exercises/{{exercise_id}}",
             "description": "Source: `internal/exercise/handlers.go` → Get\n\nBearer (any authenticated role)\n200: Exercise\n404: exercise not found"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /exercises",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('access_token')) {",
-                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
-                  "}"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    pm.environment.set('exercise_id', pm.response.json().id);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Back Squat\",\n  \"name_ru\": \"Присед со штангой\",\n  \"type\": \"strength\",\n  \"muscle_group\": \"legs\",\n  \"difficulty\": \"intermediate\",\n  \"equipment\": \"barbell\",\n  \"description\": \"\",\n  \"description_ru\": \"\",\n  \"video_url\": \"\",\n  \"preview_image_url\": \"\"\n}"
-            },
-            "url": "{{base_url}}/exercises",
-            "description": "Source: `internal/exercise/handlers.go` → Create\n\nBearer + role admin\n201: Exercise (сохраняет exercise_id)\n403: admin role required"
           },
           "response": []
         },
@@ -467,62 +483,27 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Back Squat\",\n  \"name_ru\": \"Присед со штангой (updated)\",\n  \"type\": \"strength\",\n  \"muscle_group\": \"legs\",\n  \"difficulty\": \"advanced\",\n  \"equipment\": \"barbell\",\n  \"description\": \"\",\n  \"description_ru\": \"\",\n  \"video_url\": \"\",\n  \"preview_image_url\": \"\"\n}"
             },
             "url": "{{base_url}}/exercises/{{exercise_id}}",
             "description": "Source: `internal/exercise/handlers.go` → Update\n\nBearer + role admin\n200: Exercise\n404: exercise not found"
-          },
-          "response": []
-        },
-        {
-          "name": "DELETE /exercises",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('access_token')) {",
-                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
-                  "}",
-                  "if (!pm.environment.get('exercise_id')) {",
-                  "    throw new Error('exercise_id пустой — выполни POST /exercises');",
-                  "}"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test('deleted_count present', () => pm.expect(body).to.have.property('deleted_count'));",
-                  "pm.test('deleted_count is number', () => pm.expect(body.deleted_count).to.be.a('number'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "DELETE",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ids\": [\"{{exercise_id}}\"]\n}"
-            },
-            "url": "{{base_url}}/exercises",
-            "description": "Source: `internal/exercise/handlers.go` → DeleteMany\n\nBearer + role admin\nBody: { ids: uuid[] } (min 1)\nSoft-delete (deleted_at); hidden from list/get\n200: { deleted_count: number }\n400: empty ids, invalid uuid\n403: admin role required"
           },
           "response": []
         }
@@ -563,39 +544,18 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/programs?page=1&limit=20&sort_by=created_at&sort_order=desc",
             "description": "Source: `internal/program/handlers.go` → List\n\nBearer + trainer|admin\n\nQuery:\n- page, limit (max 100)\n- sort_by: name|name_ru|created_at|modified_at|status|category|difficulty\n- sort_order: asc|desc\n- q: search by name/name_ru\n- status: draft,published,archived (comma-separated)\n- category, difficulty\n\nSoft-deleted programs are never returned.\n\n200: {items: Program[], pagination}"
-          },
-          "response": []
-        },
-        {
-          "name": "GET /programs (with filters example)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('access_token')) {",
-                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/programs?page=1&limit=20&q=масса&status=draft,published&category=muscle_gain&difficulty=beginner&sort_by=name&sort_order=asc",
-            "description": "Пример списка программ с поиском и фильтрами."
           },
           "response": []
         },
@@ -617,7 +577,7 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-              "exec": [
+                "exec": [
                   "pm.test('status 201', () => pm.response.to.have.status(201));",
                   "if (pm.response.code === 201) {",
                   "    const b = pm.response.json();",
@@ -625,6 +585,11 @@
                   "    pm.test('empty name', () => pm.expect(b.name).to.eql(''));",
                   "    pm.test('week 1 with days exists', () => pm.expect(b.weeks).to.be.an('array').that.is.not.empty);",
                   "    pm.environment.set('program_id', b.id);",
+                  "    pm.environment.unset('program_week_id_extra');",
+                  "    pm.environment.unset('program_week_day_block_id');",
+                  "    pm.environment.unset('program_week_day_block_id_2');",
+                  "    pm.environment.unset('program_week_day_block_exercise_id');",
+                  "    pm.environment.unset('program_version_id');",
                   "    if (b.weeks && b.weeks.length > 0) {",
                   "        pm.environment.set('program_week_id', b.weeks[0].id);",
                   "        if (b.weeks[0].days && b.weeks[0].days.length > 0) {",
@@ -632,14 +597,20 @@
                   "        }",
                   "    }",
                   "}"
-              ]
+                ]
               }
             }
           ],
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "POST",
             "header": [],
@@ -666,12 +637,18 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/programs/{{program_id}}",
-            "description": "ProgramDetail с weeks, days и exercises"
+            "description": "ProgramDetail с weeks, days и blocks (упражнения внутри blocks[].exercises)"
           },
           "response": []
         },
@@ -697,7 +674,8 @@
                   "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "if (pm.response.code === 200) {",
                   "    const b = pm.response.json();",
-                  "    pm.test('name updated', () => pm.expect(b.name).to.eql('Набор массы — база'));",
+                  "    pm.test('name updated', () => pm.expect(b.name).to.eql('Mass gain — basics'));",
+                  "    pm.test('name_ru updated', () => pm.expect(b.name_ru).to.eql('Набор массы — база'));",
                   "}"
                 ]
               }
@@ -706,16 +684,437 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Mass gain — basics\",\n  \"name_ru\": \"Набор массы — база\",\n  \"description\": \"8-week program\",\n  \"description_ru\": \"8-недельная программа\",\n  \"category\": \"muscle_gain\",\n  \"difficulty\": \"beginner\",\n  \"preview_image_url\": \"\"\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}",
             "description": "Шаг 1 wizard — поля опциональны в draft"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/blocks",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_week_day_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_week_day_id пустые — выполни POST /programs');",
+                  "}",
+                  "if (!pm.environment.get('exercise_id')) {",
+                  "    throw new Error('exercise_id пустой — выполни GET /exercises');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "    const b = pm.response.json();",
+                  "    const week = (b.weeks || []).find(w => w.id === pm.environment.get('program_week_id'));",
+                  "    const day = week && week.days ? week.days.find(d => d.id === pm.environment.get('program_week_day_id')) : null;",
+                  "    if (day && day.blocks && day.blocks.length > 0) {",
+                  "        const block = day.blocks[day.blocks.length - 1];",
+                  "        pm.environment.set('program_week_day_block_id', block.id);",
+                  "        if (block.exercises && block.exercises.length > 0) {",
+                  "            pm.environment.set('program_week_day_block_exercise_id', block.exercises[block.exercises.length - 1].id);",
+                  "        }",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": 3,\n    \"reps\": 10,\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks",
+            "description": "Создать single-блок с упражнением"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/blocks (2nd block)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_week_day_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_week_day_id пустые — выполни POST /programs');",
+                  "}",
+                  "if (!pm.environment.get('exercise_id')) {",
+                  "    throw new Error('exercise_id пустой — выполни GET /exercises');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "    const b = pm.response.json();",
+                  "    const week = (b.weeks || []).find(w => w.id === pm.environment.get('program_week_id'));",
+                  "    const day = week && week.days ? week.days.find(d => d.id === pm.environment.get('program_week_day_id')) : null;",
+                  "    if (day && day.blocks && day.blocks.length > 0) {",
+                  "        const block = day.blocks[day.blocks.length - 1];",
+                  "        pm.environment.set('program_week_day_block_id_2', block.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": 3,\n    \"reps\": 10,\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks",
+            "description": "Второй single-блок в том же дне (для merge). Сохраняет program_week_day_block_id_2."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_week_day_block_id') || !pm.environment.get('program_week_day_block_exercise_id')) {",
+                  "    throw new Error('program_id/program_week_id/program_week_day_block_id/program_week_day_block_exercise_id пустые — выполни POST .../blocks');",
+                  "}",
+                  "if (!pm.environment.get('exercise_id')) {",
+                  "    throw new Error('exercise_id пустой — выполни GET /exercises');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 4,\n  \"reps\": 8,\n  \"instruction\": \"Обновлённая инструкция\"\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/{{program_week_day_block_exercise_id}}",
+            "description": "Обновить упражнение в блоке"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /programs/:id/weeks/:week_id/days/:day_id/blocks/reorder",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"block_ids\": {{mentorix_reorder_block_ids}}\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks/reorder",
+            "description": "Переупорядочить блоки в дне. Prerequest подставляет **все** block_ids из GET /programs/:id (порядок reversed)."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /programs/:id/weeks/:week_id/blocks/:block_id/exercises/reorder",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"exercise_item_ids\": {{mentorix_reorder_exercise_item_ids}}\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/reorder",
+            "description": "Переупорядочить упражнения в блоке. Prerequest подставляет **все** exercise_item_ids из GET /programs/:id. Один id в блоке — порядок не меняется."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/blocks/merge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    const week = (b.weeks || []).find((w) => w.id === pm.environment.get('program_week_id'));",
+                  "    const day = week && week.days ? week.days.find((d) => d.id === pm.environment.get('program_week_day_id')) : null;",
+                  "    if (day && day.blocks && day.blocks.length > 0) {",
+                  "        const group = day.blocks.find((bl) => bl.block_type !== 'single') || day.blocks[day.blocks.length - 1];",
+                  "        pm.environment.set('program_week_day_block_id', group.id);",
+                  "        if (group.exercises && group.exercises.length > 0) {",
+                  "            pm.environment.set('program_week_day_block_exercise_id', group.exercises[group.exercises.length - 1].id);",
+                  "        }",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"block_ids\": {{mentorix_merge_block_ids}}\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks/merge",
+            "description": "Объединить блоки в группу"
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /programs/:id/weeks/:week_id/blocks/:block_id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"block_type\": \"emom\",\n  \"instruction\": \"60 сек работы\"\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}",
+            "description": "Обновить тип или instruction **группового** блока (после merge). Single → 400."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "    const b = pm.response.json();",
+                  "    const week = (b.weeks || []).find((w) => w.id === pm.environment.get('program_week_id'));",
+                  "    const blockId = pm.environment.get('program_week_day_block_id');",
+                  "    let block = null;",
+                  "    if (week) {",
+                  "        for (const day of week.days || []) {",
+                  "            block = (day.blocks || []).find((bl) => bl.id === blockId);",
+                  "            if (block) { break; }",
+                  "        }",
+                  "    }",
+                  "    if (block && block.exercises && block.exercises.length > 0) {",
+                  "        pm.environment.set('program_week_day_block_exercise_id', block.exercises[block.exercises.length - 1].id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 3,\n  \"reps\": 10\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises",
+            "description": "Добавить упражнение в групповой блок"
           },
           "response": []
         },
@@ -741,8 +1140,8 @@
                   "if (pm.response.code === 200) {",
                   "    const b = pm.response.json();",
                   "    pm.test('weeks array exists', () => pm.expect(b.weeks).to.be.an('array').that.is.not.empty);",
-                  "    if (b.weeks && b.weeks.length > 0) {",
-                  "        pm.environment.set('program_week_id', b.weeks[b.weeks.length - 1].id);",
+                  "    if (b.weeks && b.weeks.length > 1) {",
+                  "        pm.environment.set('program_week_id_extra', b.weeks[b.weeks.length - 1].id);",
                   "    }",
                   "}"
                 ]
@@ -752,7 +1151,13 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "POST",
             "header": [],
@@ -765,13 +1170,11 @@
           "name": "PUT /programs/:id/weeks/reorder",
           "event": [
             {
-              "listen": "prerequest",
+              "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id')) {",
-                  "    throw new Error('program_id/program_week_id пустые — выполни POST /programs');",
-                  "}"
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -779,16 +1182,27 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"week_ids\": [\"{{program_week_id}}\"]\n}"
+              "raw": "{\n  \"week_ids\": {{mentorix_reorder_week_ids}}\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/reorder",
-            "description": "Переупорядочить недели (полный список week_ids)"
+            "description": "Переупорядочить недели. Prerequest подставляет **все** week_ids из GET /programs/:id (при 2+ неделях меняет местами первые две). Частичный список → 400 `week count mismatch`."
           },
           "response": []
         },
@@ -796,13 +1210,11 @@
           "name": "PUT /programs/:id/weeks/:week_id/days/reorder",
           "event": [
             {
-              "listen": "prerequest",
+              "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_week_day_id')) {",
-                  "    throw new Error('program_id/program_week_id/program_week_day_id пустые — выполни POST /programs');",
-                  "}"
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }
@@ -810,180 +1222,27 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"day_ids\": [\"{{program_week_day_id}}\"]\n}"
+              "raw": "{\n  \"day_ids\": {{mentorix_reorder_day_ids}}\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/reorder",
-            "description": "Переупорядочить дни недели (полный список day_ids)"
-          },
-          "response": []
-        },
-        {
-          "name": "PUT /programs/:id/weeks/:week_id/blocks/:block_id/exercises/reorder",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_week_day_block_id') || !pm.environment.get('program_week_day_block_exercise_id')) {",
-                  "    throw new Error('program_id/program_week_id/program_week_day_block_id/program_week_day_block_exercise_id пустые — выполни POST .../exercises');",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"exercise_item_ids\": [\"{{program_week_day_block_exercise_id}}\"]\n}"
-            },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/reorder",
-            "description": "Переупорядочить упражнения внутри блока"
-          },
-          "response": []
-        },
-        {
-          "name": "PUT /programs/:id/weeks/:week_id/days/:day_id/blocks/reorder",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"block_ids\": [\"{{program_week_day_block_id}}\"]\n}" },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks/reorder",
-            "description": "Переупорядочить блоки в дне"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/blocks/merge",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"block_ids\": [\"{{program_week_day_block_id}}\", \"{{program_week_day_block_id}}\"]\n}" },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks/merge",
-            "description": "Объединить блоки в группу"
-          },
-          "response": []
-        },
-        {
-          "name": "PATCH /programs/:id/weeks/:week_id/blocks/:block_id",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"block_type\": \"complex\",\n  \"instruction\": \"\"\n}" },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}",
-            "description": "Обновить тип или instruction блока"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/ungroup",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/ungroup",
-            "description": "Разгруппировать блок"
-          },
-          "response": []
-        },
-        {
-          "name": "DELETE /programs/:id/weeks/:week_id/blocks/:block_id",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "DELETE",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}",
-            "description": "Удалить групповой блок"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 3,\n  \"reps\": 10\n}" },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises",
-            "description": "Добавить упражнение в групповой блок"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/move",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"target_day_id\": \"{{program_week_day_id}}\"\n}" },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/move",
-            "description": "Перенести блок в другой день недели"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/extract",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{}" },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/{{program_week_day_block_exercise_id}}/extract",
-            "description": "Извлечь упражнение из группы в single-блок"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/move",
-          "request": {
-            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"target_block_id\": \"{{program_week_day_block_id}}\"\n}" },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/{{program_week_day_block_exercise_id}}/move",
-            "description": "Переместить упражнение в другой блок"
-          },
-          "response": []
-        },
-        {
-          "name": "DELETE /programs/:id/weeks/:week_id",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id')) {",
-                  "    throw new Error('program_id/program_week_id пустые — выполни POST /programs');",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "DELETE",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}",
-            "description": "Удалить неделю (409 если последняя)"
+            "description": "Переупорядочить дни недели. Prerequest подставляет **все** day_ids из GET /programs/:id (порядок reversed). Частичный список → 400 `day count mismatch`."
           },
           "response": []
         },
@@ -1005,7 +1264,13 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "POST",
             "header": [],
@@ -1015,18 +1280,316 @@
           "response": []
         },
         {
-          "name": "POST /programs/:id/weeks/:week_id/days/:day_id/blocks",
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/move",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_day_id\": \"{{program_week_day_id}}\"\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/move",
+            "description": "Перенести блок в другой день недели"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /programs/:id/weeks/:week_id",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_week_day_id')) {",
-                  "    throw new Error('program_id/program_week_id/program_week_day_id пустые — выполни POST /programs');",
+                  "const extra = pm.environment.get('program_week_id_extra');",
+                  "if (!pm.environment.get('program_id') || !extra) {",
+                  "    throw new Error('program_id/program_week_id_extra пустые — выполни POST /programs/:id/weeks');",
                   "}",
-                  "if (!pm.environment.get('exercise_id')) {",
-                  "    throw new Error('exercise_id пустой — нужен POST /exercises или задай UUID');",
+                  "pm.environment.set('program_week_id', extra);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}",
+            "description": "Удалить добавленную неделю (prerequest подставляет program_week_id_extra в program_week_id)."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/publish",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('program_id')) {",
+                  "    throw new Error('program_id пустой — выполни POST /programs');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    pm.test('published status', () => pm.expect(b.status).to.eql('published'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/publish",
+            "description": "Publish — валидирует обязательные поля и упражнения"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/publish-update",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/publish-update",
+            "description": "Freeze current published program as new version"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /programs/:id/assignments",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/assignments",
+            "description": "List clients on this program (read-only)"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/assignments/sync",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"all_active\": true\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/assignments/sync",
+            "description": "Sync assignments to latest frozen version"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /programs/:id/versions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    if (b.items && b.items.length > 0) {",
+                  "        pm.environment.set('program_version_id', b.items[0].id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/versions",
+            "description": "List frozen program versions"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /programs/:id/versions/:version_id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/versions/{{program_version_id}}",
+            "description": "Delete unused version"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/versions/cleanup",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/versions/cleanup",
+            "description": "Delete all unused versions"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/archive",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/archive",
+            "description": "published → archived"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /programs/:id",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}",
+            "description": "Soft delete (deleted_at)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Optional (не в walkthrough)",
+      "item": [
+        {
+          "name": "POST /exercises",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
                   "}"
                 ]
               }
@@ -1037,16 +1600,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code === 201) {",
-                  "    const b = pm.response.json();",
-                  "    const week = (b.weeks || []).find(w => w.id === pm.environment.get('program_week_id'));",
-                  "    const day = week && week.days ? week.days.find(d => d.id === pm.environment.get('program_week_day_id')) : null;",
-                  "    if (day && day.blocks && day.blocks.length > 0) {",
-                  "        const block = day.blocks[day.blocks.length - 1];",
-                  "        pm.environment.set('program_week_day_block_id', block.id);",
-                  "        if (block.exercises && block.exercises.length > 0) {",
-                  "            pm.environment.set('program_week_day_block_exercise_id', block.exercises[block.exercises.length - 1].id);",
-                  "        }",
-                  "    }",
+                  "    pm.environment.set('exercise_id', pm.response.json().id);",
                   "}"
                 ]
               }
@@ -1055,32 +1609,76 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": 3,\n    \"reps\": 10,\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
+              "raw": "{\n  \"name\": \"Back Squat\",\n  \"name_ru\": \"Присед со штангой\",\n  \"type\": \"strength\",\n  \"muscle_group\": \"legs\",\n  \"difficulty\": \"intermediate\",\n  \"equipment\": \"barbell\",\n  \"description\": \"\",\n  \"description_ru\": \"\",\n  \"video_url\": \"\",\n  \"preview_image_url\": \"\"\n}"
             },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks",
-            "description": "Создать single-блок с упражнением"
+            "url": "{{base_url}}/exercises",
+            "description": "Source: `internal/exercise/handlers.go` → Create\n\nBearer + role admin\n201: Exercise (сохраняет exercise_id)\n403: admin role required"
           },
           "response": []
         },
         {
-          "name": "PUT /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id",
+          "name": "GET /exercises (with filters example)",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (!pm.environment.get('program_id') || !pm.environment.get('program_week_id') || !pm.environment.get('program_week_day_block_id') || !pm.environment.get('program_week_day_block_exercise_id')) {",
-                  "    throw new Error('program_id/program_week_id/program_week_day_block_id/program_week_day_block_exercise_id пустые — выполни POST .../blocks');",
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/exercises?page=1&limit=20&q=squat&type=strength&muscle_group=legs&difficulty=intermediate&equipment=barbell&sort_by=equipment&sort_order=asc",
+            "description": "Пример GET /exercises с q и фильтрами. Редактируй query в URL."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /exercises",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
                   "}",
                   "if (!pm.environment.get('exercise_id')) {",
-                  "    throw new Error('exercise_id пустой — нужен POST /exercises или задай UUID');",
+                  "    throw new Error('exercise_id пустой — выполни POST /exercises');",
                   "}"
                 ]
               }
@@ -1090,7 +1688,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('deleted_count present', () => pm.expect(body).to.have.property('deleted_count'));",
+                  "pm.test('deleted_count is number', () => pm.expect(body.deleted_count).to.be.a('number'));"
                 ]
               }
             }
@@ -1098,16 +1699,60 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 4,\n  \"reps\": 8,\n  \"instruction\": \"Обновлённая инструкция\"\n}"
+              "raw": "{\n  \"ids\": [\"{{exercise_id}}\"]\n}"
             },
-            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/{{program_week_day_block_exercise_id}}",
-            "description": "Обновить упражнение в блоке"
+            "url": "{{base_url}}/exercises",
+            "description": "Source: `internal/exercise/handlers.go` → DeleteMany\n\nBearer + role admin\nBody: { ids: uuid[] } (min 1)\nSoft-delete (deleted_at); hidden from list/get\n200: { deleted_count: number }\n400: empty ids, invalid uuid\n403: admin role required"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /programs (with filters example)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/programs?page=1&limit=20&q=масса&status=draft,published&category=muscle_gain&difficulty=beginner&sort_by=name&sort_order=asc",
+            "description": "Пример списка программ с поиском и фильтрами."
           },
           "response": []
         },
@@ -1138,7 +1783,13 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "DELETE",
             "header": [],
@@ -1174,7 +1825,13 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "DELETE",
             "header": [],
@@ -1184,172 +1841,37 @@
           "response": []
         },
         {
-          "name": "POST /programs/:id/publish",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('program_id')) {",
-                  "    throw new Error('program_id пустой — выполни POST /programs');",
-                  "}"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status 200', () => pm.response.to.have.status(200));",
-                  "if (pm.response.code === 200) {",
-                  "    const b = pm.response.json();",
-                  "    pm.test('published status', () => pm.expect(b.status).to.eql('published'));",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "DELETE /programs/:id/weeks/:week_id/blocks/:block_id",
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/publish",
-            "description": "Publish — валидирует обязательные поля и упражнения"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/archive",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/archive",
-            "description": "published → archived"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/publish-update",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/publish-update",
-            "description": "Freeze current published program as new version"
-          },
-          "response": []
-        },
-        {
-          "name": "GET /programs/:id/assignments",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/assignments",
-            "description": "List clients on this program (read-only)"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/assignments/sync",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"all_active\": true\n}"
-            },
-            "url": "{{base_url}}/programs/{{program_id}}/assignments/sync",
-            "description": "Sync assignments to latest frozen version"
-          },
-          "response": []
-        },
-        {
-          "name": "GET /programs/:id/versions",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/versions",
-            "description": "List frozen program versions"
-          },
-          "response": []
-        },
-        {
-          "name": "POST /programs/:id/versions/cleanup",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "POST",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/versions/cleanup",
-            "description": "Delete all unused versions"
-          },
-          "response": []
-        },
-        {
-          "name": "DELETE /programs/:id/versions/:version_id",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "DELETE",
             "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}/versions/{{program_version_id}}",
-            "description": "Delete unused version"
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}",
+            "description": "Удалить групповой блок"
           },
           "response": []
         },
-        {
-          "name": "DELETE /programs/:id",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
-            },
-            "method": "DELETE",
-            "header": [],
-            "url": "{{base_url}}/programs/{{program_id}}",
-            "description": "Soft delete (deleted_at)"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Trainer",
-      "item": [
         {
           "name": "GET /trainer/clients/:client_user_id/program-assignment",
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "GET",
             "header": [],
@@ -1363,16 +1885,216 @@
           "request": {
             "auth": {
               "type": "bearer",
-              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "PUT",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"program_id\": \"{{program_id}}\"\n}"
             },
             "url": "{{base_url}}/trainer/clients/{{client_user_id}}/program-assignment",
             "description": "Set or replace client program; program_id null to clear"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /admin/users/:user_id/roles/admin",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}",
+                  "const target = pm.environment.get('target_user_id') || pm.environment.get('user_id');",
+                  "if (!target) {",
+                  "    throw new Error('target_user_id или user_id пустой — выполни Register/Login или задай target_user_id');",
+                  "}",
+                  "pm.variables.set('grant_admin_user_id', target);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    pm.test('roles include admin', () => pm.expect(b.roles).to.include('admin'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/admin/users/{{grant_admin_user_id}}/roles/admin",
+            "description": "Source: `internal/admin/handlers.go` → GrantAdmin\n\nBearer + role trainer|admin\n200: user_id, email, created_at, roles\n400: invalid user_id\n403: trainer role required\n404: user not found"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/extract",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/{{program_week_day_block_exercise_id}}/extract",
+            "description": "Извлечь упражнение из группы в single-блок"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/move",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"target_block_id\": \"{{program_week_day_block_id}}\"\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/{{program_week_day_block_exercise_id}}/move",
+            "description": "Переместить упражнение в другой блок"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /programs/:id/weeks/:week_id/blocks/:block_id/ungroup",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/ungroup",
+            "description": "Разгруппировать блок"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Teardown",
+      "item": [
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/auth/logout",
+            "description": "Source: `internal/auth/handlers.go` → Logout\n\nCookie: mentorix_refresh\n204: No Content"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /auth/logout-all",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/auth/logout-all",
+            "description": "Source: `internal/auth/handlers.go` → LogoutAll\n\nHeader: Authorization: Bearer <access_token>\n204: No Content"
           },
           "response": []
         }

@@ -84,6 +84,9 @@ func (s *Store) PatchDayBlock(ctx context.Context, userID, programID, weekID, bl
 		}
 		return Detail{}, fmt.Errorf("get day block: %w", err)
 	}
+	if block.BlockType == string(BlockTypeSingle) {
+		return Detail{}, fmt.Errorf("%w: single blocks cannot be patched", ErrValidation)
+	}
 	var blockType *string
 	if in.BlockType != nil {
 		v := string(*in.BlockType)

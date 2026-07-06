@@ -860,6 +860,10 @@ paths:
     put:
       tags: [programs]
       summary: Reorder program weeks
+      description: >
+        Sets the order of all weeks in the program. Request body must list **every**
+        week ID exactly once in the desired order. Partial lists, unknown IDs, or
+        duplicates return 400 (e.g. `invalid reorder: week count mismatch`).
       operationId: reorderProgramWeeks
       security:
         - bearerAuth: []
@@ -946,6 +950,10 @@ paths:
     put:
       tags: [programs]
       summary: Reorder days within a program week
+      description: >
+        Sets the order of all days in the week. Request body must list **every**
+        day ID exactly once in the desired order. Partial lists, unknown IDs, or
+        duplicates return 400 (e.g. `invalid reorder: day count mismatch`).
       operationId: reorderProgramDays
       security:
         - bearerAuth: []
@@ -1007,6 +1015,10 @@ paths:
     put:
       tags: [programs]
       summary: Reorder blocks within a program day
+      description: >
+        Sets the order of all blocks in the day. Request body must list **every**
+        block ID exactly once in the desired order. Partial lists, unknown IDs, or
+        duplicates return 400 (e.g. `invalid reorder: block count mismatch`).
       operationId: reorderProgramDayBlocks
       security:
         - bearerAuth: []
@@ -1040,6 +1052,10 @@ paths:
     put:
       tags: [programs]
       summary: Reorder exercises within a program day block
+      description: >
+        Sets the order of all exercises in the block. Request body must list **every**
+        exercise item ID exactly once in the desired order. Partial lists, unknown IDs,
+        or duplicates return 400 (e.g. `invalid reorder: exercise_item count mismatch`).
       operationId: reorderProgramBlockExercises
       security:
         - bearerAuth: []
@@ -1197,7 +1213,9 @@ paths:
       tags: [programs]
       summary: Update group block type or instruction
       description: >
-        For group blocks only. `single` cannot be set via patch; use ungroup or extract.
+        For group blocks only. `single` blocks return 400; use PUT
+        `.../exercises/{item_id}` for exercise fields. `single` cannot be set
+        via patch; use ungroup or extract.
       operationId: patchProgramDayBlock
       security:
         - bearerAuth: []
@@ -2039,9 +2057,12 @@ components:
     ProgramWeeksReorder:
       type: object
       required: [week_ids]
+      description: >
+        Complete ordered list of all week IDs in the program (every week exactly once).
       properties:
         week_ids:
           type: array
+          minItems: 1
           items:
             type: string
             format: uuid
@@ -2049,9 +2070,12 @@ components:
     ProgramDaysReorder:
       type: object
       required: [day_ids]
+      description: >
+        Complete ordered list of all day IDs in the week (every day exactly once).
       properties:
         day_ids:
           type: array
+          minItems: 1
           items:
             type: string
             format: uuid
@@ -2079,9 +2103,12 @@ components:
     ProgramDayBlocksReorder:
       type: object
       required: [block_ids]
+      description: >
+        Complete ordered list of all block IDs in the day (every block exactly once).
       properties:
         block_ids:
           type: array
+          minItems: 1
           items:
             type: string
             format: uuid
@@ -2089,9 +2116,12 @@ components:
     ProgramBlockExercisesReorder:
       type: object
       required: [exercise_item_ids]
+      description: >
+        Complete ordered list of all exercise item IDs in the block (every item exactly once).
       properties:
         exercise_item_ids:
           type: array
+          minItems: 1
           items:
             type: string
             format: uuid

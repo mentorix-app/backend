@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -112,7 +113,14 @@ func (c *postmanCollection) Routes() []Route {
 	return out
 }
 
+var postmanBodyVar = regexp.MustCompile(`\{\{[^}]+\}\}`)
+
+func normalizePostmanBodyRaw(raw string) string {
+	return postmanBodyVar.ReplaceAllString(raw, "[]")
+}
+
 func jsonObjectKeys(raw string) (map[string]struct{}, error) {
+	raw = normalizePostmanBodyRaw(raw)
 	if raw == "" {
 		return map[string]struct{}{}, nil
 	}

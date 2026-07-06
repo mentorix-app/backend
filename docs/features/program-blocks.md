@@ -93,7 +93,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 
 11. `POST .../days/{day_id}/merge` — `{ block_ids: [] }`; склейка instruction.
 12. `POST .../blocks/{block_id}/ungroup`.
-13. `PATCH .../blocks/{block_id}` — `block_type` (группа, не `single`), `instruction`.
+13. `PATCH .../blocks/{block_id}` — `block_type` (группа, не `single`), `instruction`; **single-блоки → 400**.
 
 ### Фаза 5 — перемещение и порядок
 
@@ -119,7 +119,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | Обновить упражнение | `PUT .../blocks/{block_id}/exercises/{item_id}` |
 | Удалить упражнение | `DELETE .../blocks/{block_id}/exercises/{item_id}` |
 | Добавить в группу | `POST .../blocks/{block_id}/exercises` |
-| merge / ungroup / move / reorder | см. [api-endpoints.mdc](../../.cursor/rules/api-endpoints.mdc) § Program week subtree |
+| merge / ungroup / move / reorder | см. [api-endpoints.mdc](../../.cursor/rules/api-endpoints.mdc) § Program week subtree; reorder — полный список id siblings |
 
 ## Вне MVP
 

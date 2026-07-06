@@ -17,7 +17,8 @@
 
 Неочевидные правила:
 
-- `POST /programs` → `draft`, пустое `name`, Week 1 / Day 1 автоматически.
+- `POST /programs` → `draft`, пустое `name`, неделя 1 с **7 пустыми днями** автоматически.
+- `PUT …/reorder` (недели, дни, блоки, упражнения в блоке): body — **полный** упорядоченный список id siblings (каждый ровно один раз); частичный список → 400 `invalid reorder: … count mismatch`.
 - Статусы: `draft` → `published` → `archived`; нет `published` → `draft`.
 - Publish из `archived` — только смена статуса, без новой версии.
 - Publish (draft): валидация name/category/difficulty, ≥1 неделя; в каждом непустом дне — блоки с упражнениями (`single`: 1 упражнение; группа: ≥1); sets/reps > 0 для single.
