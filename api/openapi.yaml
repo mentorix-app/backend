@@ -1751,6 +1751,7 @@ components:
           $ref: "#/components/schemas/Difficulty"
         video_url:
           type: string
+          description: Optional YouTube video URL (HTTPS). Empty string when not set.
         preview_image_url:
           type: string
 
@@ -1776,6 +1777,7 @@ components:
           $ref: "#/components/schemas/Difficulty"
         video_url:
           type: string
+          description: Optional YouTube video URL (HTTPS). Empty string when not set.
         preview_image_url:
           type: string
 

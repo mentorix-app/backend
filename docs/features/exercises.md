@@ -19,6 +19,7 @@
 
 - List/get — любой JWT; create/update/delete — только `admin`.
 - Enum в БД/API: `snake_case` (`exercise_type`).
+- `video_url` — опционально; если задан, только HTTPS-ссылка на YouTube (`youtube.com`, `youtu.be`: `/watch`, `/embed`, `/shorts`, `/live`).
 
 ## См. также
 

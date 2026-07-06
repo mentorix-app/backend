@@ -31,6 +31,9 @@ func TestUpsertInput_Validate_errors(t *testing.T) {
 			in.Equipment = &eq
 		}},
 		{"invalid difficulty", func(in *UpsertInput) { in.Difficulty = "godmode" }},
+		{"invalid video url", func(in *UpsertInput) {
+			in.VideoURL = "https://vimeo.com/123456789"
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -116,6 +116,9 @@ func (in UpsertInput) Validate() error {
 	if !in.Difficulty.valid() {
 		return fmt.Errorf("%w: invalid difficulty", ErrValidation)
 	}
+	if err := validateYouTubeVideoURL(in.VideoURL); err != nil {
+		return err
+	}
 	return nil
 }
 
