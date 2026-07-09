@@ -202,11 +202,11 @@ func (in DayExerciseInput) ValidateDraft() error {
 	if in.ExerciseID == uuid.Nil {
 		return fmt.Errorf("%w: exercise_id is required", ErrValidation)
 	}
-	if in.Sets != nil && *in.Sets <= 0 {
-		return fmt.Errorf("%w: sets must be positive", ErrValidation)
+	if in.Sets != nil && *in.Sets < 1 {
+		return fmt.Errorf("%w: sets must be >= 1", ErrValidation)
 	}
-	if in.Reps != nil && *in.Reps <= 0 {
-		return fmt.Errorf("%w: reps must be positive", ErrValidation)
+	if in.Reps != nil && *in.Reps < 1 {
+		return fmt.Errorf("%w: reps must be >= 1", ErrValidation)
 	}
 	return nil
 }
@@ -224,16 +224,7 @@ func (in BlockPatchInput) Validate() error {
 }
 
 func (in DayExerciseInput) ValidatePublish() error {
-	if err := in.ValidateDraft(); err != nil {
-		return err
-	}
-	if in.Sets == nil || *in.Sets <= 0 {
-		return fmt.Errorf("%w: sets is required", ErrValidation)
-	}
-	if in.Reps == nil || *in.Reps <= 0 {
-		return fmt.Errorf("%w: reps is required", ErrValidation)
-	}
-	return nil
+	return in.ValidateDraft()
 }
 
 func validatePublishDetail(d Detail) error {
@@ -258,24 +249,20 @@ func validatePublishDetail(d Detail) error {
 					if len(block.Exercises) != 1 {
 						return fmt.Errorf("%w: single block must have exactly one exercise", ErrValidation)
 					}
+				} else if len(block.Exercises) < 1 {
+					return fmt.Errorf("%w: group block must have at least one exercise", ErrValidation)
+				}
+				if len(block.Exercises) > 0 {
 					dayHasExercises = true
+				}
+				for _, ex := range block.Exercises {
 					in := DayExerciseInput{
-						ExerciseID: block.Exercises[0].ExerciseID,
-						Sets:       block.Exercises[0].Sets,
-						Reps:       block.Exercises[0].Reps,
+						ExerciseID: ex.ExerciseID,
+						Sets:       ex.Sets,
+						Reps:       ex.Reps,
 					}
 					if err := in.ValidatePublish(); err != nil {
 						return err
-					}
-					continue
-				}
-				if len(block.Exercises) < 1 {
-					return fmt.Errorf("%w: group block must have at least one exercise", ErrValidation)
-				}
-				dayHasExercises = true
-				for _, ex := range block.Exercises {
-					if ex.ExerciseID == uuid.Nil {
-						return fmt.Errorf("%w: exercise_id is required", ErrValidation)
 					}
 				}
 			}

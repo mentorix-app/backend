@@ -62,8 +62,8 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 
 ## Publish
 
-- `single`: ровно 1 упражнение; `sets`/`reps` > 0.
-- группа (`block_type` ≠ `single`): ≥ 1 упражнение; пустая группа — ошибка.
+- `single`: ровно 1 упражнение; `sets`/`reps` опциональны (можно не передавать или `null`), при значении — ≥ 1.
+- группа (`block_type` ≠ `single`): ≥ 1 упражнение; пустая группа — ошибка; для каждого упражнения те же правила `sets`/`reps`.
 - `instruction` группы может быть `""`.
 
 Остальная валидация — [programs.md](programs.md).

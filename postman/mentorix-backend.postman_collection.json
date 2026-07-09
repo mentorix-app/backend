@@ -770,7 +770,7 @@
               "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": 3,\n    \"reps\": 10,\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks",
-            "description": "Создать single-блок с упражнением"
+            "description": "Создать single-блок с упражнением. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — целое >= 1."
           },
           "response": []
         },
@@ -833,7 +833,7 @@
               "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": 3,\n    \"reps\": 10,\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks",
-            "description": "Второй single-блок в том же дне (для merge). Сохраняет program_week_day_block_id_2."
+            "description": "Второй single-блок в том же дне (для merge). Сохраняет program_week_day_block_id_2. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — целое >= 1."
           },
           "response": []
         },
@@ -887,7 +887,7 @@
               "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 4,\n  \"reps\": 8,\n  \"instruction\": \"Обновлённая инструкция\"\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/{{program_week_day_block_exercise_id}}",
-            "description": "Обновить упражнение в блоке"
+            "description": "Обновить упражнение в блоке. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — целое >= 1."
           },
           "response": []
         },
@@ -1114,7 +1114,7 @@
               "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 3,\n  \"reps\": 10\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises",
-            "description": "Добавить упражнение в групповой блок"
+            "description": "Добавить упражнение в групповой блок. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — целое >= 1."
           },
           "response": []
         },
@@ -1385,7 +1385,7 @@
             "method": "POST",
             "header": [],
             "url": "{{base_url}}/programs/{{program_id}}/publish",
-            "description": "Publish — валидирует обязательные поля и упражнения"
+            "description": "Publish — валидирует обязательные поля и упражнения. `sets`/`reps` в упражнениях опциональны; при значении — целое >= 1."
           },
           "response": []
         },

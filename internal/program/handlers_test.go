@@ -833,6 +833,30 @@ func TestHandlers_ReorderBlockExercises_unauthorized(t *testing.T) {
 	assertHTTPError(t, h.ReorderBlockExercises(c), http.StatusUnauthorized)
 }
 
+func TestHandlers_CreateDayBlock_nullSetsReps(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	exerciseID := uuid.New()
+	detail := sampleDetail(userID, programID)
+	weekID := detail.Weeks[0].ID
+	dayID := detail.Weeks[0].Days[0].ID
+	store := &fakeProgramStore{program: detail.Program, detail: detail}
+	h := programHandler(store)
+
+	body := `{"block_type":"single","exercise":{"exercise_id":"` + exerciseID.String() + `","sets":null,"reps":null}}`
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/blocks", body, userID, map[string]string{
+		"id":      programID.String(),
+		"week_id": weekID.String(),
+		"day_id":  dayID.String(),
+	})
+
+	if err := h.CreateDayBlock(c); err != nil {
+		t.Fatalf("CreateDayBlock: %v", err)
+	}
+	assertStatus(t, rec, http.StatusCreated)
+}
+
 func TestHandlers_CreateDayBlock(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()

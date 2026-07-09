@@ -95,6 +95,48 @@ func TestHandlers_MoveDayBlock(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 }
 
+func TestHandlers_AddBlockExercise_nullSetsReps(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	exerciseID := uuid.New()
+	body := `{"exercise_id":"` + exerciseID.String() + `","sets":null,"reps":null}`
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises", body, userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
+	})
+	if err := h.AddBlockExercise(c); err != nil {
+		t.Fatalf("AddBlockExercise: %v", err)
+	}
+	assertStatus(t, rec, http.StatusCreated)
+}
+
+func TestHandlers_AddBlockExercise_zeroSets(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	exerciseID := uuid.New()
+	body := `{"exercise_id":"` + exerciseID.String() + `","sets":0}`
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises", body, userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
+	})
+	assertHTTPError(t, h.AddBlockExercise(c), http.StatusBadRequest)
+}
+
+func TestHandlers_AddBlockExercise_negativeSets(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	exerciseID := uuid.New()
+	body := `{"exercise_id":"` + exerciseID.String() + `","sets":-1}`
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises", body, userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
+	})
+	assertHTTPError(t, h.AddBlockExercise(c), http.StatusBadRequest)
+}
+
 func TestHandlers_AddBlockExercise(t *testing.T) {
 	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
 	exerciseID := uuid.New()

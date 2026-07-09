@@ -1948,9 +1948,11 @@ components:
           type: integer
         sets:
           type: integer
+          minimum: 1
           nullable: true
         reps:
           type: integer
+          minimum: 1
           nullable: true
         instruction:
           type: string
@@ -2217,7 +2219,8 @@ components:
       type: object
       required: [exercise_id]
       description: >
-        `sets` and `reps` are optional in draft; required with positive values on publish.
+        `sets` and `reps` are optional and may be omitted or `null`; when a
+        numeric value is provided, it must be >= 1.
       properties:
         exercise_id:
           type: string
