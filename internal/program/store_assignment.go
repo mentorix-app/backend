@@ -127,6 +127,32 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 	return s.assignmentFromDBWithVersion(ctx, row, latest)
 }
 
+func (s *Store) validateProgramForAssignment(ctx context.Context, trainerUserID, programID uuid.UUID) error {
+	p, err := s.GetProgramRow(ctx, programID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if p.DeletedAt != nil {
+		return ErrNotFound
+	}
+	if p.CreatedBy != trainerUserID {
+		return ErrForbidden
+	}
+	if p.Status != StatusPublished {
+		return ErrProgramNotPublished
+	}
+	if _, err := s.q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrProgramNotPublished
+		}
+		return fmt.Errorf("latest program version: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) ensureTrainerClientActive(ctx context.Context, trainerID, clientUserID uuid.UUID) error {
 	status, err := s.q.TrainerClientLinkActive(ctx, sqlc.TrainerClientLinkActiveParams{
 		TrainerID:    pgconv.ToPGUUID(trainerID),

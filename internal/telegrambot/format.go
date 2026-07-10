@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	telegramMessageLimit     = 4000
+	telegramMessageLimit       = 4000
 	cyrillicMultiplicationSign = "х"
 )
 

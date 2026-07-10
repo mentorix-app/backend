@@ -875,6 +875,42 @@ paths:
         "404":
           description: Avatar not found
 
+  /trainer/clients/program-assignment:
+    put:
+      tags: [trainer]
+      summary: Set or clear program for one or more clients
+      description: >
+        Assign a published program (latest frozen version) or clear assignments
+        (`program_id: null`) for 1–100 linked clients. Pass a single id in
+        `client_user_ids` for one client. Per-client failures are returned in
+        `skipped`; program validation errors fail the whole request.
+      operationId: setTrainerClientProgramAssignment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkSetClientProgramAssignmentRequest"
+      responses:
+        "200":
+          description: Bulk assignment result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkClientProgramAssignmentResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (program not owned)
+        "404":
+          description: Program not found
+        "422":
+          description: Program is not published
+
   /trainer/clients/{client_user_id}/program-assignment:
     parameters:
       - $ref: "#/components/parameters/ClientUserId"
@@ -901,39 +937,6 @@ paths:
           description: Forbidden (client is not linked to trainer)
         "404":
           description: Client user not found
-    put:
-      tags: [trainer]
-      summary: Set or clear client's active program
-      description: >
-        Clients page Select: choose a published program (latest frozen version) or
-        null to remove. Replaces any other active program for this trainer–client pair.
-      operationId: setTrainerClientProgramAssignment
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetClientProgramAssignmentRequest"
-      responses:
-        "200":
-          description: Updated assignment or null when cleared
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProgramAssignment"
-                nullable: true
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Forbidden (client is not linked or program not owned)
-        "404":
-          description: Client or program not found
-        "422":
-          description: Program is not published or client is blocked
 
   /programs/{id}/weeks:
     parameters:
@@ -2420,14 +2423,52 @@ components:
           format: uuid
           nullable: true
 
-    SetClientProgramAssignmentRequest:
+    BulkSetClientProgramAssignmentRequest:
       type: object
+      required: [client_user_ids]
       properties:
         program_id:
           type: string
           format: uuid
           nullable: true
-          description: Published program to assign; null clears the active assignment.
+          description: Published program to assign; null clears active assignments.
+        client_user_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+
+    BulkClientProgramAssignmentSkipped:
+      type: object
+      required: [client_user_id, reason]
+      properties:
+        client_user_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          description: not_linked, blocked, or not_found
+
+    BulkClientProgramAssignmentResponse:
+      type: object
+      required: [assigned, cleared, skipped]
+      properties:
+        assigned:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramAssignment"
+        cleared:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Client user IDs whose active assignment was removed
+        skipped:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkClientProgramAssignmentSkipped"
 
     ProgramAssignmentSyncRequest:
       type: object

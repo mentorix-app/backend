@@ -194,6 +194,10 @@ func (f *fakeProgramStore) SetClientProgramAssignment(context.Context, uuid.UUID
 	return nil, f.err
 }
 
+func (f *fakeProgramStore) validateProgramForAssignment(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+
 func (f *fakeProgramStore) ListProgramAssignments(context.Context, uuid.UUID) (AssignmentListResult, error) {
 	return AssignmentListResult{}, f.err
 }

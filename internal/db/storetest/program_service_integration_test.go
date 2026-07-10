@@ -540,6 +540,107 @@ func TestProgramService_ClientProgramAssignment(t *testing.T) {
 	}
 }
 
+func TestProgramService_BulkSetClientProgramAssignment(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "bulk-assign-trainer@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register trainer: %v", err)
+	}
+	linkedClientID, err := authStore.RegisterTrainerEmailPassword(ctx, "bulk-linked@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register linked client: %v", err)
+	}
+	unlinkedClientID, err := authStore.RegisterTrainerEmailPassword(ctx, "bulk-unlinked@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register unlinked client: %v", err)
+	}
+
+	q := sqlc.New(pool)
+	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
+	if err != nil {
+		t.Fatalf("GetTrainerIDByUserID: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id, status)
+		VALUES ($1, $2, 'active')
+	`, trainerID, linkedClientID); err != nil {
+		t.Fatalf("insert trainer_clients: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, exercise.UpsertInput{
+		Name:        "Press",
+		NameRu:      "Жим",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupChest,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+
+	svc := program.NewService(pool)
+	draft, err := svc.Create(ctx, trainerUserID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	sets, reps := 3, 8
+	if _, err := createSingleBlock(ctx, svc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	}); err != nil {
+		t.Fatalf("AddDayExercise: %v", err)
+	}
+	name := "Bulk Program"
+	category := program.CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	if _, err := svc.Update(ctx, trainerUserID, draft.ID, program.UpdateInput{
+		Name:       &name,
+		Category:   &category,
+		Difficulty: &difficulty,
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, err := svc.Publish(ctx, trainerUserID, draft.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	programID := draft.ID
+	result, err := svc.BulkSetClientProgramAssignment(ctx, trainerUserID, program.BulkSetClientProgramAssignmentRequest{
+		ProgramID:     &programID,
+		ClientUserIDs: []uuid.UUID{linkedClientID, unlinkedClientID, linkedClientID},
+	})
+	if err != nil {
+		t.Fatalf("BulkSetClientProgramAssignment: %v", err)
+	}
+	if len(result.Assigned) != 1 || result.Assigned[0].ClientUserID != linkedClientID {
+		t.Fatalf("assigned = %+v", result.Assigned)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0].ClientUserID != unlinkedClientID || result.Skipped[0].Reason != "not_linked" {
+		t.Fatalf("skipped = %+v", result.Skipped)
+	}
+
+	clearResult, err := svc.BulkSetClientProgramAssignment(ctx, trainerUserID, program.BulkSetClientProgramAssignmentRequest{
+		ClientUserIDs: []uuid.UUID{linkedClientID},
+	})
+	if err != nil {
+		t.Fatalf("BulkSetClientProgramAssignment clear: %v", err)
+	}
+	if len(clearResult.Cleared) != 1 || clearResult.Cleared[0] != linkedClientID {
+		t.Fatalf("cleared = %+v", clearResult.Cleared)
+	}
+}
+
 func TestProgramService_AssignmentSyncAndVersionCleanup(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()

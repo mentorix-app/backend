@@ -44,6 +44,7 @@ type programStore interface {
 	TrainerIDForUser(ctx context.Context, userID uuid.UUID) (uuid.UUID, error)
 	GetClientProgramAssignment(ctx context.Context, trainerID, clientUserID uuid.UUID) (*Assignment, error)
 	SetClientProgramAssignment(ctx context.Context, trainerUserID, trainerID, clientUserID uuid.UUID, programID *uuid.UUID) (*Assignment, error)
+	validateProgramForAssignment(ctx context.Context, trainerUserID, programID uuid.UUID) error
 	ListProgramAssignments(ctx context.Context, programID uuid.UUID) (AssignmentListResult, error)
 	SyncProgramAssignments(ctx context.Context, userID, programID uuid.UUID, req AssignmentSyncRequest) (AssignmentSyncResult, error)
 	ListProgramVersions(ctx context.Context, programID uuid.UUID) (VersionListResult, error)

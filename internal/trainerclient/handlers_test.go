@@ -18,8 +18,8 @@ func TestHandlers_Mount_registersRoutes(t *testing.T) {
 	want := []string{
 		"POST /trainer/invites",
 		"GET /trainer/clients",
+		"PUT /trainer/clients/program-assignment",
 		"GET /trainer/clients/:client_user_id/program-assignment",
-		"PUT /trainer/clients/:client_user_id/program-assignment",
 	}
 	for _, rt := range want {
 		if !found[rt] {

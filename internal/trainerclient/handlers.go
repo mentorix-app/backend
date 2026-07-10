@@ -43,8 +43,8 @@ func (h *Handlers) Mount(e *echo.Echo) {
 		auth.TrainerMiddleware(h.pool),
 	)
 	clients.GET("", h.ListClients)
+	clients.PUT("/program-assignment", h.SetProgramAssignment)
 	clients.GET("/:client_user_id/program-assignment", h.GetProgramAssignment)
-	clients.PUT("/:client_user_id/program-assignment", h.SetProgramAssignment)
 
 	e.GET("/trainer/clients/:client_user_id/avatar", h.GetClientAvatar)
 }
@@ -105,21 +105,17 @@ func (h *Handlers) SetProgramAssignment(c echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
 	}
-	clientUserID, err := uuid.Parse(c.Param("client_user_id"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
-	}
 
-	var body program.SetClientProgramAssignmentRequest
+	var body program.BulkSetClientProgramAssignmentRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
 
-	assignment, err := h.svc.SetClientProgramAssignment(c.Request().Context(), trainerUserID, clientUserID, body.ProgramID)
+	result, err := h.svc.BulkSetClientProgramAssignment(c.Request().Context(), trainerUserID, body)
 	if err != nil {
 		return program.HTTPErrorFrom(err)
 	}
-	return c.JSON(http.StatusOK, assignment)
+	return c.JSON(http.StatusOK, result)
 }
 
 func (h *Handlers) GetClientAvatar(c echo.Context) error {

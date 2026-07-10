@@ -1,6 +1,7 @@
 package program
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,6 +14,8 @@ const (
 	AssignmentStatusCompleted AssignmentStatus = "completed"
 	AssignmentStatusCancelled AssignmentStatus = "cancelled"
 )
+
+const MaxBulkClientAssignments = 100
 
 type Assignment struct {
 	ID               uuid.UUID        `json:"id"`
@@ -70,6 +73,28 @@ type VersionCleanupResult struct {
 	Skipped           []VersionCleanupSkipped `json:"skipped"`
 }
 
-type SetClientProgramAssignmentRequest struct {
-	ProgramID *uuid.UUID `json:"program_id"`
+type BulkSetClientProgramAssignmentRequest struct {
+	ProgramID     *uuid.UUID  `json:"program_id"`
+	ClientUserIDs []uuid.UUID `json:"client_user_ids"`
+}
+
+func (r BulkSetClientProgramAssignmentRequest) Validate() error {
+	if len(r.ClientUserIDs) == 0 {
+		return fmt.Errorf("%w: client_user_ids is required", ErrValidation)
+	}
+	if len(r.ClientUserIDs) > MaxBulkClientAssignments {
+		return fmt.Errorf("%w: client_user_ids exceeds maximum of %d", ErrValidation, MaxBulkClientAssignments)
+	}
+	return nil
+}
+
+type BulkAssignmentSkipped struct {
+	ClientUserID uuid.UUID `json:"client_user_id"`
+	Reason       string    `json:"reason"`
+}
+
+type BulkAssignmentResult struct {
+	Assigned []Assignment            `json:"assigned"`
+	Cleared  []uuid.UUID             `json:"cleared"`
+	Skipped  []BulkAssignmentSkipped `json:"skipped"`
 }

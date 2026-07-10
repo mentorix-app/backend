@@ -16,7 +16,7 @@ import (
 
 type ClientProgramService interface {
 	GetClientProgramAssignment(ctx context.Context, trainerUserID, clientUserID uuid.UUID) (*program.Assignment, error)
-	SetClientProgramAssignment(ctx context.Context, trainerUserID, clientUserID uuid.UUID, programID *uuid.UUID) (*program.Assignment, error)
+	BulkSetClientProgramAssignment(ctx context.Context, trainerUserID uuid.UUID, req program.BulkSetClientProgramAssignmentRequest) (program.BulkAssignmentResult, error)
 }
 
 type ProfilePhotoFetcher interface {
@@ -154,13 +154,15 @@ func (s *Service) GetClientProgramAssignment(ctx context.Context, trainerUserID,
 	return s.programs.GetClientProgramAssignment(ctx, trainerUserID, clientUserID)
 }
 
-func (s *Service) SetClientProgramAssignment(ctx context.Context, trainerUserID, clientUserID uuid.UUID, programID *uuid.UUID) (*program.Assignment, error) {
-	assignment, err := s.programs.SetClientProgramAssignment(ctx, trainerUserID, clientUserID, programID)
+func (s *Service) BulkSetClientProgramAssignment(ctx context.Context, trainerUserID uuid.UUID, req program.BulkSetClientProgramAssignmentRequest) (program.BulkAssignmentResult, error) {
+	result, err := s.programs.BulkSetClientProgramAssignment(ctx, trainerUserID, req)
 	if err != nil {
-		return nil, err
+		return program.BulkAssignmentResult{}, err
 	}
-	if assignment != nil && s.notifier != nil {
-		_ = s.notifier.NotifyProgramAssigned(ctx, assignment.ClientUserID, assignment.TrainerID, assignment.ProgramVersionID)
+	if s.notifier != nil {
+		for _, assignment := range result.Assigned {
+			_ = s.notifier.NotifyProgramAssigned(ctx, assignment.ClientUserID, assignment.TrainerID, assignment.ProgramVersionID)
+		}
 	}
-	return assignment, nil
+	return result, nil
 }

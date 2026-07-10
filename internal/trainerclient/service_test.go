@@ -18,8 +18,8 @@ func (noopPrograms) GetClientProgramAssignment(context.Context, uuid.UUID, uuid.
 	return nil, nil
 }
 
-func (noopPrograms) SetClientProgramAssignment(context.Context, uuid.UUID, uuid.UUID, *uuid.UUID) (*program.Assignment, error) {
-	return nil, nil
+func (noopPrograms) BulkSetClientProgramAssignment(context.Context, uuid.UUID, program.BulkSetClientProgramAssignmentRequest) (program.BulkAssignmentResult, error) {
+	return program.BulkAssignmentResult{}, nil
 }
 
 func TestService_CreateInvite_notConfigured(t *testing.T) {

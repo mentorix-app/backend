@@ -27,7 +27,7 @@
 
 | Событие | Триггер |
 | ------- | ------- |
-| Назначена программа | `PUT /trainer/clients/{id}/program-assignment` с `program_id` |
+| Назначена программа | `PUT /trainer/clients/program-assignment` с `program_id` и `client_user_ids` |
 | Обновлена программа | `POST /programs/{id}/assignments/sync`, assignment в `synced` |
 
 Не шлём: снятие программы (`program_id: null`), accept invite (welcome в боте), skipped sync.

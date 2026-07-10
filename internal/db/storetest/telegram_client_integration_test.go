@@ -92,8 +92,11 @@ func TestTelegramClient_programAndToday(t *testing.T) {
 		t.Fatalf("Publish: %v", err)
 	}
 	programID := draft.ID
-	if _, err := svc.SetClientProgramAssignment(ctx, trainerUserID, accept.UserID, &programID); err != nil {
-		t.Fatalf("SetClientProgramAssignment: %v", err)
+	if _, err := svc.BulkSetClientProgramAssignment(ctx, trainerUserID, program.BulkSetClientProgramAssignmentRequest{
+		ProgramID:     &programID,
+		ClientUserIDs: []uuid.UUID{accept.UserID},
+	}); err != nil {
+		t.Fatalf("BulkSetClientProgramAssignment: %v", err)
 	}
 
 	trainers, err := svc.ListTelegramTrainers(ctx, "777001")

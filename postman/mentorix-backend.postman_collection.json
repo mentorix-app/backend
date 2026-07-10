@@ -1911,27 +1911,7 @@
           "response": []
         },
         {
-          "name": "GET /trainer/clients/:client_user_id/program-assignment",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{access_token}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/trainer/clients/{{client_user_id}}/program-assignment",
-            "description": "Current program for client (clients page Select)"
-          },
-          "response": []
-        },
-        {
-          "name": "PUT /trainer/clients/:client_user_id/program-assignment",
+          "name": "PUT /trainer/clients/program-assignment",
           "request": {
             "auth": {
               "type": "bearer",
@@ -1952,10 +1932,30 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"program_id\": \"{{program_id}}\"\n}"
+              "raw": "{\n  \"program_id\": \"{{program_id}}\",\n  \"client_user_ids\": [\"{{client_user_id}}\"]\n}"
             },
+            "url": "{{base_url}}/trainer/clients/program-assignment",
+            "description": "Assign or clear program for 1–100 clients. Single client: one id in client_user_ids."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /trainer/clients/:client_user_id/program-assignment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
             "url": "{{base_url}}/trainer/clients/{{client_user_id}}/program-assignment",
-            "description": "Set or replace client program; program_id null to clear"
+            "description": "Current program for client (clients page Select)"
           },
           "response": []
         },

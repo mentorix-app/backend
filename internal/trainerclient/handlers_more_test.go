@@ -2,6 +2,7 @@ package trainerclient_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,14 +21,28 @@ type stubClientPrograms struct {
 	assignmentErr    error
 	setAssignment    *program.Assignment
 	setAssignmentErr error
+	bulkResult       program.BulkAssignmentResult
+	bulkResultErr    error
 }
 
 func (s stubClientPrograms) GetClientProgramAssignment(context.Context, uuid.UUID, uuid.UUID) (*program.Assignment, error) {
 	return s.assignment, s.assignmentErr
 }
 
-func (s stubClientPrograms) SetClientProgramAssignment(context.Context, uuid.UUID, uuid.UUID, *uuid.UUID) (*program.Assignment, error) {
-	return s.setAssignment, s.setAssignmentErr
+func (s stubClientPrograms) BulkSetClientProgramAssignment(context.Context, uuid.UUID, program.BulkSetClientProgramAssignmentRequest) (program.BulkAssignmentResult, error) {
+	if s.bulkResultErr != nil {
+		return program.BulkAssignmentResult{}, s.bulkResultErr
+	}
+	if s.bulkResult.Assigned != nil || s.bulkResult.Cleared != nil || s.bulkResult.Skipped != nil {
+		return s.bulkResult, nil
+	}
+	if s.setAssignmentErr != nil {
+		return program.BulkAssignmentResult{}, s.setAssignmentErr
+	}
+	if s.setAssignment != nil {
+		return program.BulkAssignmentResult{Assigned: []program.Assignment{*s.setAssignment}}, nil
+	}
+	return program.BulkAssignmentResult{Cleared: []uuid.UUID{}}, nil
 }
 
 func trainerClientContext(e *echo.Echo, method, path, body string, userID uuid.UUID, params map[string]string) (echo.Context, *httptest.ResponseRecorder) {
@@ -75,12 +90,10 @@ func TestHandlers_GetProgramAssignment_unauthorized(t *testing.T) {
 func TestHandlers_SetProgramAssignment_unauthorized(t *testing.T) {
 	h := testHandlers(stubClientPrograms{})
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPut, "/trainer/clients/"+uuid.New().String()+"/program-assignment", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPut, "/trainer/clients/program-assignment", strings.NewReader(`{"client_user_ids":[]}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	c.SetParamNames("client_user_id")
-	c.SetParamValues(uuid.New().String())
 
 	err := h.SetProgramAssignment(c)
 	he, ok := err.(*echo.HTTPError)
@@ -91,15 +104,12 @@ func TestHandlers_SetProgramAssignment_unauthorized(t *testing.T) {
 
 func TestHandlers_SetProgramAssignment_invalidJSON(t *testing.T) {
 	userID := uuid.New()
-	clientID := uuid.New()
 	h := testHandlers(stubClientPrograms{})
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPut, "/trainer/clients/"+clientID.String()+"/program-assignment", strings.NewReader(`not-json`))
+	req := httptest.NewRequest(http.MethodPut, "/trainer/clients/program-assignment", strings.NewReader(`not-json`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	c.SetParamNames("client_user_id")
-	c.SetParamValues(clientID.String())
 	c.Set(auth.ContextUserIDKey, userID)
 
 	err := h.SetProgramAssignment(c)
@@ -163,22 +173,18 @@ func TestHandlers_SetProgramAssignment_clear(t *testing.T) {
 	userID := uuid.New()
 	clientID := uuid.New()
 	h := testHandlers(stubClientPrograms{
-		setAssignment: nil,
+		bulkResult: program.BulkAssignmentResult{Cleared: []uuid.UUID{clientID}},
 	})
 
 	e := echo.New()
-	c, rec := trainerClientContext(e, http.MethodPut, "/trainer/clients/"+clientID.String()+"/program-assignment", `{"program_id":null}`, userID, map[string]string{
-		"client_user_id": clientID.String(),
-	})
+	body := `{"program_id":null,"client_user_ids":["` + clientID.String() + `"]}`
+	c, rec := trainerClientContext(e, http.MethodPut, "/trainer/clients/program-assignment", body, userID, nil)
 
 	if err := h.SetProgramAssignment(c); err != nil {
 		t.Fatalf("SetProgramAssignment: %v", err)
 	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
-	}
-	if body := strings.TrimSpace(rec.Body.String()); body != "null" {
-		t.Fatalf("body = %q, want null", body)
 	}
 }
 
@@ -188,20 +194,21 @@ func TestHandlers_SetProgramAssignment_success(t *testing.T) {
 	programID := uuid.New()
 	now := time.Now().UTC()
 	h := testHandlers(stubClientPrograms{
-		setAssignment: &program.Assignment{
-			ID:         uuid.New(),
-			ProgramID:  programID,
-			AssignedAt: now,
-			CreatedAt:  now,
-			Status:     program.AssignmentStatusActive,
+		bulkResult: program.BulkAssignmentResult{
+			Assigned: []program.Assignment{{
+				ID:           uuid.New(),
+				ProgramID:    programID,
+				ClientUserID: clientID,
+				AssignedAt:   now,
+				CreatedAt:    now,
+				Status:       program.AssignmentStatusActive,
+			}},
 		},
 	})
 
 	e := echo.New()
-	body := `{"program_id":"` + programID.String() + `"}`
-	c, rec := trainerClientContext(e, http.MethodPut, "/trainer/clients/"+clientID.String()+"/program-assignment", body, userID, map[string]string{
-		"client_user_id": clientID.String(),
-	})
+	body := `{"program_id":"` + programID.String() + `","client_user_ids":["` + clientID.String() + `"]}`
+	c, rec := trainerClientContext(e, http.MethodPut, "/trainer/clients/program-assignment", body, userID, nil)
 
 	if err := h.SetProgramAssignment(c); err != nil {
 		t.Fatalf("SetProgramAssignment: %v", err)
@@ -211,24 +218,36 @@ func TestHandlers_SetProgramAssignment_success(t *testing.T) {
 	}
 }
 
-func TestHandlers_SetProgramAssignment_forbidden(t *testing.T) {
+func TestHandlers_SetProgramAssignment_validationError(t *testing.T) {
+	h := testHandlers(stubClientPrograms{
+		bulkResultErr: fmt.Errorf("%w: client_user_ids is required", program.ErrValidation),
+	})
+	e := echo.New()
+	c, _ := trainerClientContext(e, http.MethodPut, "/trainer/clients/program-assignment", `{"client_user_ids":[]}`, uuid.New(), nil)
+
+	err := h.SetProgramAssignment(c)
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("error = %v, want 400", err)
+	}
+}
+
+func TestHandlers_SetProgramAssignment_programError(t *testing.T) {
 	userID := uuid.New()
 	clientID := uuid.New()
 	programID := uuid.New()
 	h := testHandlers(stubClientPrograms{
-		setAssignmentErr: program.ErrClientNotLinked,
+		bulkResultErr: program.ErrProgramNotPublished,
 	})
 
 	e := echo.New()
-	body := `{"program_id":"` + programID.String() + `"}`
-	c, _ := trainerClientContext(e, http.MethodPut, "/trainer/clients/"+clientID.String()+"/program-assignment", body, userID, map[string]string{
-		"client_user_id": clientID.String(),
-	})
+	body := `{"program_id":"` + programID.String() + `","client_user_ids":["` + clientID.String() + `"]}`
+	c, _ := trainerClientContext(e, http.MethodPut, "/trainer/clients/program-assignment", body, userID, nil)
 
 	err := h.SetProgramAssignment(c)
 	he, ok := err.(*echo.HTTPError)
-	if !ok || he.Code != http.StatusForbidden {
-		t.Fatalf("error = %v, want 403", err)
+	if !ok || he.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("error = %v, want 422", err)
 	}
 }
 

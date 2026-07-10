@@ -13,7 +13,7 @@
 
 ## API
 
-Контракт: `api/openapi.yaml` — `GET/PUT /trainer/clients/{client_user_id}/program-assignment`, `GET /trainer/clients` (список).
+Контракт: `api/openapi.yaml` — `GET /trainer/clients/{client_user_id}/program-assignment`, `PUT /trainer/clients/program-assignment`, `GET /trainer/clients` (список).
 
 `GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc). Поле `avatar_url` — подписанный URL прокси фото из Telegram (пустой, если фото нет).
 
@@ -23,6 +23,7 @@
 
 - Одна активная `program_assignments` на `(trainer_id, client_user_id)`.
 - Версия — последняя замороженная; снятие — `program_id: null` в PUT.
+- Назначение: `PUT /trainer/clients/program-assignment` — `client_user_ids` (1–100) + `program_id`; ответ `assigned` / `cleared` / `skipped` (как sync). Один клиент — массив из одного id.
 - Sync активных назначений — эндпоинты программы (`POST .../assignments/sync`).
 
 ## См. также

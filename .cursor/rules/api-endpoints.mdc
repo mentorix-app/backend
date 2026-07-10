@@ -90,7 +90,7 @@ Day id **only** where the operation is about the day's block list (create, reord
 | `/auth/*` | auth actions + `/auth/me` |
 | `/exercises` | catalog CRUD |
 | `/admin/users/{user_id}/roles/admin` | admin grant |
-| `/trainer/clients/{client_user_id}/program-assignment` | kebab compound resource |
+| `/trainer/clients/program-assignment` | bulk assign (`PUT`); read one client via `GET …/{client_user_id}/program-assignment` |
 | `/health`, `/health/ready` | no `created_at` |
 
 ## GET entities

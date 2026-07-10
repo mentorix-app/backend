@@ -104,6 +104,53 @@ func TestFormatTrainers_singleNoProgram(t *testing.T) {
 	}
 }
 
+func TestFormatBlocks_groupExerciseInstruction(t *testing.T) {
+	sets, reps := 3, 5
+	text := formatBlocks([]program.DayBlock{{
+		BlockType: program.BlockTypeComplex,
+		Exercises: []program.DayExercise{{
+			ExerciseNameRu: "Подтягивания",
+			Sets:           &sets,
+			Reps:           &reps,
+			Instruction:    "полная амплитуда",
+		}},
+	}})
+	if !strings.Contains(text, "полная амплитуда") {
+		t.Fatalf("expected exercise instruction, got %q", text)
+	}
+}
+
+func TestFormatProgram_splitsLongMessage(t *testing.T) {
+	sets, reps := 3, 10
+	ex := program.DayExercise{
+		ExerciseNameRu: "Присед",
+		Sets:           &sets,
+		Reps:           &reps,
+		Instruction:    strings.Repeat("объём ", 500),
+	}
+	days := make([]program.Day, 5)
+	for i := range days {
+		days[i] = program.Day{
+			DayNumber: i + 1,
+			Blocks:    []program.DayBlock{{Exercises: []program.DayExercise{ex}}},
+		}
+	}
+	parts := formatProgram(trainerclient.TelegramProgramResponse{
+		TrainerDisplayName: "Anna",
+		HasProgram:         true,
+		Program: &program.Detail{
+			Program: program.Program{NameRu: "Сила"},
+			Weeks: []program.Week{{
+				WeekNumber: 1,
+				Days:       days,
+			}},
+		},
+	})
+	if len(parts) < 2 {
+		t.Fatalf("expected message split, got %d parts", len(parts))
+	}
+}
+
 func TestFormatBlocks_withInstruction(t *testing.T) {
 	sets, reps := 3, 5
 	text := formatBlocks([]program.DayBlock{{
