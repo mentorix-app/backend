@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/auth"
@@ -237,6 +238,90 @@ func TestTrainerInvite_notConfigured(t *testing.T) {
 	_, err = svc.CreateInvite(ctx, trainerUserID)
 	if !errors.Is(err, trainerclient.ErrInviteNotConfigured) {
 		t.Fatalf("error = %v, want ErrInviteNotConfigured", err)
+	}
+}
+
+func TestTrainerInvite_adminListsAllClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerA, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-list-trainer-a@test.com", pwHash, "Trainer A")
+	if err != nil {
+		t.Fatalf("register trainer A: %v", err)
+	}
+	trainerB, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-list-trainer-b@test.com", pwHash, "Trainer B")
+	if err != nil {
+		t.Fatalf("register trainer B: %v", err)
+	}
+	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-list-admin@test.com", pwHash, "Admin")
+	if err != nil {
+		t.Fatalf("register admin: %v", err)
+	}
+	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
+		t.Fatalf("grant admin: %v", err)
+	}
+	_, err = pool.Exec(ctx, `DELETE FROM mentorix.trainers WHERE user_id = $1`, adminID)
+	if err != nil {
+		t.Fatalf("delete admin trainer row: %v", err)
+	}
+
+	progSvc := program.NewService(pool)
+	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
+		TelegramBotUsername: "mentorix_bot",
+		InviteTTL:           7 * 24 * time.Hour,
+	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
+
+	acceptClient := func(trainerUserID uuid.UUID, telegramID, name string) {
+		t.Helper()
+		invite, err := svc.CreateInvite(ctx, trainerUserID)
+		if err != nil {
+			t.Fatalf("CreateInvite: %v", err)
+		}
+		token := strings.TrimPrefix(strings.Split(invite.InviteURL, "start=")[1], "inv_")
+		if _, err := svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
+			Token:          token,
+			TelegramUserID: telegramID,
+			DisplayName:    name,
+		}); err != nil {
+			t.Fatalf("AcceptInvite %s: %v", name, err)
+		}
+	}
+
+	acceptClient(trainerA, "880001", "Client One")
+	acceptClient(trainerA, "880002", "Client Two")
+	acceptClient(trainerB, "880002", "Client Two")
+	acceptClient(trainerB, "880003", "Client Three")
+
+	listA, err := svc.ListClients(ctx, trainerA, trainerclient.DefaultListParams())
+	if err != nil {
+		t.Fatalf("ListClients trainer A: %v", err)
+	}
+	if len(listA.Items) != 2 {
+		t.Fatalf("trainer A clients = %d, want 2", len(listA.Items))
+	}
+
+	listB, err := svc.ListClients(ctx, trainerB, trainerclient.DefaultListParams())
+	if err != nil {
+		t.Fatalf("ListClients trainer B: %v", err)
+	}
+	if len(listB.Items) != 2 {
+		t.Fatalf("trainer B clients = %d, want 2", len(listB.Items))
+	}
+
+	listAdmin, err := svc.ListClients(ctx, adminID, trainerclient.DefaultListParams())
+	if err != nil {
+		t.Fatalf("ListClients admin: %v", err)
+	}
+	if listAdmin.Pagination.Total != 3 {
+		t.Fatalf("admin total = %d, want 3", listAdmin.Pagination.Total)
+	}
+	if len(listAdmin.Items) != 3 {
+		t.Fatalf("admin clients = %d, want 3", len(listAdmin.Items))
 	}
 }
 

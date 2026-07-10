@@ -10,7 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
+	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/program"
 )
 
@@ -31,6 +33,7 @@ type InviteSettings struct {
 type Service struct {
 	store         *Store
 	programs      ClientProgramService
+	roles         auth.RoleQuerier
 	invites       InviteSettings
 	activeTrainer ActiveTrainerStore
 	notifier      ProgramNotifier
@@ -57,6 +60,7 @@ func NewService(pool *pgxpool.Pool, programs ClientProgramService, invites Invit
 	s := &Service{
 		store:         NewStore(pool),
 		programs:      programs,
+		roles:         sqlc.New(pool),
 		invites:       invites,
 		activeTrainer: activeTrainer,
 		notifier:      notifier,
@@ -90,15 +94,26 @@ func (s *Service) CreateInvite(ctx context.Context, trainerUserID uuid.UUID) (In
 	}, nil
 }
 
-func (s *Service) ListClients(ctx context.Context, trainerUserID uuid.UUID, params ListParams) (ClientListResult, error) {
-	trainerID, err := s.store.TrainerIDForUser(ctx, trainerUserID)
+func (s *Service) ListClients(ctx context.Context, userID uuid.UUID, params ListParams) (ClientListResult, error) {
+	isAdmin, err := auth.UserIsAdmin(ctx, s.roles, userID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ClientListResult{}, program.ErrForbidden
-		}
 		return ClientListResult{}, err
 	}
-	result, err := s.store.ListClients(ctx, trainerID, params)
+
+	var result ClientListResult
+	if isAdmin {
+		result, err = s.store.ListAllClients(ctx, params)
+	} else {
+		var trainerID uuid.UUID
+		trainerID, err = s.store.TrainerIDForUser(ctx, userID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return ClientListResult{}, program.ErrForbidden
+			}
+			return ClientListResult{}, err
+		}
+		result, err = s.store.ListClients(ctx, trainerID, params)
+	}
 	if err != nil {
 		return ClientListResult{}, err
 	}

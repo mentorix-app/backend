@@ -34,6 +34,23 @@ func (q *Queries) ConsumeTrainerInvite(ctx context.Context, arg ConsumeTrainerIn
 	return result.RowsAffected(), nil
 }
 
+const countAllTrainerClients = `-- name: CountAllTrainerClients :one
+SELECT COUNT(DISTINCT tc.client_user_id)::int AS total
+FROM mentorix.trainer_clients tc
+INNER JOIN mentorix.users u ON u.id = tc.client_user_id
+WHERE (
+  $1::text IS NULL
+  OR u.display_name ILIKE $1 ESCAPE '\'
+)
+`
+
+func (q *Queries) CountAllTrainerClients(ctx context.Context, qPattern *string) (int32, error) {
+	row := q.db.QueryRow(ctx, countAllTrainerClients, qPattern)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const countTrainerClients = `-- name: CountTrainerClients :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.trainer_clients tc
@@ -186,6 +203,104 @@ func (q *Queries) InsertTrainerInvite(ctx context.Context, arg InsertTrainerInvi
 		&i.TrainerID,
 	)
 	return i, err
+}
+
+const listAllTrainerClients = `-- name: ListAllTrainerClients :many
+WITH latest_link AS (
+  SELECT DISTINCT ON (tc.client_user_id)
+    tc.client_user_id,
+    tc.trainer_id,
+    tc.status,
+    tc.created_at
+  FROM mentorix.trainer_clients tc
+  ORDER BY tc.client_user_id, tc.created_at DESC
+)
+SELECT
+  ll.client_user_id,
+  ll.status,
+  ll.created_at,
+  u.display_name,
+  u.avatar_file_path,
+  pa.id AS assignment_id,
+  pa.program_id,
+  pa.program_version_id,
+  pa.status AS assignment_status,
+  pa.assigned_at
+FROM latest_link ll
+INNER JOIN mentorix.users u ON u.id = ll.client_user_id
+LEFT JOIN mentorix.program_assignments pa
+  ON pa.trainer_id = ll.trainer_id
+  AND pa.client_user_id = ll.client_user_id
+  AND pa.status = 'active'
+WHERE (
+  $1::text IS NULL
+  OR u.display_name ILIKE $1 ESCAPE '\'
+)
+ORDER BY
+  CASE WHEN $2 = 'display_name' AND $3 = 'asc' THEN u.display_name END ASC NULLS LAST,
+  CASE WHEN $2 = 'display_name' AND $3 = 'desc' THEN u.display_name END DESC NULLS LAST,
+  CASE WHEN $2 = 'linked_at' AND $3 = 'asc' THEN ll.created_at END ASC NULLS LAST,
+  CASE WHEN $2 = 'linked_at' AND $3 = 'desc' THEN ll.created_at END DESC NULLS LAST,
+  ll.client_user_id ASC
+LIMIT $5 OFFSET $4
+`
+
+type ListAllTrainerClientsParams struct {
+	QPattern  *string     `json:"q_pattern"`
+	SortBy    interface{} `json:"sort_by"`
+	SortOrder interface{} `json:"sort_order"`
+	Offset    int32       `json:"offset"`
+	Limit     int32       `json:"limit"`
+}
+
+type ListAllTrainerClientsRow struct {
+	ClientUserID     pgtype.UUID        `json:"client_user_id"`
+	Status           string             `json:"status"`
+	CreatedAt        time.Time          `json:"created_at"`
+	DisplayName      string             `json:"display_name"`
+	AvatarFilePath   string             `json:"avatar_file_path"`
+	AssignmentID     pgtype.UUID        `json:"assignment_id"`
+	ProgramID        pgtype.UUID        `json:"program_id"`
+	ProgramVersionID pgtype.UUID        `json:"program_version_id"`
+	AssignmentStatus *string            `json:"assignment_status"`
+	AssignedAt       pgtype.Timestamptz `json:"assigned_at"`
+}
+
+func (q *Queries) ListAllTrainerClients(ctx context.Context, arg ListAllTrainerClientsParams) ([]ListAllTrainerClientsRow, error) {
+	rows, err := q.db.Query(ctx, listAllTrainerClients,
+		arg.QPattern,
+		arg.SortBy,
+		arg.SortOrder,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAllTrainerClientsRow{}
+	for rows.Next() {
+		var i ListAllTrainerClientsRow
+		if err := rows.Scan(
+			&i.ClientUserID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.DisplayName,
+			&i.AvatarFilePath,
+			&i.AssignmentID,
+			&i.ProgramID,
+			&i.ProgramVersionID,
+			&i.AssignmentStatus,
+			&i.AssignedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listTrainerClients = `-- name: ListTrainerClients :many

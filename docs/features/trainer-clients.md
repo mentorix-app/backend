@@ -15,7 +15,9 @@
 
 Контракт: `api/openapi.yaml` — `GET /trainer/clients/{client_user_id}/program-assignment`, `PUT /trainer/clients/program-assignment`, `GET /trainer/clients` (список).
 
-`GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc). Поле `avatar_url` — подписанный URL прокси фото из Telegram (пустой, если фото нет).
+`GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc). Тренер видит только своих клиентов; **admin** — всех клиентов, привязанных к любому тренеру (уникально по `client_user_id`, назначение программы в списке — от последней связи, только для обзора). Поле `avatar_url` — подписанный URL прокси фото из Telegram (пустой, если фото нет).
+
+**Admin:** расширен только список (`GET /trainer/clients`). Назначение программ (`PUT …/program-assignment`, `GET …/program-assignment`) — как у тренера: только клиенты, привязанные к **этому** admin через его инвайт (`trainer_clients`), только **свои** опубликованные программы (`created_by` + `published`). Чужие клиенты в bulk → `skipped: not_linked`; чужая программа → `403`.
 
 `GET /trainer/clients/{client_user_id}/avatar` — прокси аватара (`exp`, `sig` из `avatar_url`); для `<img src>`, без Bearer.
 

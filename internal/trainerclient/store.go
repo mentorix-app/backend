@@ -78,28 +78,100 @@ func (s *Store) ListClients(ctx context.Context, trainerID uuid.UUID, params Lis
 	if err != nil {
 		return ClientListResult{}, fmt.Errorf("list trainer clients: %w", err)
 	}
+	return clientListResult(mapTrainerClientRows(rows), params, int(total)), nil
+}
+
+func (s *Store) ListAllClients(ctx context.Context, params ListParams) (ClientListResult, error) {
+	qPattern := qPattern(params.Query)
+	total, err := s.q.CountAllTrainerClients(ctx, qPattern)
+	if err != nil {
+		return ClientListResult{}, fmt.Errorf("count all trainer clients: %w", err)
+	}
+
+	rows, err := s.q.ListAllTrainerClients(ctx, sqlc.ListAllTrainerClientsParams{
+		QPattern:  qPattern,
+		SortBy:    params.SortBy,
+		SortOrder: params.SortOrder,
+		Limit:     int32(params.Limit),
+		Offset:    int32(params.Offset()),
+	})
+	if err != nil {
+		return ClientListResult{}, fmt.Errorf("list all trainer clients: %w", err)
+	}
+	return clientListResult(mapAllTrainerClientRows(rows), params, int(total)), nil
+}
+
+func mapTrainerClientRows(rows []sqlc.ListTrainerClientsRow) []clientListRow {
+	out := make([]clientListRow, len(rows))
+	for i, row := range rows {
+		out[i] = clientListRow{
+			clientUserID:   row.ClientUserID,
+			status:         row.Status,
+			linkedAt:       row.CreatedAt,
+			displayName:    row.DisplayName,
+			avatarFilePath: row.AvatarFilePath,
+			assignmentID:   row.AssignmentID,
+			programID:      row.ProgramID,
+			programVersion: row.ProgramVersionID,
+			assignedAt:     row.AssignedAt,
+		}
+	}
+	return out
+}
+
+func mapAllTrainerClientRows(rows []sqlc.ListAllTrainerClientsRow) []clientListRow {
+	out := make([]clientListRow, len(rows))
+	for i, row := range rows {
+		out[i] = clientListRow{
+			clientUserID:   row.ClientUserID,
+			status:         row.Status,
+			linkedAt:       row.CreatedAt,
+			displayName:    row.DisplayName,
+			avatarFilePath: row.AvatarFilePath,
+			assignmentID:   row.AssignmentID,
+			programID:      row.ProgramID,
+			programVersion: row.ProgramVersionID,
+			assignedAt:     row.AssignedAt,
+		}
+	}
+	return out
+}
+
+type clientListRow struct {
+	clientUserID   pgtype.UUID
+	status         string
+	linkedAt       time.Time
+	displayName    string
+	avatarFilePath string
+	assignmentID   pgtype.UUID
+	programID      pgtype.UUID
+	programVersion pgtype.UUID
+	assignedAt     pgtype.Timestamptz
+}
+
+func clientListResult(rows []clientListRow, params ListParams, total int) ClientListResult {
 	out := make([]Client, 0, len(rows))
 	for _, row := range rows {
 		client := Client{
-			ClientUserID:   pgconv.FromPGUUID(row.ClientUserID),
-			DisplayName:    row.DisplayName,
-			Status:         row.Status,
-			LinkedAt:       row.CreatedAt.UTC(),
-			avatarFilePath: row.AvatarFilePath,
+			ClientUserID:   pgconv.FromPGUUID(row.clientUserID),
+			DisplayName:    row.displayName,
+			Status:         row.status,
+			LinkedAt:       row.linkedAt.UTC(),
+			avatarFilePath: row.avatarFilePath,
 		}
-		if row.AssignmentID.Valid {
+		if row.assignmentID.Valid {
 			client.ProgramAssignment = &ClientProgramSummary{
-				ProgramID:        pgconv.FromPGUUID(row.ProgramID),
-				ProgramVersionID: pgconv.FromPGUUID(row.ProgramVersionID),
-				AssignedAt:       row.AssignedAt.Time.UTC(),
+				ProgramID:        pgconv.FromPGUUID(row.programID),
+				ProgramVersionID: pgconv.FromPGUUID(row.programVersion),
+				AssignedAt:       row.assignedAt.Time.UTC(),
 			}
 		}
 		out = append(out, client)
 	}
 	return ClientListResult{
 		Items:      out,
-		Pagination: paginationMeta(params.Page, params.Limit, int(total)),
-	}, nil
+		Pagination: paginationMeta(params.Page, params.Limit, total),
+	}
 }
 
 func (s *Store) UserIDByTelegram(ctx context.Context, telegramUserID string) (uuid.UUID, error) {
