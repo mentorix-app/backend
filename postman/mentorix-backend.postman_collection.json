@@ -1901,6 +1901,16 @@
           "response": []
         },
         {
+          "name": "GET /trainer/clients/:client_user_id/avatar",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/trainer/clients/{{client_user_id}}/avatar?exp={{client_avatar_exp}}&sig={{client_avatar_sig}}",
+            "description": "Signed avatar proxy (exp/sig from avatar_url in client list). No Bearer — use in img src."
+          },
+          "response": []
+        },
+        {
           "name": "GET /trainer/clients/:client_user_id/program-assignment",
           "request": {
             "auth": {

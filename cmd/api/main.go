@@ -20,6 +20,7 @@ import (
 	"mentorix-backend/internal/health"
 	apphttp "mentorix-backend/internal/http"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/telegram"
 	"mentorix-backend/internal/telegrambot"
 	"mentorix-backend/internal/telegramnotify"
 	"mentorix-backend/internal/trainerclient"
@@ -126,10 +127,21 @@ func main() {
 
 		program.NewHandlers(progSvc, pool, cfg.JWTSecret).Mount(e)
 
+		var photoClient trainerclient.ProfilePhotoFetcher
+		if cfg.BotToken != "" {
+			pc, err := telegram.NewProfilePhotoClient(cfg.BotToken)
+			if err != nil {
+				logger.Warn("telegram profile photos disabled", "error", err)
+			} else {
+				photoClient = pc
+			}
+		}
 		trainerClientSvc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
 			TelegramBotUsername: cfg.TelegramBotUsername,
 			InviteTTL:           cfg.TrainerInviteTTL(),
-		}, trainerclient.NewActiveTrainerStore(rdb), trainerNotifier)
+		}, trainerclient.NewActiveTrainerStore(rdb), trainerNotifier,
+			trainerclient.WithAvatarSupport(cfg.JWTSecret, cfg.BotToken, photoClient),
+		)
 		trainerclient.NewHandlers(trainerClientSvc, pool, cfg.JWTSecret).Mount(e)
 
 		if cfg.BotToken != "" && cfg.BotWebhookURL != "" {

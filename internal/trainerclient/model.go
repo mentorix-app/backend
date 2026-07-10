@@ -32,7 +32,10 @@ type Client struct {
 	DisplayName       string                `json:"display_name"`
 	Status            string                `json:"status"`
 	LinkedAt          time.Time             `json:"linked_at"`
+	AvatarURL         string                `json:"avatar_url"`
 	ProgramAssignment *ClientProgramSummary `json:"program_assignment"`
+
+	avatarFilePath string `json:"-"`
 }
 
 type ClientListResult struct {

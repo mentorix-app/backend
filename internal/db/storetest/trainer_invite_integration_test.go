@@ -595,6 +595,140 @@ func TestTrainerInvite_handlersCreateListAccept(t *testing.T) {
 	}
 }
 
+func TestTrainerClient_listIncludesAvatarURL(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "avatar-list-trainer@test.com", pwHash, "Trainer")
+	if err != nil {
+		t.Fatalf("register trainer: %v", err)
+	}
+
+	const jwtSecret = "test-jwt-secret-at-least-32-chars-long"
+	progSvc := program.NewService(pool)
+	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
+		TelegramBotUsername: "mentorix_bot",
+		InviteTTL:           7 * 24 * time.Hour,
+	}, trainerclient.NewMemoryActiveTrainerStore(), nil,
+		trainerclient.WithAvatarSupport(jwtSecret, "123:test-token", nil),
+	)
+
+	invite, err := svc.CreateInvite(ctx, trainerUserID)
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+	token := strings.TrimPrefix(strings.Split(invite.InviteURL, "start=")[1], "inv_")
+	result, err := svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
+		Token:          token,
+		TelegramUserID: "909101",
+		DisplayName:    "Avatar Client",
+	})
+	if err != nil {
+		t.Fatalf("AcceptInvite: %v", err)
+	}
+
+	_, err = pool.Exec(ctx, `UPDATE mentorix.users SET avatar_file_path = $1 WHERE id = $2`, "photos/test.jpg", result.UserID)
+	if err != nil {
+		t.Fatalf("set avatar path: %v", err)
+	}
+
+	list, err := svc.ListClients(ctx, trainerUserID, trainerclient.DefaultListParams())
+	if err != nil {
+		t.Fatalf("ListClients: %v", err)
+	}
+	if len(list.Items) != 1 {
+		t.Fatalf("clients = %d, want 1", len(list.Items))
+	}
+	if list.Items[0].AvatarURL == "" {
+		t.Fatal("expected signed avatar_url")
+	}
+	if !strings.Contains(list.Items[0].AvatarURL, "/avatar?exp=") {
+		t.Fatalf("avatar_url = %q", list.Items[0].AvatarURL)
+	}
+
+	h := trainerclient.NewHandlers(svc, pool, jwtSecret)
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, list.Items[0].AvatarURL, nil)
+	rec := httptest.NewRecorder()
+	echoCtx := e.NewContext(req, rec)
+	echoCtx.SetParamNames("client_user_id")
+	echoCtx.SetParamValues(result.UserID.String())
+
+	err = h.GetClientAvatar(echoCtx)
+	if err == nil {
+		t.Fatal("expected error without real Telegram file")
+	}
+	he, ok := err.(*echo.HTTPError)
+	if !ok || (he.Code != http.StatusBadGateway && he.Code != http.StatusNotFound) {
+		t.Fatalf("GetClientAvatar error = %v, want 404 or 502", err)
+	}
+}
+
+type integrationPhotos struct {
+	path string
+}
+
+func (p integrationPhotos) ProfilePhotoFilePath(context.Context, string) (string, bool, error) {
+	if p.path == "" {
+		return "", false, nil
+	}
+	return p.path, true, nil
+}
+
+func TestTrainerClient_refreshTelegramAvatar(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "refresh-avatar-trainer@test.com", pwHash, "Trainer")
+	if err != nil {
+		t.Fatalf("register trainer: %v", err)
+	}
+
+	progSvc := program.NewService(pool)
+	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
+		TelegramBotUsername: "mentorix_bot",
+		InviteTTL:           7 * 24 * time.Hour,
+	}, trainerclient.NewMemoryActiveTrainerStore(), nil,
+		trainerclient.WithAvatarSupport("test-jwt-secret-at-least-32-chars-long", "token", integrationPhotos{path: "photos/refreshed.jpg"}),
+	)
+
+	invite, err := svc.CreateInvite(ctx, trainerUserID)
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+	token := strings.TrimPrefix(strings.Split(invite.InviteURL, "start=")[1], "inv_")
+	result, err := svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
+		Token:          token,
+		TelegramUserID: "919202",
+		DisplayName:    "Refresh Client",
+	})
+	if err != nil {
+		t.Fatalf("AcceptInvite: %v", err)
+	}
+
+	if err := svc.RefreshTelegramAvatar(ctx, "919202"); err != nil {
+		t.Fatalf("RefreshTelegramAvatar: %v", err)
+	}
+
+	var path string
+	if err := pool.QueryRow(ctx, `SELECT avatar_file_path FROM mentorix.users WHERE id = $1`, result.UserID).Scan(&path); err != nil {
+		t.Fatalf("query avatar: %v", err)
+	}
+	if path != "photos/refreshed.jpg" {
+		t.Fatalf("avatar_file_path = %q", path)
+	}
+}
+
 func TestTrainerInvite_storeEmptyToken(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()

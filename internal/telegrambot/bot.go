@@ -18,6 +18,7 @@ const inviteStartPrefix = "inv_"
 
 type trainerClient interface {
 	AcceptInvite(ctx context.Context, req trainerclient.AcceptInviteRequest) (trainerclient.AcceptInviteResult, error)
+	RefreshTelegramAvatar(ctx context.Context, telegramUserID string) error
 	ListTelegramTrainers(ctx context.Context, telegramUserID string) (trainerclient.TelegramTrainerList, error)
 	SetTelegramActiveTrainer(ctx context.Context, telegramUserID string, trainerID uuid.UUID) (*trainerclient.ActiveTrainerResponse, error)
 	GetTelegramToday(ctx context.Context, telegramUserID string, trainerID *uuid.UUID) (trainerclient.TelegramTodayResponse, error)
@@ -59,6 +60,11 @@ func (b *Bot) HandleUpdate(ctx context.Context, update tgbotapi.Update) {
 }
 
 func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
+	tgID := telegramUserID(msg.From)
+	if tgID != "" {
+		_ = b.clients.RefreshTelegramAvatar(ctx, tgID)
+	}
+
 	if msg.IsCommand() {
 		switch msg.Command() {
 		case "start":
@@ -70,7 +76,6 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 		}
 	}
 
-	tgID := telegramUserID(msg.From)
 	switch strings.TrimSpace(msg.Text) {
 	case btnToday:
 		b.handleToday(ctx, msg.Chat.ID, tgID)

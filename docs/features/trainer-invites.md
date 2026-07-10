@@ -21,7 +21,7 @@
 
 - `POST /trainer/invites` требует `TELEGRAM_BOT_USERNAME`; ссылка `https://t.me/<bot>?start=inv_<token>`.
 - TTL инвайта — `TRAINER_INVITE_TTL_DAYS` (default 7).
-- Accept в боте (`/start inv_<token>`) — in-process `trainerclient.Service.AcceptInvite`, не HTTP.
+- Accept в боте (`/start inv_<token>`) — in-process `trainerclient.Service.AcceptInvite`, не HTTP; при наличии — сохраняется фото профиля Telegram.
 - Accept: создаёт `user` + `auth_identity(telegram)` + роль `client`, если Telegram id новый; иначе линкует существующего user.
 - Повторный accept того же инвайта тем же user — идемпотентный ok (`already_linked: true` если связь уже была).
 - Инвайт, consumed другим user → 409; просрочен → 410.

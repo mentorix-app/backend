@@ -765,3 +765,7 @@ ALTER TABLE mentorix.program_assignments
 
 ALTER TABLE mentorix.trainer_invites
   RENAME CONSTRAINT trainer_invites_consumed_consistency TO trainer_invites_consumed_check;
+
+-- >>> 000018_users_avatar_file_path.up.sql
+ALTER TABLE mentorix.users
+  ADD COLUMN avatar_file_path text NOT NULL DEFAULT '';

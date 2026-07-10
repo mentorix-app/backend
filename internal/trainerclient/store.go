@@ -81,10 +81,11 @@ func (s *Store) ListClients(ctx context.Context, trainerID uuid.UUID, params Lis
 	out := make([]Client, 0, len(rows))
 	for _, row := range rows {
 		client := Client{
-			ClientUserID: pgconv.FromPGUUID(row.ClientUserID),
-			DisplayName:  row.DisplayName,
-			Status:       row.Status,
-			LinkedAt:     row.CreatedAt.UTC(),
+			ClientUserID:   pgconv.FromPGUUID(row.ClientUserID),
+			DisplayName:    row.DisplayName,
+			Status:         row.Status,
+			LinkedAt:       row.CreatedAt.UTC(),
+			avatarFilePath: row.AvatarFilePath,
 		}
 		if row.AssignmentID.Valid {
 			client.ProgramAssignment = &ClientProgramSummary{
@@ -99,6 +100,38 @@ func (s *Store) ListClients(ctx context.Context, trainerID uuid.UUID, params Lis
 		Items:      out,
 		Pagination: paginationMeta(params.Page, params.Limit, int(total)),
 	}, nil
+}
+
+func (s *Store) UserIDByTelegram(ctx context.Context, telegramUserID string) (uuid.UUID, error) {
+	userPG, err := s.q.GetAuthIdentityUserID(ctx, sqlc.GetAuthIdentityUserIDParams{
+		Provider: auth.ProviderTelegram,
+		Subject:  strings.TrimSpace(telegramUserID),
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return pgconv.FromPGUUID(userPG), nil
+}
+
+func (s *Store) UpdateUserAvatarFilePath(ctx context.Context, userID uuid.UUID, filePath string) error {
+	if err := s.q.UpdateUserAvatarFilePath(ctx, sqlc.UpdateUserAvatarFilePathParams{
+		ID:             pgconv.ToPGUUID(userID),
+		AvatarFilePath: filePath,
+	}); err != nil {
+		return fmt.Errorf("update user avatar: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) UserAvatarFilePath(ctx context.Context, userID uuid.UUID) (string, error) {
+	path, err := s.q.GetUserAvatarFilePath(ctx, pgconv.ToPGUUID(userID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("get user avatar: %w", err)
+	}
+	return path, nil
 }
 
 func (s *Store) AcceptInvite(ctx context.Context, token, telegramUserID, displayName string) (AcceptInviteResult, error) {

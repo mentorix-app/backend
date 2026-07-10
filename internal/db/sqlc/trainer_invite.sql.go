@@ -194,6 +194,7 @@ SELECT
   tc.status,
   tc.created_at,
   u.display_name,
+  u.avatar_file_path,
   pa.id AS assignment_id,
   pa.program_id,
   pa.program_version_id,
@@ -233,6 +234,7 @@ type ListTrainerClientsRow struct {
 	Status           string             `json:"status"`
 	CreatedAt        time.Time          `json:"created_at"`
 	DisplayName      string             `json:"display_name"`
+	AvatarFilePath   string             `json:"avatar_file_path"`
 	AssignmentID     pgtype.UUID        `json:"assignment_id"`
 	ProgramID        pgtype.UUID        `json:"program_id"`
 	ProgramVersionID pgtype.UUID        `json:"program_version_id"`
@@ -261,6 +263,7 @@ func (q *Queries) ListTrainerClients(ctx context.Context, arg ListTrainerClients
 			&i.Status,
 			&i.CreatedAt,
 			&i.DisplayName,
+			&i.AvatarFilePath,
 			&i.AssignmentID,
 			&i.ProgramID,
 			&i.ProgramVersionID,

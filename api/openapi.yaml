@@ -829,6 +829,52 @@ paths:
         "403":
           description: Trainer role required
 
+  /trainer/clients/{client_user_id}/avatar:
+    parameters:
+      - $ref: "#/components/parameters/ClientUserId"
+    get:
+      tags: [trainer]
+      summary: Get client avatar image
+      description: >
+        Proxies the client's Telegram profile photo. Requires a signed URL from
+        `avatar_url` in the client list (`exp` and `sig` query params, valid 24h).
+        No Bearer token — suitable for `<img src>`.
+      operationId: getTrainerClientAvatar
+      parameters:
+        - name: exp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Unix expiry timestamp from avatar_url
+        - name: sig
+          in: query
+          required: true
+          schema:
+            type: string
+          description: HMAC signature from avatar_url
+      responses:
+        "200":
+          description: Avatar image
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Avatar not found
+
   /trainer/clients/{client_user_id}/program-assignment:
     parameters:
       - $ref: "#/components/parameters/ClientUserId"
@@ -2512,7 +2558,7 @@ components:
 
     TrainerClient:
       type: object
-      required: [client_user_id, display_name, status, linked_at]
+      required: [client_user_id, display_name, status, linked_at, avatar_url]
       properties:
         client_user_id:
           type: string
@@ -2525,6 +2571,11 @@ components:
         linked_at:
           type: string
           format: date-time
+        avatar_url:
+          type: string
+          description: >
+            Signed relative URL to avatar proxy (`/trainer/clients/{id}/avatar?exp=&sig=`),
+            or empty string when the client has no Telegram profile photo.
         program_assignment:
           $ref: "#/components/schemas/TrainerClientProgramSummary"
           nullable: true

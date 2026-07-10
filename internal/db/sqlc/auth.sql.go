@@ -49,6 +49,19 @@ func (q *Queries) GetRefreshSessionUserForUpdate(ctx context.Context, tokenHash 
 	return user_id, err
 }
 
+const getUserAvatarFilePath = `-- name: GetUserAvatarFilePath :one
+SELECT avatar_file_path
+FROM mentorix.users
+WHERE id = $1
+`
+
+func (q *Queries) GetUserAvatarFilePath(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserAvatarFilePath, id)
+	var avatar_file_path string
+	err := row.Scan(&avatar_file_path)
+	return avatar_file_path, err
+}
+
 const getUserByID = `-- name: GetUserByID :one
 SELECT
   COALESCE(primary_email, '') AS primary_email,
@@ -214,6 +227,22 @@ WHERE token_hash = $1
 
 func (q *Queries) RevokeRefreshSessionByHash(ctx context.Context, tokenHash []byte) error {
 	_, err := q.db.Exec(ctx, revokeRefreshSessionByHash, tokenHash)
+	return err
+}
+
+const updateUserAvatarFilePath = `-- name: UpdateUserAvatarFilePath :exec
+UPDATE mentorix.users
+SET avatar_file_path = $2
+WHERE id = $1
+`
+
+type UpdateUserAvatarFilePathParams struct {
+	ID             pgtype.UUID `json:"id"`
+	AvatarFilePath string      `json:"avatar_file_path"`
+}
+
+func (q *Queries) UpdateUserAvatarFilePath(ctx context.Context, arg UpdateUserAvatarFilePathParams) error {
+	_, err := q.db.Exec(ctx, updateUserAvatarFilePath, arg.ID, arg.AvatarFilePath)
 	return err
 }
 

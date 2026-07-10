@@ -10,7 +10,8 @@
 ## Решения
 
 - Инвайт только deep link (`inv_<token>`), без ввода `@username`.
-- Accept на `/start inv_<token>` — in-process вызов `trainerclient.Service.AcceptInvite`.
+- Accept на `/start inv_<token>` — in-process вызов `trainerclient.Service.AcceptInvite`; сохраняется фото профиля Telegram (`avatar_file_path`), если есть.
+- При сообщениях боту аватар обновляется, если пользователь сменил фото.
 - **Webhook** на API (`POST /telegram/webhook`) — один Render Web Service, без отдельного worker.
 - Библиотека: `go-telegram-bot-api/v5` (см. [architecture.md](../architecture.md)).
 - Меню: reply keyboard (`Сегодня`, `Программа`, `Тренеры`, `Помощь`) + inline для выбора тренера.

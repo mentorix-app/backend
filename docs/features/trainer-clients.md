@@ -15,7 +15,9 @@
 
 Контракт: `api/openapi.yaml` — `GET/PUT /trainer/clients/{client_user_id}/program-assignment`, `GET /trainer/clients` (список).
 
-`GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc).
+`GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc). Поле `avatar_url` — подписанный URL прокси фото из Telegram (пустой, если фото нет).
+
+`GET /trainer/clients/{client_user_id}/avatar` — прокси аватара (`exp`, `sig` из `avatar_url`); для `<img src>`, без Bearer.
 
 Неочевидные правила:
 

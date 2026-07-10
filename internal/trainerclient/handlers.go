@@ -1,7 +1,9 @@
 package trainerclient
 
 import (
+	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -10,16 +12,23 @@ import (
 	"mentorix-backend/internal/auth"
 	httpx "mentorix-backend/internal/http"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/telegram"
 )
 
 type Handlers struct {
-	svc       *Service
-	pool      *pgxpool.Pool
-	jwtSecret string
+	svc        *Service
+	pool       *pgxpool.Pool
+	jwtSecret  string
+	httpClient *http.Client
 }
 
 func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
-	return &Handlers{svc: svc, pool: pool, jwtSecret: jwtSecret}
+	return &Handlers{
+		svc:        svc,
+		pool:       pool,
+		jwtSecret:  jwtSecret,
+		httpClient: http.DefaultClient,
+	}
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
@@ -36,6 +45,8 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	clients.GET("", h.ListClients)
 	clients.GET("/:client_user_id/program-assignment", h.GetProgramAssignment)
 	clients.PUT("/:client_user_id/program-assignment", h.SetProgramAssignment)
+
+	e.GET("/trainer/clients/:client_user_id/avatar", h.GetClientAvatar)
 }
 
 func (h *Handlers) CreateInvite(c echo.Context) error {
@@ -109,4 +120,37 @@ func (h *Handlers) SetProgramAssignment(c echo.Context) error {
 		return program.HTTPErrorFrom(err)
 	}
 	return c.JSON(http.StatusOK, assignment)
+}
+
+func (h *Handlers) GetClientAvatar(c echo.Context) error {
+	clientUserID, err := uuid.Parse(c.Param("client_user_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+
+	exp, err := strconv.ParseInt(c.QueryParam("exp"), 10, 64)
+	if err != nil || !VerifyAvatarURL(h.jwtSecret, clientUserID, exp, c.QueryParam("sig")) {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+
+	filePath, err := h.svc.ClientAvatarFilePath(c.Request().Context(), clientUserID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	if filePath == "" {
+		return echo.NewHTTPError(http.StatusNotFound, "avatar not found")
+	}
+
+	botToken := h.svc.BotToken()
+	if botToken == "" {
+		return echo.NewHTTPError(http.StatusNotFound, "avatar not found")
+	}
+
+	if err := telegram.StreamBotFile(c.Response(), h.httpClient, botToken, filePath); err != nil {
+		if errors.Is(err, telegram.ErrFileNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound, "avatar not found")
+		}
+		return echo.NewHTTPError(http.StatusBadGateway, httpx.MsgInternal)
+	}
+	return nil
 }

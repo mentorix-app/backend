@@ -202,10 +202,11 @@ type MentorixTrainerInvite struct {
 }
 
 type MentorixUser struct {
-	ID           pgtype.UUID `json:"id"`
-	PrimaryEmail *string     `json:"primary_email"`
-	CreatedAt    time.Time   `json:"created_at"`
-	DisplayName  string      `json:"display_name"`
+	ID             pgtype.UUID `json:"id"`
+	PrimaryEmail   *string     `json:"primary_email"`
+	CreatedAt      time.Time   `json:"created_at"`
+	DisplayName    string      `json:"display_name"`
+	AvatarFilePath string      `json:"avatar_file_path"`
 }
 
 type MentorixUserLinkCode struct {

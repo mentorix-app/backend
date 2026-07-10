@@ -43,6 +43,7 @@ SELECT
   tc.status,
   tc.created_at,
   u.display_name,
+  u.avatar_file_path,
   pa.id AS assignment_id,
   pa.program_id,
   pa.program_version_id,

@@ -123,6 +123,10 @@ func (f *fakeTrainerClient) AcceptInvite(_ context.Context, req trainerclient.Ac
 	return f.result, f.err
 }
 
+func (f *fakeTrainerClient) RefreshTelegramAvatar(context.Context, string) error {
+	return nil
+}
+
 func (f *fakeTrainerClient) ListTelegramTrainers(context.Context, string) (trainerclient.TelegramTrainerList, error) {
 	if f.trainersErr != nil {
 		return trainerclient.TelegramTrainerList{}, f.trainersErr

@@ -16,7 +16,7 @@
 | Деплой | Render Web Service, ветка `develop` (dev) |
 | Логи | `log/slog`, request ID |
 
-Миграции: версия **17**, проверка `./scripts/migrate-check.sh`.
+Миграции: версия **18**, проверка `./scripts/migrate-check.sh`.
 
 ## Layout
 

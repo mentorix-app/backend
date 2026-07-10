@@ -28,6 +28,16 @@ UPDATE mentorix.users
 SET display_name = $2
 WHERE id = $1;
 
+-- name: UpdateUserAvatarFilePath :exec
+UPDATE mentorix.users
+SET avatar_file_path = $2
+WHERE id = $1;
+
+-- name: GetUserAvatarFilePath :one
+SELECT avatar_file_path
+FROM mentorix.users
+WHERE id = $1;
+
 -- name: ListUserRoles :many
 SELECT role
 FROM mentorix.user_roles
