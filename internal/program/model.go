@@ -70,6 +70,7 @@ type Program struct {
 	LatestClientPlanAt     *time.Time  `json:"latest_client_plan_at"`
 	HasUnpublishedChanges  bool        `json:"has_unpublished_changes"`
 	AssignmentCount        int         `json:"assignment_count"`
+	TrainingDaysCount      int         `json:"training_days_count"`
 	CreatedAt              time.Time   `json:"created_at"`
 	ModifiedAt             time.Time   `json:"modified_at"`
 	DeletedAt              *time.Time  `json:"deleted_at,omitempty"`

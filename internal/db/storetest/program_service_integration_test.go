@@ -158,6 +158,87 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	}
 }
 
+func TestProgramService_trainingDaysCount(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "training-days@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+		Name:        "Squat",
+		NameRu:      "Присед",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupLegs,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+
+	svc := program.NewService(pool)
+	draft, err := svc.Create(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if draft.TrainingDaysCount != 0 {
+		t.Fatalf("new program training_days_count = %d, want 0", draft.TrainingDaysCount)
+	}
+
+	weekID := draft.Weeks[0].ID
+	day1 := draft.Weeks[0].Days[0].ID
+	day2 := draft.Weeks[0].Days[1].ID
+	sets, reps := 3, 10
+	if _, err := createSingleBlock(ctx, svc, trainerID, draft.ID, weekID, day1, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	}); err != nil {
+		t.Fatalf("day1 block: %v", err)
+	}
+	if _, err := createSingleBlock(ctx, svc, trainerID, draft.ID, weekID, day2, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	}); err != nil {
+		t.Fatalf("day2 block: %v", err)
+	}
+
+	got, err := svc.Get(ctx, trainerID, draft.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.TrainingDaysCount != 2 {
+		t.Fatalf("Get training_days_count = %d, want 2", got.TrainingDaysCount)
+	}
+
+	list, err := svc.List(ctx, trainerID, program.ListParams{Page: 1, Limit: 20})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var found *program.Program
+	for i := range list.Items {
+		if list.Items[i].ID == draft.ID {
+			found = &list.Items[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("program not in list")
+	}
+	if found.TrainingDaysCount != 2 {
+		t.Fatalf("List training_days_count = %d, want 2", found.TrainingDaysCount)
+	}
+}
+
 func TestProgramService_ListAndArchive(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()

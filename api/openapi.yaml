@@ -1985,6 +1985,7 @@ components:
         - preview_image_url
         - has_unpublished_changes
         - assignment_count
+        - training_days_count
         - created_at
         - modified_at
       properties:
@@ -2035,6 +2036,12 @@ components:
           type: integer
           minimum: 0
           description: Number of active client assignments on this program.
+        training_days_count:
+          type: integer
+          minimum: 0
+          description: >
+            Total days with at least one block or exercise across all weeks.
+            Empty days (no blocks) are not counted.
         created_at:
           type: string
           format: date-time

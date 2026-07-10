@@ -853,7 +853,18 @@ const listPrograms = `-- name: ListPrograms :many
 SELECT
   p.id, p.created_by, p.modified_by, p.status, p.name, p.name_ru, p.description, p.description_ru,
   p.category, p.difficulty, p.preview_image_url, p.created_at, p.modified_at, p.deleted_at,
-  COALESCE(u.display_name, '') AS created_by_name
+  COALESCE(u.display_name, '') AS created_by_name,
+  (
+    SELECT COUNT(DISTINCT d.id)::int
+    FROM mentorix.program_week_days d
+    JOIN mentorix.program_weeks w ON w.id = d.week_id
+    WHERE w.program_id = p.id
+      AND EXISTS (
+        SELECT 1
+        FROM mentorix.program_week_day_blocks b
+        WHERE b.program_week_day_id = d.id
+      )
+  ) AS training_days_count
 FROM mentorix.programs p
 JOIN mentorix.users u ON u.id = p.created_by
 WHERE p.deleted_at IS NULL
@@ -898,21 +909,22 @@ type ListProgramsParams struct {
 }
 
 type ListProgramsRow struct {
-	ID              pgtype.UUID        `json:"id"`
-	CreatedBy       pgtype.UUID        `json:"created_by"`
-	ModifiedBy      pgtype.UUID        `json:"modified_by"`
-	Status          string             `json:"status"`
-	Name            string             `json:"name"`
-	NameRu          string             `json:"name_ru"`
-	Description     string             `json:"description"`
-	DescriptionRu   string             `json:"description_ru"`
-	Category        *string            `json:"category"`
-	Difficulty      *string            `json:"difficulty"`
-	PreviewImageUrl string             `json:"preview_image_url"`
-	CreatedAt       time.Time          `json:"created_at"`
-	ModifiedAt      time.Time          `json:"modified_at"`
-	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
-	CreatedByName   string             `json:"created_by_name"`
+	ID                pgtype.UUID        `json:"id"`
+	CreatedBy         pgtype.UUID        `json:"created_by"`
+	ModifiedBy        pgtype.UUID        `json:"modified_by"`
+	Status            string             `json:"status"`
+	Name              string             `json:"name"`
+	NameRu            string             `json:"name_ru"`
+	Description       string             `json:"description"`
+	DescriptionRu     string             `json:"description_ru"`
+	Category          *string            `json:"category"`
+	Difficulty        *string            `json:"difficulty"`
+	PreviewImageUrl   string             `json:"preview_image_url"`
+	CreatedAt         time.Time          `json:"created_at"`
+	ModifiedAt        time.Time          `json:"modified_at"`
+	DeletedAt         pgtype.Timestamptz `json:"deleted_at"`
+	CreatedByName     string             `json:"created_by_name"`
+	TrainingDaysCount int32              `json:"training_days_count"`
 }
 
 func (q *Queries) ListPrograms(ctx context.Context, arg ListProgramsParams) ([]ListProgramsRow, error) {
@@ -950,6 +962,7 @@ func (q *Queries) ListPrograms(ctx context.Context, arg ListProgramsParams) ([]L
 			&i.ModifiedAt,
 			&i.DeletedAt,
 			&i.CreatedByName,
+			&i.TrainingDaysCount,
 		); err != nil {
 			return nil, err
 		}

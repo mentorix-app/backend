@@ -164,6 +164,10 @@ func (s *Store) enrichProgram(ctx context.Context, p Program, detail *Detail) (P
 	}
 	p.AssignmentCount = int(count)
 
+	if detail != nil {
+		p.TrainingDaysCount = CountTrainingDays(detail.Weeks)
+	}
+
 	latest, err := s.q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(p.ID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -186,6 +190,7 @@ func (s *Store) enrichProgram(ctx context.Context, p Program, detail *Detail) (P
 			}
 			d = &loaded
 		}
+		p.TrainingDaysCount = CountTrainingDays(d.Weeks)
 		fp, err := DetailFingerprint(*d)
 		if err != nil {
 			return Program{}, err

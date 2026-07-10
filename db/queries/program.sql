@@ -40,7 +40,18 @@ WHERE deleted_at IS NULL
 SELECT
   p.id, p.created_by, p.modified_by, p.status, p.name, p.name_ru, p.description, p.description_ru,
   p.category, p.difficulty, p.preview_image_url, p.created_at, p.modified_at, p.deleted_at,
-  COALESCE(u.display_name, '') AS created_by_name
+  COALESCE(u.display_name, '') AS created_by_name,
+  (
+    SELECT COUNT(DISTINCT d.id)::int
+    FROM mentorix.program_week_days d
+    JOIN mentorix.program_weeks w ON w.id = d.week_id
+    WHERE w.program_id = p.id
+      AND EXISTS (
+        SELECT 1
+        FROM mentorix.program_week_day_blocks b
+        WHERE b.program_week_day_id = d.id
+      )
+  ) AS training_days_count
 FROM mentorix.programs p
 JOIN mentorix.users u ON u.id = p.created_by
 WHERE p.deleted_at IS NULL

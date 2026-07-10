@@ -992,13 +992,15 @@ func programFromGetRow(row sqlc.GetProgramByIDRow) Program {
 }
 
 func programFromListRow(row sqlc.ListProgramsRow) Program {
-	return programFromFields(
+	p := programFromFields(
 		row.ID, row.CreatedBy, row.ModifiedBy,
 		row.CreatedByName, row.Status, row.Name, row.NameRu, row.Description, row.DescriptionRu, row.PreviewImageUrl,
 		row.Category, row.Difficulty,
 		row.CreatedAt, row.ModifiedAt,
 		row.DeletedAt,
 	)
+	p.TrainingDaysCount = int(row.TrainingDaysCount)
+	return p
 }
 
 func dayExerciseFromRow(row sqlc.ListBlockExercisesRow) DayExercise {
