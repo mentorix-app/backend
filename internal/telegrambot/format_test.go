@@ -31,8 +31,8 @@ func TestFormatToday_restDay(t *testing.T) {
 		DayNumber:          1,
 		IsRestDay:          true,
 	})
-	if text == "" {
-		t.Fatal("expected text")
+	if !strings.Contains(text, "отдыха") {
+		t.Fatalf("expected rest day, got %q", text)
 	}
 }
 
@@ -64,11 +64,33 @@ func TestFormatTrainers_single(t *testing.T) {
 
 func TestFormatBlocks_withInstruction(t *testing.T) {
 	text := formatBlocks([]program.DayBlock{{
-		Instruction: "разминка",
+		BlockType:   program.BlockTypeSuperset,
+		Instruction: "3 раунда, отдых 2 мин",
 		Exercises:   []program.DayExercise{{ExerciseNameRu: "Бег"}},
 	}})
-	if text == "" {
-		t.Fatal("expected text")
+	if !strings.Contains(text, "🔗") || !strings.Contains(text, "Суперсет") {
+		t.Fatalf("expected superset header, got %q", text)
+	}
+	if !strings.Contains(text, "3 раунда") {
+		t.Fatalf("expected block instruction, got %q", text)
+	}
+}
+
+func TestFormatBlocks_exerciseInstruction(t *testing.T) {
+	sets, reps := 3, 10
+	text := formatBlocks([]program.DayBlock{{
+		Exercises: []program.DayExercise{{
+			ExerciseNameRu: "Присед",
+			Sets:           &sets,
+			Reps:           &reps,
+			Instruction:    "медленно вниз",
+		}},
+	}})
+	if !strings.Contains(text, "3×10") {
+		t.Fatalf("expected volume, got %q", text)
+	}
+	if !strings.Contains(text, "медленно вниз") {
+		t.Fatalf("expected exercise instruction, got %q", text)
 	}
 }
 
@@ -190,6 +212,13 @@ func TestMenuErrorText_default(t *testing.T) {
 func TestProgramDisplayName_english(t *testing.T) {
 	if programDisplayName("Eng", "") != "Eng" {
 		t.Fatal("expected eng")
+	}
+}
+
+func TestEscapeTelegramMarkdown(t *testing.T) {
+	got := escapeTelegramMarkdown("a_b*c")
+	if got != `a\_b\*c` {
+		t.Fatalf("got %q", got)
 	}
 }
 
