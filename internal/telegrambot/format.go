@@ -9,7 +9,10 @@ import (
 	"mentorix-backend/internal/trainerclient"
 )
 
-const telegramMessageLimit = 4000
+const (
+	telegramMessageLimit     = 4000
+	cyrillicMultiplicationSign = "х"
+)
 
 func formatToday(resp trainerclient.TelegramTodayResponse) string {
 	if !resp.HasProgram {
@@ -17,12 +20,12 @@ func formatToday(resp trainerclient.TelegramTodayResponse) string {
 	}
 	name := programDisplayName(resp.ProgramName, resp.ProgramNameRu)
 	var b strings.Builder
-	fmt.Fprintf(&b, "📋 *Сегодня*\n👤 %s · 💪 %s\n📆 День %d · Н%d Д%d\n",
-		escapeTelegramMarkdown(resp.TrainerDisplayName),
-		escapeTelegramMarkdown(name),
-		resp.ProgramDayNumber, resp.WeekNumber, resp.DayNumber)
+	b.WriteString("📋 Сегодня\n")
+	fmt.Fprintf(&b, "👤 Тренер: %s\n", escapeTelegramMarkdown(resp.TrainerDisplayName))
+	fmt.Fprintf(&b, "💪 Программа: %s\n", escapeTelegramMarkdown(name))
+	fmt.Fprintf(&b, "📆 Неделя: %d / День: %d", resp.WeekNumber, resp.DayNumber)
 	if resp.IsRestDay {
-		b.WriteString("\n😴 *День отдыха*")
+		b.WriteString("\n\n😴 День отдыха")
 		return b.String()
 	}
 	if blockText := formatBlocks(resp.Blocks); blockText != "" {
@@ -32,28 +35,32 @@ func formatToday(resp trainerclient.TelegramTodayResponse) string {
 	return b.String()
 }
 
+func formatProgramHeader(trainerName, programName string) string {
+	return fmt.Sprintf("📅 Программа\n👤 Тренер: %s\n💪 Программа: %s\n",
+		escapeTelegramMarkdown(trainerName),
+		escapeTelegramMarkdown(programName))
+}
+
 func formatProgram(resp trainerclient.TelegramProgramResponse) []string {
 	if !resp.HasProgram || resp.Program == nil {
 		return []string{fmt.Sprintf("%s пока не назначил программу.", resp.TrainerDisplayName)}
 	}
 	name := programDisplayName(resp.Program.Name, resp.Program.NameRu)
-	header := fmt.Sprintf("📅 *Программа*\n👤 %s · 💪 %s\n",
-		escapeTelegramMarkdown(resp.TrainerDisplayName),
-		escapeTelegramMarkdown(name))
+	header := formatProgramHeader(resp.TrainerDisplayName, name)
 
 	var parts []string
 	var current strings.Builder
 	current.WriteString(header)
 
 	for _, week := range resp.Program.Weeks {
-		weekHeader := fmt.Sprintf("\n*Неделя %d*\n", week.WeekNumber)
+		weekHeader := fmt.Sprintf("\n📆 Неделя %d\n", week.WeekNumber)
 		if current.Len()+len(weekHeader) > telegramMessageLimit {
 			parts = append(parts, current.String())
 			current.Reset()
 		}
 		current.WriteString(weekHeader)
 		for _, day := range week.Days {
-			dayHeader := fmt.Sprintf("📆 *День %d*\n", day.DayNumber)
+			dayHeader := fmt.Sprintf("📆 День %d\n", day.DayNumber)
 			if current.Len()+len(dayHeader) > telegramMessageLimit {
 				parts = append(parts, current.String())
 				current.Reset()
@@ -61,14 +68,14 @@ func formatProgram(resp trainerclient.TelegramProgramResponse) []string {
 			current.WriteString(dayHeader)
 			blockText := formatBlocks(day.Blocks)
 			if blockText == "" {
-				blockText = "😴 отдых\n"
+				blockText = "😴 отдых"
 			}
 			if current.Len()+len(blockText) > telegramMessageLimit {
 				parts = append(parts, current.String())
 				current.Reset()
 			}
 			current.WriteString(blockText)
-			current.WriteString("\n")
+			current.WriteString("\n\n")
 		}
 	}
 	if current.Len() > 0 {
@@ -82,37 +89,40 @@ func formatProgram(resp trainerclient.TelegramProgramResponse) []string {
 
 func formatTrainers(list trainerclient.TelegramTrainerList) (string, []trainerclient.TelegramTrainer) {
 	if len(list.Items) == 0 {
-		return "У вас пока нет тренеров. Откройте ссылку-приглашение от тренера.", nil
-	}
-	if len(list.Items) == 1 {
-		t := list.Items[0]
-		var b strings.Builder
-		fmt.Fprintf(&b, "👤 *%s*\n", escapeTelegramMarkdown(t.DisplayName))
-		if t.HasProgram {
-			b.WriteString("💪 " + escapeTelegramMarkdown(programDisplayName(t.ProgramName, t.ProgramNameRu)))
-		} else {
-			b.WriteString("Программа пока не назначена.")
-		}
-		return b.String(), nil
+		return "👤 Тренеры\n\nУ вас пока нет тренеров. Откройте ссылку-приглашение от тренера.", nil
 	}
 
 	var b strings.Builder
-	b.WriteString("👤 *Ваши тренеры*\n\n")
-	for _, t := range list.Items {
-		mark := "  "
-		if t.IsActive {
-			mark = "✓ "
-		}
-		line := fmt.Sprintf("%s%s", mark, escapeTelegramMarkdown(t.DisplayName))
-		if t.HasProgram {
-			line += " — " + escapeTelegramMarkdown(programDisplayName(t.ProgramName, t.ProgramNameRu))
-		} else {
-			line += " — программа не назначена"
-		}
-		b.WriteString(line + "\n")
+	b.WriteString("👤 Тренеры\n")
+
+	if len(list.Items) == 1 {
+		b.WriteString("\n")
+		writeTrainerCard(&b, list.Items[0], false)
+		return b.String(), nil
 	}
-	b.WriteString("\nНажмите кнопку ниже, чтобы выбрать активного тренера.")
+
+	for i, t := range list.Items {
+		if i == 0 {
+			b.WriteString("\n")
+		} else {
+			b.WriteString("\n\n")
+		}
+		writeTrainerCard(&b, t, true)
+	}
+	b.WriteString("\n\nНажмите кнопку ниже, чтобы выбрать активного тренера.")
 	return b.String(), list.Items
+}
+
+func writeTrainerCard(b *strings.Builder, t trainerclient.TelegramTrainer, showActive bool) {
+	if showActive && t.IsActive {
+		b.WriteString("✓ ")
+	}
+	fmt.Fprintf(b, "👤 Тренер: %s\n", escapeTelegramMarkdown(t.DisplayName))
+	if t.HasProgram {
+		fmt.Fprintf(b, "💪 Программа: %s", escapeTelegramMarkdown(programDisplayName(t.ProgramName, t.ProgramNameRu)))
+	} else {
+		b.WriteString("💪 Программа не назначена")
+	}
 }
 
 func formatBlocks(blocks []program.DayBlock) string {
@@ -133,65 +143,68 @@ func formatBlock(block program.DayBlock) string {
 		return ""
 	}
 
-	icon, label := blockTypeDisplay(block.BlockType)
-	var b strings.Builder
-
 	if blockIsGroup(block.BlockType) {
-		writeBlockHeader(&b, icon, label, block.Instruction)
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s:\n", blockTypeHeading(block.BlockType))
+		if instr := strings.TrimSpace(block.Instruction); instr != "" {
+			writeInstructionLine(&b, instr)
+		}
+		b.WriteString("\n")
 		for i, ex := range block.Exercises {
 			if i > 0 {
 				b.WriteString("\n")
 			}
-			writeExercise(&b, ex, "  "+exerciseLetter(i)+". ")
+			writeGroupExercise(&b, ex, i)
 		}
-		return b.String()
+		return strings.TrimRight(b.String(), "\n")
 	}
 
-	for i, ex := range block.Exercises {
-		if i > 0 {
-			b.WriteString("\n")
-		}
-		fmt.Fprintf(&b, "%s ", icon)
-		writeExercise(&b, ex, "")
+	parts := make([]string, 0, len(block.Exercises))
+	for _, ex := range block.Exercises {
+		parts = append(parts, formatStandaloneExercise(ex))
 	}
-	if instr := strings.TrimSpace(block.Instruction); instr != "" {
+	return strings.Join(parts, "\n\n")
+}
+
+func formatStandaloneExercise(ex program.DayExercise) string {
+	var b strings.Builder
+	b.WriteString("🏋 ")
+	writeExerciseLine(&b, ex, "")
+	if instr := strings.TrimSpace(ex.Instruction); instr != "" {
 		b.WriteString("\n")
-		writeInstruction(&b, "   ", instr)
+		writeInstructionLine(&b, instr)
 	}
 	return b.String()
 }
 
-func writeBlockHeader(b *strings.Builder, icon, label, instruction string) {
-	fmt.Fprintf(b, "%s *%s*", icon, label)
-	if instr := strings.TrimSpace(instruction); instr != "" {
-		b.WriteString("\n")
-		writeInstruction(b, "   ", instr)
-	} else {
-		b.WriteString("\n")
-	}
-}
-
-func writeExercise(b *strings.Builder, ex program.DayExercise, prefix string) {
-	name := exerciseDisplayName(ex.ExerciseName, ex.ExerciseNameRu)
-	line := prefix + escapeTelegramMarkdown(name)
-	if vol := formatExerciseVolume(ex); vol != "" {
-		line += " — " + vol
-	}
-	b.WriteString(line)
+func writeGroupExercise(b *strings.Builder, ex program.DayExercise, index int) {
+	writeExerciseLine(b, ex, exerciseLetterCyrillic(index))
 	if instr := strings.TrimSpace(ex.Instruction); instr != "" {
 		b.WriteString("\n")
-		writeInstruction(b, "     ", instr)
+		writeInstructionLine(b, instr)
 	}
 }
 
-func writeInstruction(b *strings.Builder, indent, instruction string) {
-	fmt.Fprintf(b, "%s_%s_", indent, escapeTelegramMarkdown(instruction))
+func writeExerciseLine(b *strings.Builder, ex program.DayExercise, letterPrefix string) {
+	name := escapeTelegramMarkdown(exerciseDisplayName(ex.ExerciseName, ex.ExerciseNameRu))
+	if letterPrefix != "" {
+		fmt.Fprintf(b, "%s %s", letterPrefix, name)
+	} else {
+		b.WriteString(name)
+	}
+	if vol := formatExerciseVolume(ex); vol != "" {
+		b.WriteString(" - " + vol)
+	}
+}
+
+func writeInstructionLine(b *strings.Builder, instruction string) {
+	fmt.Fprintf(b, "_%s_", escapeTelegramMarkdown(instruction))
 }
 
 func formatExerciseVolume(ex program.DayExercise) string {
 	switch {
 	case ex.Sets != nil && ex.Reps != nil:
-		return fmt.Sprintf("%d×%d", *ex.Sets, *ex.Reps)
+		return fmt.Sprintf("%d%s%d", *ex.Sets, cyrillicMultiplicationSign, *ex.Reps)
 	case ex.Sets != nil:
 		return fmt.Sprintf("%d подх.", *ex.Sets)
 	case ex.Reps != nil:
@@ -201,11 +214,11 @@ func formatExerciseVolume(ex program.DayExercise) string {
 	}
 }
 
-func exerciseLetter(i int) string {
-	if i < 26 {
-		return string(rune('A' + i))
+func exerciseLetterCyrillic(i int) string {
+	if i < 32 {
+		return string(rune('А'+i)) + "."
 	}
-	return fmt.Sprintf("%d", i+1)
+	return fmt.Sprintf("%d.", i+1)
 }
 
 func blockIsGroup(t program.BlockType) bool {
@@ -219,28 +232,61 @@ func blockIsGroup(t program.BlockType) bool {
 	}
 }
 
-func blockTypeDisplay(t program.BlockType) (icon, label string) {
+func blockTypeHeading(t program.BlockType) string {
+	icon, label := blockTypeIcon(t), blockTypeLabel(t)
+	if icon == "" {
+		return label
+	}
+	return icon + " " + label
+}
+
+func blockTypeIcon(t program.BlockType) string {
 	switch t {
 	case program.BlockTypeSuperset:
-		return "🔗", "Суперсет"
+		return "🔗"
 	case program.BlockTypeComplex:
-		return "🧩", "Комплекс"
+		return "🧩"
 	case program.BlockTypeEMOM:
-		return "⏱", "EMOM"
+		return "⏱"
 	case program.BlockTypeAMRAP:
-		return "🔁", "AMRAP"
+		return "🔁"
 	case program.BlockTypeForTime:
-		return "🏁", "For Time"
+		return "🏁"
 	case program.BlockTypeIntervals:
-		return "⚡", "Интервалы"
+		return "⚡"
 	case program.BlockTypeChipper:
-		return "📉", "Чиппер"
+		return "📉"
 	case program.BlockTypeLadder:
-		return "📈", "Лестница"
+		return "📈"
 	case program.BlockTypeDeathBy:
-		return "💀", "Death By"
+		return "💀"
 	default:
-		return "▫️", ""
+		return ""
+	}
+}
+
+func blockTypeLabel(t program.BlockType) string {
+	switch t {
+	case program.BlockTypeSuperset:
+		return "Суперсет"
+	case program.BlockTypeComplex:
+		return "Комплекс"
+	case program.BlockTypeEMOM:
+		return "EMOM"
+	case program.BlockTypeAMRAP:
+		return "AMRAP"
+	case program.BlockTypeForTime:
+		return "For Time"
+	case program.BlockTypeIntervals:
+		return "Интервалы"
+	case program.BlockTypeChipper:
+		return "Чиппер"
+	case program.BlockTypeLadder:
+		return "Лестница"
+	case program.BlockTypeDeathBy:
+		return "Death By"
+	default:
+		return "Блок"
 	}
 }
 
