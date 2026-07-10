@@ -801,16 +801,29 @@ paths:
       summary: List trainer clients
       description: >
         Clients linked via accepted invites, with optional active program assignment.
+        Search matches client display_name (ILIKE). Default sort: linked_at desc.
       operationId: listTrainerClients
       security:
         - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/TrainerClientSortBy"
+        - $ref: "#/components/parameters/TrainerClientSortOrder"
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Search in client display_name (ILIKE)
       responses:
         "200":
-          description: Client list
+          description: Paginated client list
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TrainerClientListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1592,6 +1605,22 @@ components:
         type: string
         enum: [name, name_ru, created_at, modified_at, status, category, difficulty]
         default: created_at
+
+    TrainerClientSortBy:
+      name: sort_by
+      in: query
+      schema:
+        type: string
+        enum: [name, linked_at]
+        default: linked_at
+
+    TrainerClientSortOrder:
+      name: sort_order
+      in: query
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
 
   responses:
     BadRequest:
@@ -2502,9 +2531,11 @@ components:
 
     TrainerClientListResponse:
       type: object
-      required: [items]
+      required: [items, pagination]
       properties:
         items:
           type: array
           items:
             $ref: "#/components/schemas/TrainerClient"
+        pagination:
+          $ref: "#/components/schemas/Pagination"

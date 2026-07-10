@@ -69,7 +69,7 @@ func (s *Service) CreateInvite(ctx context.Context, trainerUserID uuid.UUID) (In
 	}, nil
 }
 
-func (s *Service) ListClients(ctx context.Context, trainerUserID uuid.UUID) (ClientListResult, error) {
+func (s *Service) ListClients(ctx context.Context, trainerUserID uuid.UUID, params ListParams) (ClientListResult, error) {
 	trainerID, err := s.store.TrainerIDForUser(ctx, trainerUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -77,11 +77,7 @@ func (s *Service) ListClients(ctx context.Context, trainerUserID uuid.UUID) (Cli
 		}
 		return ClientListResult{}, err
 	}
-	items, err := s.store.ListClients(ctx, trainerID)
-	if err != nil {
-		return ClientListResult{}, err
-	}
-	return ClientListResult{Items: items}, nil
+	return s.store.ListClients(ctx, trainerID, params)
 }
 
 func (s *Service) AcceptInvite(ctx context.Context, req AcceptInviteRequest) (AcceptInviteResult, error) {

@@ -57,10 +57,26 @@ func (s *Store) CreateInvite(ctx context.Context, trainerID uuid.UUID, ttl time.
 	return row, token, nil
 }
 
-func (s *Store) ListClients(ctx context.Context, trainerID uuid.UUID) ([]Client, error) {
-	rows, err := s.q.ListTrainerClients(ctx, pgconv.ToPGUUID(trainerID))
+func (s *Store) ListClients(ctx context.Context, trainerID uuid.UUID, params ListParams) (ClientListResult, error) {
+	qPattern := qPattern(params.Query)
+	total, err := s.q.CountTrainerClients(ctx, sqlc.CountTrainerClientsParams{
+		TrainerID: pgconv.ToPGUUID(trainerID),
+		QPattern:  qPattern,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("list trainer clients: %w", err)
+		return ClientListResult{}, fmt.Errorf("count trainer clients: %w", err)
+	}
+
+	rows, err := s.q.ListTrainerClients(ctx, sqlc.ListTrainerClientsParams{
+		TrainerID: pgconv.ToPGUUID(trainerID),
+		QPattern:  qPattern,
+		SortBy:    params.SortBy,
+		SortOrder: params.SortOrder,
+		Limit:     int32(params.Limit),
+		Offset:    int32(params.Offset()),
+	})
+	if err != nil {
+		return ClientListResult{}, fmt.Errorf("list trainer clients: %w", err)
 	}
 	out := make([]Client, 0, len(rows))
 	for _, row := range rows {
@@ -79,7 +95,10 @@ func (s *Store) ListClients(ctx context.Context, trainerID uuid.UUID) ([]Client,
 		}
 		out = append(out, client)
 	}
-	return out, nil
+	return ClientListResult{
+		Items:      out,
+		Pagination: paginationMeta(params.Page, params.Limit, int(total)),
+	}, nil
 }
 
 func (s *Store) AcceptInvite(ctx context.Context, token, telegramUserID, displayName string) (AcceptInviteResult, error) {

@@ -36,7 +36,8 @@ type Client struct {
 }
 
 type ClientListResult struct {
-	Items []Client `json:"items"`
+	Items      []Client   `json:"items"`
+	Pagination Pagination `json:"pagination"`
 }
 
 type AcceptInviteRequest struct {

@@ -55,7 +55,17 @@ func (h *Handlers) ListClients(c echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
 	}
-	result, err := h.svc.ListClients(c.Request().Context(), trainerUserID)
+	params, err := ParseListParams(
+		c.QueryParam("page"),
+		c.QueryParam("limit"),
+		c.QueryParam("sort_by"),
+		c.QueryParam("sort_order"),
+		c.QueryParam("q"),
+	)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	result, err := h.svc.ListClients(c.Request().Context(), trainerUserID, params)
 	if err != nil {
 		return HTTPErrorFrom(err)
 	}

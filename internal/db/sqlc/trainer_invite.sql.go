@@ -34,6 +34,29 @@ func (q *Queries) ConsumeTrainerInvite(ctx context.Context, arg ConsumeTrainerIn
 	return result.RowsAffected(), nil
 }
 
+const countTrainerClients = `-- name: CountTrainerClients :one
+SELECT COUNT(*)::int AS total
+FROM mentorix.trainer_clients tc
+INNER JOIN mentorix.users u ON u.id = tc.client_user_id
+WHERE tc.trainer_id = $1
+  AND (
+    $2::text IS NULL
+    OR u.display_name ILIKE $2 ESCAPE '\'
+  )
+`
+
+type CountTrainerClientsParams struct {
+	TrainerID pgtype.UUID `json:"trainer_id"`
+	QPattern  *string     `json:"q_pattern"`
+}
+
+func (q *Queries) CountTrainerClients(ctx context.Context, arg CountTrainerClientsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countTrainerClients, arg.TrainerID, arg.QPattern)
+	var total int32
+	err := row.Scan(&total)
+	return total, err
+}
+
 const getAuthIdentityUserID = `-- name: GetAuthIdentityUserID :one
 SELECT user_id
 FROM mentorix.auth_identities
@@ -183,8 +206,27 @@ LEFT JOIN mentorix.program_assignments pa
   AND pa.client_user_id = tc.client_user_id
   AND pa.status = 'active'
 WHERE tc.trainer_id = $1
-ORDER BY tc.created_at DESC
+  AND (
+    $2::text IS NULL
+    OR u.display_name ILIKE $2 ESCAPE '\'
+  )
+ORDER BY
+  CASE WHEN $3 = 'display_name' AND $4 = 'asc' THEN u.display_name END ASC NULLS LAST,
+  CASE WHEN $3 = 'display_name' AND $4 = 'desc' THEN u.display_name END DESC NULLS LAST,
+  CASE WHEN $3 = 'linked_at' AND $4 = 'asc' THEN tc.created_at END ASC NULLS LAST,
+  CASE WHEN $3 = 'linked_at' AND $4 = 'desc' THEN tc.created_at END DESC NULLS LAST,
+  tc.client_user_id ASC
+LIMIT $6 OFFSET $5
 `
+
+type ListTrainerClientsParams struct {
+	TrainerID pgtype.UUID `json:"trainer_id"`
+	QPattern  *string     `json:"q_pattern"`
+	SortBy    interface{} `json:"sort_by"`
+	SortOrder interface{} `json:"sort_order"`
+	Offset    int32       `json:"offset"`
+	Limit     int32       `json:"limit"`
+}
 
 type ListTrainerClientsRow struct {
 	ClientUserID     pgtype.UUID        `json:"client_user_id"`
@@ -198,8 +240,15 @@ type ListTrainerClientsRow struct {
 	AssignedAt       pgtype.Timestamptz `json:"assigned_at"`
 }
 
-func (q *Queries) ListTrainerClients(ctx context.Context, trainerID pgtype.UUID) ([]ListTrainerClientsRow, error) {
-	rows, err := q.db.Query(ctx, listTrainerClients, trainerID)
+func (q *Queries) ListTrainerClients(ctx context.Context, arg ListTrainerClientsParams) ([]ListTrainerClientsRow, error) {
+	rows, err := q.db.Query(ctx, listTrainerClients,
+		arg.TrainerID,
+		arg.QPattern,
+		arg.SortBy,
+		arg.SortOrder,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -5,6 +5,7 @@ package storetest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -65,7 +66,7 @@ func TestTrainerInvite_acceptAndListClients(t *testing.T) {
 		t.Fatalf("trainer_display_name = %q", result.TrainerDisplayName)
 	}
 
-	list, err := svc.ListClients(ctx, trainerUserID)
+	list, err := svc.ListClients(ctx, trainerUserID, trainerclient.DefaultListParams())
 	if err != nil {
 		t.Fatalf("ListClients: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestTrainerInvite_existingTelegramSecondTrainer(t *testing.T) {
 		t.Fatal("expected new trainer link, not already linked to B")
 	}
 
-	listB, err := svc.ListClients(ctx, trainerB)
+	listB, err := svc.ListClients(ctx, trainerB, trainerclient.DefaultListParams())
 	if err != nil {
 		t.Fatalf("list B: %v", err)
 	}
@@ -263,7 +264,7 @@ func TestTrainerInvite_listForbiddenForNonTrainer(t *testing.T) {
 		InviteTTL:           time.Hour,
 	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
 
-	_, err = svc.ListClients(ctx, userID)
+	_, err = svc.ListClients(ctx, userID, trainerclient.DefaultListParams())
 	if !errors.Is(err, program.ErrForbidden) {
 		t.Fatalf("ListClients error = %v, want ErrForbidden", err)
 	}
@@ -303,12 +304,82 @@ func TestTrainerInvite_acceptWithEmptyDisplayName(t *testing.T) {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
 
-	list, err := svc.ListClients(ctx, trainerUserID)
+	list, err := svc.ListClients(ctx, trainerUserID, trainerclient.DefaultListParams())
 	if err != nil {
 		t.Fatalf("ListClients: %v", err)
 	}
 	if len(list.Items) != 1 || list.Items[0].DisplayName != "Client" {
 		t.Fatalf("clients = %+v, want display_name Client", list.Items)
+	}
+}
+
+func TestTrainerInvite_listClientsSearchAndSort(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "search-sort-trainer@test.com", pwHash, "Trainer")
+	if err != nil {
+		t.Fatalf("register trainer: %v", err)
+	}
+
+	progSvc := program.NewService(pool)
+	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
+		TelegramBotUsername: "mentorix_bot",
+		InviteTTL:           7 * 24 * time.Hour,
+	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
+
+	names := []string{"Charlie", "Alice", "Bob"}
+	for i, name := range names {
+		invite, err := svc.CreateInvite(ctx, trainerUserID)
+		if err != nil {
+			t.Fatalf("CreateInvite %d: %v", i, err)
+		}
+		token := strings.TrimPrefix(strings.Split(invite.InviteURL, "start=")[1], "inv_")
+		if _, err := svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
+			Token:          token,
+			TelegramUserID: fmt.Sprintf("90000%d", i),
+			DisplayName:    name,
+		}); err != nil {
+			t.Fatalf("AcceptInvite %s: %v", name, err)
+		}
+	}
+
+	searchParams, err := trainerclient.ParseListParams("", "", "", "", "ob")
+	if err != nil {
+		t.Fatalf("ParseListParams: %v", err)
+	}
+	search, err := svc.ListClients(ctx, trainerUserID, searchParams)
+	if err != nil {
+		t.Fatalf("ListClients search: %v", err)
+	}
+	if len(search.Items) != 1 || search.Items[0].DisplayName != "Bob" {
+		t.Fatalf("search items = %+v, want Bob only", search.Items)
+	}
+	if search.Pagination.Total != 1 {
+		t.Fatalf("search total = %d, want 1", search.Pagination.Total)
+	}
+
+	sortParams, err := trainerclient.ParseListParams("", "", "name", "asc", "")
+	if err != nil {
+		t.Fatalf("ParseListParams sort: %v", err)
+	}
+	sorted, err := svc.ListClients(ctx, trainerUserID, sortParams)
+	if err != nil {
+		t.Fatalf("ListClients sort: %v", err)
+	}
+	if len(sorted.Items) != 3 {
+		t.Fatalf("sorted count = %d, want 3", len(sorted.Items))
+	}
+	if sorted.Items[0].DisplayName != "Alice" || sorted.Items[1].DisplayName != "Bob" || sorted.Items[2].DisplayName != "Charlie" {
+		t.Fatalf("sorted order = %v %v %v", sorted.Items[0].DisplayName, sorted.Items[1].DisplayName, sorted.Items[2].DisplayName)
+	}
+	if sorted.Pagination.Total != 3 || sorted.Pagination.TotalPages != 1 {
+		t.Fatalf("pagination = %+v", sorted.Pagination)
 	}
 }
 

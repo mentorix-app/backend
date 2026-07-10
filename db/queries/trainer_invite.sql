@@ -27,6 +27,16 @@ FROM mentorix.trainer_clients
 WHERE trainer_id = $1
   AND client_user_id = $2;
 
+-- name: CountTrainerClients :one
+SELECT COUNT(*)::int AS total
+FROM mentorix.trainer_clients tc
+INNER JOIN mentorix.users u ON u.id = tc.client_user_id
+WHERE tc.trainer_id = $1
+  AND (
+    sqlc.narg('q_pattern')::text IS NULL
+    OR u.display_name ILIKE sqlc.narg('q_pattern') ESCAPE '\'
+  );
+
 -- name: ListTrainerClients :many
 SELECT
   tc.client_user_id,
@@ -45,7 +55,17 @@ LEFT JOIN mentorix.program_assignments pa
   AND pa.client_user_id = tc.client_user_id
   AND pa.status = 'active'
 WHERE tc.trainer_id = $1
-ORDER BY tc.created_at DESC;
+  AND (
+    sqlc.narg('q_pattern')::text IS NULL
+    OR u.display_name ILIKE sqlc.narg('q_pattern') ESCAPE '\'
+  )
+ORDER BY
+  CASE WHEN sqlc.arg('sort_by') = 'display_name' AND sqlc.arg('sort_order') = 'asc' THEN u.display_name END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'display_name' AND sqlc.arg('sort_order') = 'desc' THEN u.display_name END DESC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'linked_at' AND sqlc.arg('sort_order') = 'asc' THEN tc.created_at END ASC NULLS LAST,
+  CASE WHEN sqlc.arg('sort_by') = 'linked_at' AND sqlc.arg('sort_order') = 'desc' THEN tc.created_at END DESC NULLS LAST,
+  tc.client_user_id ASC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: GetAuthIdentityUserID :one
 SELECT user_id

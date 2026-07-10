@@ -13,7 +13,9 @@
 
 ## API
 
-Контракт: `api/openapi.yaml` — `GET/PUT /trainer/clients/{client_user_id}/program-assignment`.
+Контракт: `api/openapi.yaml` — `GET/PUT /trainer/clients/{client_user_id}/program-assignment`, `GET /trainer/clients` (список).
+
+`GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc).
 
 Неочевидные правила:
 
