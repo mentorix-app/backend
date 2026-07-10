@@ -21,7 +21,7 @@
 ## Layout
 
 ```text
-cmd/api/           — wiring
+cmd/api/           — REST + Telegram webhook + push
 internal/<feature>/ — домен
 internal/db/sqlc/  — generated
 db/migrations/     — SQL
@@ -29,4 +29,4 @@ db/queries/        — sqlc
 api/openapi.yaml   — контракт REST
 ```
 
-Перед новой зависимостью — сравнить 2–3 варианта; значимый выбор — записать здесь кратко.
+**Telegram SDK:** `github.com/go-telegram-bot-api/telegram-bot-api/v5` — де-факто стандарт Go; альтернативы `telebot` (выше уровень), raw HTTP (избыточно).

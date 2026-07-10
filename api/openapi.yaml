@@ -771,6 +771,51 @@ paths:
         "409":
           description: Version has assignments or is the sole version
 
+  /trainer/invites:
+    post:
+      tags: [trainer]
+      summary: Create one-time Telegram client invite
+      description: >
+        Returns a deep link for the Telegram bot (`t.me/<bot>?start=inv_<token>`).
+        Requires `TELEGRAM_BOT_USERNAME` on the server.
+      operationId: createTrainerInvite
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Invite created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainerInvite"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer role required
+        "503":
+          description: Telegram invite not configured
+
+  /trainer/clients:
+    get:
+      tags: [trainer]
+      summary: List trainer clients
+      description: >
+        Clients linked via accepted invites, with optional active program assignment.
+      operationId: listTrainerClients
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Client list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainerClientListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer role required
+
   /trainer/clients/{client_user_id}/program-assignment:
     parameters:
       - $ref: "#/components/parameters/ClientUserId"
@@ -2404,3 +2449,62 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProgramVersionCleanupSkipped"
+
+    TrainerInvite:
+      type: object
+      required: [id, invite_url, expires_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        invite_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    TrainerClientProgramSummary:
+      type: object
+      required: [program_id, program_version_id, assigned_at]
+      properties:
+        program_id:
+          type: string
+          format: uuid
+        program_version_id:
+          type: string
+          format: uuid
+        assigned_at:
+          type: string
+          format: date-time
+
+    TrainerClient:
+      type: object
+      required: [client_user_id, display_name, status, linked_at]
+      properties:
+        client_user_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        status:
+          type: string
+          enum: [active, blocked]
+        linked_at:
+          type: string
+          format: date-time
+        program_assignment:
+          $ref: "#/components/schemas/TrainerClientProgramSummary"
+          nullable: true
+
+    TrainerClientListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrainerClient"

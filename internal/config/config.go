@@ -18,24 +18,33 @@ type RefreshCookieSettings struct {
 }
 
 type Config struct {
-	AppEnv              string
-	Port                string
-	DatabaseURL         string
-	RedisURL            string
-	JWTSecret           string
-	CORSAllowedOrigins  []string
-	TrustedProxyCIDRs   []string
-	AccessTTLMinutes    int
-	RefreshTTLDays      int
-	RefreshCookie       RefreshCookieSettings
-	AuthLoginRateMax    int
-	AuthLoginRateWindow time.Duration
-	AuthRegisterRateMax int
-	AuthRegisterRateWin time.Duration
+	AppEnv               string
+	Port                 string
+	DatabaseURL          string
+	RedisURL             string
+	JWTSecret            string
+	CORSAllowedOrigins   []string
+	TrustedProxyCIDRs    []string
+	AccessTTLMinutes     int
+	RefreshTTLDays       int
+	RefreshCookie        RefreshCookieSettings
+	AuthLoginRateMax     int
+	AuthLoginRateWindow  time.Duration
+	AuthRegisterRateMax  int
+	AuthRegisterRateWin  time.Duration
+	TelegramBotUsername  string
+	TrainerInviteTTLDays int
+	BotToken             string
+	BotWebhookURL        string
+	BotWebhookSecret     string
 }
 
 func (c Config) AccessTokenTTL() time.Duration {
 	return time.Duration(c.AccessTTLMinutes) * time.Minute
+}
+
+func (c Config) TrainerInviteTTL() time.Duration {
+	return time.Duration(c.TrainerInviteTTLDays) * 24 * time.Hour
 }
 
 func (c Config) RefreshTokenTTL() time.Duration {
@@ -88,6 +97,10 @@ func Load() (Config, error) {
 	loginWin := secondsFromEnv("AUTH_LOGIN_RATE_WINDOW_SEC", 900)
 	regMax := intFromEnv("AUTH_REGISTER_RATE_MAX", 10)
 	regWin := secondsFromEnv("AUTH_REGISTER_RATE_WINDOW_SEC", 900)
+	inviteDays := intFromEnv("TRAINER_INVITE_TTL_DAYS", 7)
+	if inviteDays < 1 {
+		inviteDays = 7
+	}
 
 	cfg := Config{
 		AppEnv:             appEnv,
@@ -106,10 +119,15 @@ func Load() (Config, error) {
 			Secure:   secure,
 			SameSite: sameSite,
 		},
-		AuthLoginRateMax:    loginMax,
-		AuthLoginRateWindow: loginWin,
-		AuthRegisterRateMax: regMax,
-		AuthRegisterRateWin: regWin,
+		AuthLoginRateMax:     loginMax,
+		AuthLoginRateWindow:  loginWin,
+		AuthRegisterRateMax:  regMax,
+		AuthRegisterRateWin:  regWin,
+		TelegramBotUsername:  strings.TrimSpace(os.Getenv("TELEGRAM_BOT_USERNAME")),
+		TrainerInviteTTLDays: inviteDays,
+		BotToken:             strings.TrimSpace(os.Getenv("BOT_TOKEN")),
+		BotWebhookURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("BOT_WEBHOOK_URL")), "/"),
+		BotWebhookSecret:     strings.TrimSpace(os.Getenv("BOT_WEBHOOK_SECRET")),
 	}
 
 	if cfg.AppEnv != AppEnvDevelopment && cfg.AppEnv != AppEnvProduction {
@@ -121,6 +139,13 @@ func Load() (Config, error) {
 	}
 	if len(cfg.JWTSecret) < 32 {
 		return Config{}, fmt.Errorf("config: JWT_SECRET must be at least 32 bytes for HS256")
+	}
+
+	if cfg.BotWebhookURL != "" && cfg.BotToken == "" {
+		return Config{}, fmt.Errorf("config: BOT_TOKEN is required when BOT_WEBHOOK_URL is set")
+	}
+	if cfg.BotWebhookURL != "" && cfg.BotWebhookSecret == "" {
+		return Config{}, fmt.Errorf("config: BOT_WEBHOOK_SECRET is required when BOT_WEBHOOK_URL is set")
 	}
 
 	return cfg, nil

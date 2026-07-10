@@ -9,6 +9,7 @@ import (
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/trainerclient"
 )
 
 type schemaBinding struct {
@@ -119,6 +120,10 @@ func schemaBindings() []schemaBinding {
 		{name: "ProgramVersionListResponse", typ: reflect.TypeOf(program.VersionListResult{})},
 		{name: "ProgramVersionCleanupSkipped", typ: reflect.TypeOf(program.VersionCleanupSkipped{})},
 		{name: "ProgramVersionCleanupResponse", typ: reflect.TypeOf(program.VersionCleanupResult{})},
+		{name: "TrainerInvite", typ: reflect.TypeOf(trainerclient.Invite{})},
+		{name: "TrainerClientProgramSummary", typ: reflect.TypeOf(trainerclient.ClientProgramSummary{})},
+		{name: "TrainerClient", typ: reflect.TypeOf(trainerclient.Client{})},
+		{name: "TrainerClientListResponse", typ: reflect.TypeOf(trainerclient.ClientListResult{})},
 	}
 }
 

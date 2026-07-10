@@ -2,7 +2,10 @@ package auth
 
 import "errors"
 
-const ProviderEmailPassword = "email_password"
+const (
+	ProviderEmailPassword = "email_password"
+	ProviderTelegram      = "telegram"
+)
 
 const (
 	RoleAdmin   = "admin"

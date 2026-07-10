@@ -4,12 +4,10 @@ import (
 	"testing"
 
 	"github.com/labstack/echo/v4"
-
-	"mentorix-backend/internal/trainerclient"
 )
 
 func TestHandlers_Mount_registersRoutes(t *testing.T) {
-	h := trainerclient.NewHandlers(nil, nil, "contract-check-jwt-secret-min-32-chars")
+	h := testHandlers(nil)
 	e := echo.New()
 	h.Mount(e)
 
@@ -18,6 +16,8 @@ func TestHandlers_Mount_registersRoutes(t *testing.T) {
 		found[r.Method+" "+r.Path] = true
 	}
 	want := []string{
+		"POST /trainer/invites",
+		"GET /trainer/clients",
 		"GET /trainer/clients/:client_user_id/program-assignment",
 		"PUT /trainer/clients/:client_user_id/program-assignment",
 	}

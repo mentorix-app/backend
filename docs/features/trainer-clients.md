@@ -23,4 +23,5 @@
 
 ## См. также
 
+- [trainer-invites.md](trainer-invites.md) — приглашение и связь с клиентом
 - [programs.md](programs.md)

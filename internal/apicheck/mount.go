@@ -45,5 +45,9 @@ func MountRoutes(e *echo.Echo, pool *pgxpool.Pool) {
 	progSvc := program.NewService(pool)
 	program.NewHandlers(progSvc, pool, contractJWTSecret).Mount(e)
 
-	trainerclient.NewHandlers(progSvc, pool, contractJWTSecret).Mount(e)
+	trainerClientSvc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
+		TelegramBotUsername: "mentorix_bot",
+		InviteTTL:           7 * 24 * time.Hour,
+	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
+	trainerclient.NewHandlers(trainerClientSvc, pool, contractJWTSecret).Mount(e)
 }

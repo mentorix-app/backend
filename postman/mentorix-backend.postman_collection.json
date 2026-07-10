@@ -1861,6 +1861,46 @@
           "response": []
         },
         {
+          "name": "POST /trainer/invites",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/trainer/invites",
+            "description": "Create one-time Telegram invite deep link"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /trainer/clients",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/trainer/clients",
+            "description": "List linked clients with optional active program"
+          },
+          "response": []
+        },
+        {
           "name": "GET /trainer/clients/:client_user_id/program-assignment",
           "request": {
             "auth": {

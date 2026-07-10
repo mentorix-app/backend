@@ -13,7 +13,6 @@ import (
 
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/program"
-	"mentorix-backend/internal/trainerclient"
 )
 
 type stubClientPrograms struct {
@@ -58,7 +57,7 @@ func trainerClientContext(e *echo.Echo, method, path, body string, userID uuid.U
 }
 
 func TestHandlers_GetProgramAssignment_unauthorized(t *testing.T) {
-	h := trainerclient.NewHandlers(stubClientPrograms{}, nil, "test-jwt-secret-at-least-32-chars-long")
+	h := testHandlers(stubClientPrograms{})
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/trainer/clients/"+uuid.New().String()+"/program-assignment", nil)
 	rec := httptest.NewRecorder()
@@ -74,7 +73,7 @@ func TestHandlers_GetProgramAssignment_unauthorized(t *testing.T) {
 }
 
 func TestHandlers_SetProgramAssignment_unauthorized(t *testing.T) {
-	h := trainerclient.NewHandlers(stubClientPrograms{}, nil, "test-jwt-secret-at-least-32-chars-long")
+	h := testHandlers(stubClientPrograms{})
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPut, "/trainer/clients/"+uuid.New().String()+"/program-assignment", strings.NewReader(`{}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -93,7 +92,7 @@ func TestHandlers_SetProgramAssignment_unauthorized(t *testing.T) {
 func TestHandlers_SetProgramAssignment_invalidJSON(t *testing.T) {
 	userID := uuid.New()
 	clientID := uuid.New()
-	h := trainerclient.NewHandlers(stubClientPrograms{}, nil, "test-jwt-secret-at-least-32-chars-long")
+	h := testHandlers(stubClientPrograms{})
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPut, "/trainer/clients/"+clientID.String()+"/program-assignment", strings.NewReader(`not-json`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -113,9 +112,9 @@ func TestHandlers_SetProgramAssignment_invalidJSON(t *testing.T) {
 func TestHandlers_GetProgramAssignment_nilAssignment(t *testing.T) {
 	userID := uuid.New()
 	clientID := uuid.New()
-	h := trainerclient.NewHandlers(stubClientPrograms{
+	h := testHandlers(stubClientPrograms{
 		assignment: nil,
-	}, nil, "test-jwt-secret-at-least-32-chars-long")
+	})
 
 	e := echo.New()
 	c, rec := trainerClientContext(e, http.MethodGet, "/trainer/clients/"+clientID.String()+"/program-assignment", "", userID, map[string]string{
@@ -137,7 +136,7 @@ func TestHandlers_GetProgramAssignment_success(t *testing.T) {
 	userID := uuid.New()
 	clientID := uuid.New()
 	now := time.Now().UTC()
-	h := trainerclient.NewHandlers(stubClientPrograms{
+	h := testHandlers(stubClientPrograms{
 		assignment: &program.Assignment{
 			ID:           uuid.New(),
 			ClientUserID: clientID,
@@ -145,7 +144,7 @@ func TestHandlers_GetProgramAssignment_success(t *testing.T) {
 			CreatedAt:    now,
 			Status:       program.AssignmentStatusActive,
 		},
-	}, nil, "test-jwt-secret-at-least-32-chars-long")
+	})
 
 	e := echo.New()
 	c, rec := trainerClientContext(e, http.MethodGet, "/trainer/clients/"+clientID.String()+"/program-assignment", "", userID, map[string]string{
@@ -163,9 +162,9 @@ func TestHandlers_GetProgramAssignment_success(t *testing.T) {
 func TestHandlers_SetProgramAssignment_clear(t *testing.T) {
 	userID := uuid.New()
 	clientID := uuid.New()
-	h := trainerclient.NewHandlers(stubClientPrograms{
+	h := testHandlers(stubClientPrograms{
 		setAssignment: nil,
-	}, nil, "test-jwt-secret-at-least-32-chars-long")
+	})
 
 	e := echo.New()
 	c, rec := trainerClientContext(e, http.MethodPut, "/trainer/clients/"+clientID.String()+"/program-assignment", `{"program_id":null}`, userID, map[string]string{
@@ -188,7 +187,7 @@ func TestHandlers_SetProgramAssignment_success(t *testing.T) {
 	clientID := uuid.New()
 	programID := uuid.New()
 	now := time.Now().UTC()
-	h := trainerclient.NewHandlers(stubClientPrograms{
+	h := testHandlers(stubClientPrograms{
 		setAssignment: &program.Assignment{
 			ID:         uuid.New(),
 			ProgramID:  programID,
@@ -196,7 +195,7 @@ func TestHandlers_SetProgramAssignment_success(t *testing.T) {
 			CreatedAt:  now,
 			Status:     program.AssignmentStatusActive,
 		},
-	}, nil, "test-jwt-secret-at-least-32-chars-long")
+	})
 
 	e := echo.New()
 	body := `{"program_id":"` + programID.String() + `"}`
@@ -216,9 +215,9 @@ func TestHandlers_SetProgramAssignment_forbidden(t *testing.T) {
 	userID := uuid.New()
 	clientID := uuid.New()
 	programID := uuid.New()
-	h := trainerclient.NewHandlers(stubClientPrograms{
+	h := testHandlers(stubClientPrograms{
 		setAssignmentErr: program.ErrClientNotLinked,
-	}, nil, "test-jwt-secret-at-least-32-chars-long")
+	})
 
 	e := echo.New()
 	body := `{"program_id":"` + programID.String() + `"}`
@@ -234,7 +233,7 @@ func TestHandlers_SetProgramAssignment_forbidden(t *testing.T) {
 }
 
 func TestHandlers_GetProgramAssignment_invalidClientID(t *testing.T) {
-	h := trainerclient.NewHandlers(stubClientPrograms{}, nil, "test-jwt-secret-at-least-32-chars-long")
+	h := testHandlers(stubClientPrograms{})
 	e := echo.New()
 	c, _ := trainerClientContext(e, http.MethodGet, "/trainer/clients/not-a-uuid/program-assignment", "", uuid.New(), map[string]string{
 		"client_user_id": "not-a-uuid",

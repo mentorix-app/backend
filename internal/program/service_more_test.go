@@ -432,6 +432,54 @@ func TestService_SyncAssignments_success(t *testing.T) {
 	}
 }
 
+type recordingSyncNotifier struct {
+	calls int
+}
+
+func (r *recordingSyncNotifier) NotifyProgramSynced(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) error {
+	r.calls++
+	return nil
+}
+
+func TestService_SyncAssignments_notifiesSynced(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	clientID := uuid.New()
+	trainerID := uuid.New()
+	versionID := uuid.New()
+	allActive := true
+	notifier := &recordingSyncNotifier{}
+	svc := NewServiceWithStore(&assignmentVersionStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		},
+		syncResult: AssignmentSyncResult{
+			Synced: []Assignment{{
+				ID:               uuid.New(),
+				ClientUserID:     clientID,
+				TrainerID:        trainerID,
+				ProgramVersionID: versionID,
+			}},
+		},
+	}, &fakeRoleQuerier{isAdmin: true}, WithProgramNotifier(notifier))
+
+	_, err := svc.SyncAssignments(context.Background(), userID, programID, AssignmentSyncRequest{AllActive: &allActive})
+	if err != nil {
+		t.Fatalf("SyncAssignments() error = %v", err)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("notifier calls = %d, want 1", notifier.calls)
+	}
+}
+
+func TestWithProgramNotifier_setsNotifier(t *testing.T) {
+	n := &recordingSyncNotifier{}
+	svc := NewServiceWithStore(&fakeProgramStore{}, &fakeRoleQuerier{isAdmin: true}, WithProgramNotifier(n))
+	if svc == nil {
+		t.Fatal("nil service")
+	}
+}
+
 func TestService_ListVersions_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()

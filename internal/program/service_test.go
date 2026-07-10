@@ -35,6 +35,7 @@ type fakeProgramStore struct {
 	detail       Detail
 	listResult   ListResult
 	createDetail Detail
+	assignment   *Assignment
 	err          error
 }
 
@@ -183,6 +184,9 @@ func (f *fakeProgramStore) TrainerIDForUser(context.Context, uuid.UUID) (uuid.UU
 }
 
 func (f *fakeProgramStore) GetClientProgramAssignment(context.Context, uuid.UUID, uuid.UUID) (*Assignment, error) {
+	if f.assignment != nil {
+		return f.assignment, nil
+	}
 	return nil, f.err
 }
 
@@ -208,6 +212,13 @@ func (f *fakeProgramStore) DeleteProgramVersion(context.Context, uuid.UUID, uuid
 
 func (f *fakeProgramStore) CleanupProgramVersions(context.Context, uuid.UUID) (VersionCleanupResult, error) {
 	return VersionCleanupResult{}, f.err
+}
+
+func (f *fakeProgramStore) GetVersionDetail(context.Context, uuid.UUID) (Detail, error) {
+	if f.detail.Program.ID != uuid.Nil {
+		return f.detail, nil
+	}
+	return Detail{}, f.err
 }
 
 type capturingStore struct {
@@ -314,5 +325,28 @@ func TestService_Delete_idempotentWhenAlreadyDeleted(t *testing.T) {
 
 	if err := svc.Delete(context.Background(), userID, programID); err != nil {
 		t.Fatalf("Delete() error = %v, want nil", err)
+	}
+}
+
+func TestService_GetVersionDetail(t *testing.T) {
+	versionID := uuid.New()
+	detail := Detail{Program: Program{ID: uuid.New(), Name: "Plan"}}
+	svc := testService(&fakeProgramStore{detail: detail}, nil)
+	got, err := svc.GetVersionDetail(context.Background(), versionID)
+	if err != nil || got.Name != "Plan" {
+		t.Fatalf("GetVersionDetail() = %+v, %v", got, err)
+	}
+}
+
+func TestService_GetAssignmentByTrainerID(t *testing.T) {
+	trainerID := uuid.New()
+	clientID := uuid.New()
+	assign := &Assignment{TrainerID: trainerID, ClientUserID: clientID}
+	store := &fakeProgramStore{}
+	svc := testService(store, nil)
+	store.assignment = assign
+	got, err := svc.GetAssignmentByTrainerID(context.Background(), trainerID, clientID)
+	if err != nil || got != assign {
+		t.Fatalf("GetAssignmentByTrainerID() = %+v, %v", got, err)
 	}
 }

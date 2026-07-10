@@ -20,6 +20,8 @@ import (
 	"mentorix-backend/internal/health"
 	apphttp "mentorix-backend/internal/http"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/telegrambot"
+	"mentorix-backend/internal/telegramnotify"
 	"mentorix-backend/internal/trainerclient"
 )
 
@@ -108,10 +110,46 @@ func main() {
 		exSvc := exercise.NewService(pool)
 		exercise.NewHandlers(exSvc, pool, cfg.JWTSecret).Mount(e)
 
-		progSvc := program.NewService(pool)
+		var programNotifier program.ProgramNotifier
+		var trainerNotifier trainerclient.ProgramNotifier
+		if cfg.BotToken != "" {
+			sender, err := telegramnotify.NewSender(cfg.BotToken)
+			if err != nil {
+				logger.Warn("telegram push disabled", "error", err)
+			} else {
+				n := telegramnotify.NewNotifier(pool, sender, logger)
+				programNotifier = n
+				trainerNotifier = n
+			}
+		}
+		progSvc := program.NewService(pool, program.WithProgramNotifier(programNotifier))
+
 		program.NewHandlers(progSvc, pool, cfg.JWTSecret).Mount(e)
 
-		trainerclient.NewHandlers(progSvc, pool, cfg.JWTSecret).Mount(e)
+		trainerClientSvc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
+			TelegramBotUsername: cfg.TelegramBotUsername,
+			InviteTTL:           cfg.TrainerInviteTTL(),
+		}, trainerclient.NewActiveTrainerStore(rdb), trainerNotifier)
+		trainerclient.NewHandlers(trainerClientSvc, pool, cfg.JWTSecret).Mount(e)
+
+		if cfg.BotToken != "" && cfg.BotWebhookURL != "" {
+			tgBot, err := telegrambot.NewFromToken(cfg.BotToken, trainerClientSvc)
+			if err != nil {
+				logger.Error("telegram webhook bot init failed", "error", err)
+				os.Exit(1)
+			}
+			e.POST("/telegram/webhook", telegrambot.WebhookHandler(cfg.BotWebhookSecret, tgBot))
+			if err := tgBot.RegisterWebhook(cfg.BotToken, telegrambot.WebhookConfig{
+				URL:         cfg.BotWebhookURL,
+				SecretToken: cfg.BotWebhookSecret,
+			}); err != nil {
+				logger.Error("telegram webhook registration failed", "error", err)
+				os.Exit(1)
+			}
+			logger.Info("telegram webhook registered", "url", cfg.BotWebhookURL)
+		} else if cfg.BotToken != "" {
+			logger.Warn("telegram bot webhook not configured; push enabled, incoming updates disabled")
+		}
 	} else {
 		logger.Warn("DATABASE_URL not set; auth, exercise, and program routes are disabled")
 	}

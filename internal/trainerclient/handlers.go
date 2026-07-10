@@ -13,22 +13,53 @@ import (
 )
 
 type Handlers struct {
-	programs  ClientProgramService
+	svc       *Service
 	pool      *pgxpool.Pool
 	jwtSecret string
 }
 
-func NewHandlers(programs ClientProgramService, pool *pgxpool.Pool, jwtSecret string) *Handlers {
-	return &Handlers{programs: programs, pool: pool, jwtSecret: jwtSecret}
+func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
+	return &Handlers{svc: svc, pool: pool, jwtSecret: jwtSecret}
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
-	g := e.Group("/trainer/clients",
+	trainer := e.Group("/trainer",
 		auth.JWTMiddleware(h.jwtSecret),
 		auth.TrainerMiddleware(h.pool),
 	)
-	g.GET("/:client_user_id/program-assignment", h.GetProgramAssignment)
-	g.PUT("/:client_user_id/program-assignment", h.SetProgramAssignment)
+	trainer.POST("/invites", h.CreateInvite)
+
+	clients := e.Group("/trainer/clients",
+		auth.JWTMiddleware(h.jwtSecret),
+		auth.TrainerMiddleware(h.pool),
+	)
+	clients.GET("", h.ListClients)
+	clients.GET("/:client_user_id/program-assignment", h.GetProgramAssignment)
+	clients.PUT("/:client_user_id/program-assignment", h.SetProgramAssignment)
+}
+
+func (h *Handlers) CreateInvite(c echo.Context) error {
+	trainerUserID, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	invite, err := h.svc.CreateInvite(c.Request().Context(), trainerUserID)
+	if err != nil {
+		return HTTPErrorFrom(err)
+	}
+	return c.JSON(http.StatusCreated, invite)
+}
+
+func (h *Handlers) ListClients(c echo.Context) error {
+	trainerUserID, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	result, err := h.svc.ListClients(c.Request().Context(), trainerUserID)
+	if err != nil {
+		return HTTPErrorFrom(err)
+	}
+	return c.JSON(http.StatusOK, result)
 }
 
 func (h *Handlers) GetProgramAssignment(c echo.Context) error {
@@ -41,7 +72,7 @@ func (h *Handlers) GetProgramAssignment(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
 
-	assignment, err := h.programs.GetClientProgramAssignment(c.Request().Context(), trainerUserID, clientUserID)
+	assignment, err := h.svc.GetClientProgramAssignment(c.Request().Context(), trainerUserID, clientUserID)
 	if err != nil {
 		return program.HTTPErrorFrom(err)
 	}
@@ -63,7 +94,7 @@ func (h *Handlers) SetProgramAssignment(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
 
-	assignment, err := h.programs.SetClientProgramAssignment(c.Request().Context(), trainerUserID, clientUserID, body.ProgramID)
+	assignment, err := h.svc.SetClientProgramAssignment(c.Request().Context(), trainerUserID, clientUserID, body.ProgramID)
 	if err != nil {
 		return program.HTTPErrorFrom(err)
 	}

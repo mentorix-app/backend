@@ -13,6 +13,8 @@
 | Упражнения (list/get, admin CRUD, soft delete) | [features/exercises.md](features/exercises.md) |
 | Программы (CRUD, publish, версии, assignments, sync) | [features/programs.md](features/programs.md) |
 | Назначение программы клиенту | [features/trainer-clients.md](features/trainer-clients.md) |
+| Инвайты тренер → клиент (Telegram deep link) | [features/trainer-invites.md](features/trainer-invites.md) |
+| Telegram-бот: /start, accept, меню, программа, push (фазы 1–4) | [features/telegram-bot.md](features/telegram-bot.md) |
 | Контракт OpenAPI + Postman + apicheck | [architecture.md](architecture.md), `api/openapi.yaml` |
 | CI (vet, test, build, lint, contract, integration, 85% coverage) | [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |
@@ -20,3 +22,4 @@
 | Dev seed | [environments.md](environments.md) |
 
 _Миграции: версия 17 (`./scripts/migrate-check.sh`)._
+

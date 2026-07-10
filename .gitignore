@@ -36,10 +36,12 @@ vendor/
 go.work
 go.work.sum
 
-# Env and secrets; keep .env.example tracked when you add it
+# Env and secrets; only *.example templates in git
 .env
 .env.*
 !.env.example
+!.env.dev.example
+!.env.prod.example
 
 
 # Editor/IDE

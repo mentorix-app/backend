@@ -49,23 +49,43 @@ type programStore interface {
 	ListProgramVersions(ctx context.Context, programID uuid.UUID) (VersionListResult, error)
 	DeleteProgramVersion(ctx context.Context, programID, versionID uuid.UUID) error
 	CleanupProgramVersions(ctx context.Context, programID uuid.UUID) (VersionCleanupResult, error)
+	GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Detail, error)
 }
 
 type Service struct {
-	store programStore
-	roles auth.RoleQuerier
+	store    programStore
+	roles    auth.RoleQuerier
+	notifier ProgramNotifier
 }
 
-func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{
+type ProgramNotifier interface {
+	NotifyProgramSynced(ctx context.Context, clientUserID, trainerID, programVersionID uuid.UUID) error
+}
+
+type ServiceOption func(*Service)
+
+func WithProgramNotifier(n ProgramNotifier) ServiceOption {
+	return func(s *Service) { s.notifier = n }
+}
+
+func NewService(pool *pgxpool.Pool, opts ...ServiceOption) *Service {
+	s := &Service{
 		store: NewStore(pool),
 		roles: sqlc.New(pool),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // NewServiceWithStore wires a Service with test or custom store implementations.
-func NewServiceWithStore(store programStore, roles auth.RoleQuerier) *Service {
-	return &Service{store: store, roles: roles}
+func NewServiceWithStore(store programStore, roles auth.RoleQuerier, opts ...ServiceOption) *Service {
+	s := &Service{store: store, roles: roles}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s *Service) Create(ctx context.Context, userID uuid.UUID) (Detail, error) {

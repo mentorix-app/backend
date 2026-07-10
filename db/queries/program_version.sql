@@ -128,3 +128,22 @@ JOIN mentorix.program_version_week_day_blocks pvb ON pvb.id = pde.program_versio
 JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
 WHERE pd.program_version_id = $1
 ORDER BY pd.sort_order ASC, pd.day_number ASC, pvb.sort_order ASC, pde.sort_order ASC;
+
+-- name: ListProgramVersionDayExercisesWithNamesByVersionID :many
+SELECT
+  pde.id,
+  pde.program_version_week_day_block_id,
+  pde.exercise_id,
+  pde.sort_order,
+  pde.sets,
+  pde.reps,
+  pde.instruction,
+  pde.created_at,
+  COALESCE(e.name, '')::text AS exercise_name,
+  COALESCE(e.name_ru, '')::text AS exercise_name_ru
+FROM mentorix.program_version_week_day_block_exercises pde
+JOIN mentorix.program_version_week_day_blocks pvb ON pvb.id = pde.program_version_week_day_block_id
+JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
+LEFT JOIN mentorix.exercises e ON e.id = pde.exercise_id
+WHERE pd.program_version_id = $1
+ORDER BY pd.sort_order ASC, pd.day_number ASC, pvb.sort_order ASC, pde.sort_order ASC;

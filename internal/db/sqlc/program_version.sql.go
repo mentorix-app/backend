@@ -424,6 +424,70 @@ func (q *Queries) ListProgramVersionDayExercisesByVersionID(ctx context.Context,
 	return items, nil
 }
 
+const listProgramVersionDayExercisesWithNamesByVersionID = `-- name: ListProgramVersionDayExercisesWithNamesByVersionID :many
+SELECT
+  pde.id,
+  pde.program_version_week_day_block_id,
+  pde.exercise_id,
+  pde.sort_order,
+  pde.sets,
+  pde.reps,
+  pde.instruction,
+  pde.created_at,
+  COALESCE(e.name, '')::text AS exercise_name,
+  COALESCE(e.name_ru, '')::text AS exercise_name_ru
+FROM mentorix.program_version_week_day_block_exercises pde
+JOIN mentorix.program_version_week_day_blocks pvb ON pvb.id = pde.program_version_week_day_block_id
+JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
+LEFT JOIN mentorix.exercises e ON e.id = pde.exercise_id
+WHERE pd.program_version_id = $1
+ORDER BY pd.sort_order ASC, pd.day_number ASC, pvb.sort_order ASC, pde.sort_order ASC
+`
+
+type ListProgramVersionDayExercisesWithNamesByVersionIDRow struct {
+	ID                           pgtype.UUID `json:"id"`
+	ProgramVersionWeekDayBlockID pgtype.UUID `json:"program_version_week_day_block_id"`
+	ExerciseID                   pgtype.UUID `json:"exercise_id"`
+	SortOrder                    int32       `json:"sort_order"`
+	Sets                         *int32      `json:"sets"`
+	Reps                         *int32      `json:"reps"`
+	Instruction                  string      `json:"instruction"`
+	CreatedAt                    time.Time   `json:"created_at"`
+	ExerciseName                 string      `json:"exercise_name"`
+	ExerciseNameRu               string      `json:"exercise_name_ru"`
+}
+
+func (q *Queries) ListProgramVersionDayExercisesWithNamesByVersionID(ctx context.Context, programVersionID pgtype.UUID) ([]ListProgramVersionDayExercisesWithNamesByVersionIDRow, error) {
+	rows, err := q.db.Query(ctx, listProgramVersionDayExercisesWithNamesByVersionID, programVersionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProgramVersionDayExercisesWithNamesByVersionIDRow{}
+	for rows.Next() {
+		var i ListProgramVersionDayExercisesWithNamesByVersionIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProgramVersionWeekDayBlockID,
+			&i.ExerciseID,
+			&i.SortOrder,
+			&i.Sets,
+			&i.Reps,
+			&i.Instruction,
+			&i.CreatedAt,
+			&i.ExerciseName,
+			&i.ExerciseNameRu,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProgramVersionDaysByVersionID = `-- name: ListProgramVersionDaysByVersionID :many
 SELECT id, program_version_id, program_version_week_id, day_number, sort_order, created_at
 FROM mentorix.program_version_week_days

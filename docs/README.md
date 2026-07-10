@@ -20,6 +20,8 @@
 | [features/programs.md](features/programs.md) | Программы тренировок |
 | [features/program-blocks.md](features/program-blocks.md) | Блоки упражнений в дне |
 | [features/trainer-clients.md](features/trainer-clients.md) | Назначение программы клиенту |
+| [features/trainer-invites.md](features/trainer-invites.md) | Инвайты тренер → клиент (Telegram) |
+| [features/telegram-bot.md](features/telegram-bot.md) | Telegram-бот для клиента |
 | [features/admin.md](features/admin.md) | Admin API |
 
 Контракт REST: [`api/openapi.yaml`](../api/openapi.yaml).
