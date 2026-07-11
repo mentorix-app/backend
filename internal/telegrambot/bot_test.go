@@ -384,7 +384,7 @@ func TestBot_handleCallbackQuery_setTrainer(t *testing.T) {
 	backend := &fakeTrainerClient{
 		trainers: trainerclient.TelegramTrainerList{
 			Items: []trainerclient.TelegramTrainer{
-				{TrainerID: trainerID, DisplayName: "Anna"},
+				{TrainerID: trainerID, DisplayName: "Anna", HasProgram: true, ProgramNameRu: "Сила"},
 				{TrainerID: uuid.New(), DisplayName: "Ivan"},
 			},
 		},
@@ -398,8 +398,16 @@ func TestBot_handleCallbackQuery_setTrainer(t *testing.T) {
 			Chat: &tgbotapi.Chat{ID: 1},
 		},
 	})
-	if len(api.sent) < 2 {
+	if len(api.sent) != 1 {
 		t.Fatalf("sent = %d", len(api.sent))
+	}
+	for _, part := range []string{"✓ 👤 Тренер: Anna", "💪 Программа: Сила"} {
+		if !strings.Contains(api.sent[0].Text, part) {
+			t.Fatalf("missing %q in %q", part, api.sent[0].Text)
+		}
+	}
+	if strings.Contains(api.sent[0].Text, "Нажмите кнопку") {
+		t.Fatalf("should not show trainer picker again: %q", api.sent[0].Text)
 	}
 }
 

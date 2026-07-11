@@ -368,6 +368,19 @@ func TestFormatToday_withBlocks(t *testing.T) {
 	}
 }
 
+func TestFormatActiveTrainerNotification(t *testing.T) {
+	text := formatActiveTrainerNotification(trainerclient.TelegramTrainer{
+		DisplayName:   "Anna",
+		HasProgram:    true,
+		ProgramNameRu: "Сила",
+	})
+	for _, part := range []string{"✓ 👤 Тренер: Anna", "💪 Программа: Сила"} {
+		if !strings.Contains(text, part) {
+			t.Fatalf("missing %q in %q", part, text)
+		}
+	}
+}
+
 func TestFormatTrainers_multi(t *testing.T) {
 	text, trainers := formatTrainers(trainerclient.TelegramTrainerList{
 		Items: []trainerclient.TelegramTrainer{

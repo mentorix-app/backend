@@ -209,13 +209,23 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQ
 }
 
 func (b *Bot) handleTrainerCallback(ctx context.Context, chatID int64, tgID string, trainerID uuid.UUID) {
-	result, err := b.clients.SetTelegramActiveTrainer(ctx, tgID, trainerID)
+	_, err := b.clients.SetTelegramActiveTrainer(ctx, tgID, trainerID)
 	if err != nil {
 		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
 		return
 	}
-	b.sendText(chatID, fmt.Sprintf("Активный тренер: %s", result.DisplayName), mainMenuKeyboard())
-	b.handleTrainers(ctx, chatID, tgID)
+	list, err := b.clients.ListTelegramTrainers(ctx, tgID)
+	if err != nil {
+		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		return
+	}
+	for _, t := range list.Items {
+		if t.TrainerID == trainerID {
+			b.sendMarkdown(chatID, formatActiveTrainerNotification(t), mainMenuKeyboard())
+			return
+		}
+	}
+	b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
 }
 
 func (b *Bot) acceptInvite(ctx context.Context, msg *tgbotapi.Message, token string) {

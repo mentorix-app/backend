@@ -106,6 +106,13 @@ func writeTrainerCard(b *strings.Builder, t trainerclient.TelegramTrainer, showA
 	}
 }
 
+func formatActiveTrainerNotification(t trainerclient.TelegramTrainer) string {
+	var b strings.Builder
+	b.WriteString("✓ ")
+	writeTrainerCard(&b, t, false)
+	return b.String()
+}
+
 func formatBlocks(blocks []program.DayBlock) string {
 	if len(blocks) == 0 {
 		return ""
