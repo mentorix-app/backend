@@ -3,6 +3,19 @@ INSERT INTO mentorix.trainer_invites (trainer_id, token, expires_at)
 VALUES ($1, $2, $3)
 RETURNING *;
 
+-- name: DeleteStaleTrainerInvitesByTrainerID :execrows
+DELETE FROM mentorix.trainer_invites
+WHERE trainer_id = $1
+  AND (
+    (consumed_at IS NULL AND expires_at < now())
+    OR (consumed_at IS NOT NULL AND consumed_at < now() - interval '7 days')
+  );
+
+-- name: PurgeStaleTrainerInvites :execrows
+DELETE FROM mentorix.trainer_invites
+WHERE (consumed_at IS NULL AND expires_at < now())
+   OR (consumed_at IS NOT NULL AND consumed_at < now() - interval '7 days');
+
 -- name: GetTrainerInviteByTokenForUpdate :one
 SELECT *
 FROM mentorix.trainer_invites

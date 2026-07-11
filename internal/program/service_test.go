@@ -103,6 +103,10 @@ func (f *fakeProgramStore) SoftDelete(context.Context, uuid.UUID, uuid.UUID) err
 	return f.err
 }
 
+func (f *fakeProgramStore) DeleteProgramAssignments(context.Context, uuid.UUID) error {
+	return f.err
+}
+
 func (f *fakeProgramStore) AddWeek(context.Context, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }

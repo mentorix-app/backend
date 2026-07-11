@@ -20,6 +20,7 @@ var ErrTrainerNotLinked = errors.New("trainer is not linked to client")
 type ActiveTrainerStore interface {
 	Get(ctx context.Context, telegramUserID string) (uuid.UUID, bool, error)
 	Set(ctx context.Context, telegramUserID string, trainerID uuid.UUID) error
+	Delete(ctx context.Context, telegramUserID string) error
 }
 
 type RedisActiveTrainerStore struct {
@@ -59,6 +60,16 @@ func (s *RedisActiveTrainerStore) Set(ctx context.Context, telegramUserID string
 	return nil
 }
 
+func (s *RedisActiveTrainerStore) Delete(ctx context.Context, telegramUserID string) error {
+	if s == nil || s.rdb == nil {
+		return nil
+	}
+	if err := s.rdb.Del(ctx, activeTrainerKeyPrefix+telegramUserID).Err(); err != nil {
+		return fmt.Errorf("redis delete active trainer: %w", err)
+	}
+	return nil
+}
+
 type memoryActiveTrainerStore struct {
 	mu    sync.RWMutex
 	items map[string]uuid.UUID
@@ -86,5 +97,12 @@ func (s *memoryActiveTrainerStore) Set(_ context.Context, telegramUserID string,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items[telegramUserID] = trainerID
+	return nil
+}
+
+func (s *memoryActiveTrainerStore) Delete(_ context.Context, telegramUserID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.items, telegramUserID)
 	return nil
 }

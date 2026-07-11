@@ -17,7 +17,7 @@ import (
 	"mentorix-backend/internal/program"
 )
 
-func TestProgramVersionAndAssignment_oneActivePerTrainerClient(t *testing.T) {
+func TestProgramVersionAndAssignment_oneRowPerTrainerClient(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 	q := sqlc.New(pool)
@@ -118,51 +118,46 @@ func TestProgramVersionAndAssignment_oneActivePerTrainerClient(t *testing.T) {
 		ModifiedBy:       trainerUserPG,
 	})
 	if err == nil {
-		t.Fatal("expected unique violation for second active assignment")
+		t.Fatal("expected unique violation for second assignment row")
 	}
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
-		t.Fatalf("InsertProgramAssignment second active: want unique violation 23505, got %v", err)
+		t.Fatalf("InsertProgramAssignment second row: want unique violation 23505, got %v", err)
 	}
 
-	rows, err := q.CancelActiveProgramAssignmentsForTrainerClient(ctx, sqlc.CancelActiveProgramAssignmentsForTrainerClientParams{
-		TrainerID:    trainerID,
-		ClientUserID: pgconv.ToPGUUID(clientUserID),
-		ModifiedAt:   now,
-		ModifiedBy:   trainerUserPG,
-	})
-	if err != nil {
-		t.Fatalf("CancelActiveProgramAssignmentsForTrainerClient: %v", err)
-	}
-	if rows != 1 {
-		t.Fatalf("cancelled rows = %d, want 1", rows)
-	}
-
-	active, err := q.GetActiveProgramAssignmentByTrainerClient(ctx, sqlc.GetActiveProgramAssignmentByTrainerClientParams{
-		TrainerID:    trainerID,
-		ClientUserID: pgconv.ToPGUUID(clientUserID),
-	})
-	if !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("GetActiveProgramAssignmentByTrainerClient after cancel: %v", err)
-	}
-	_ = active
-
-	reassigned, err := q.InsertProgramAssignment(ctx, sqlc.InsertProgramAssignmentParams{
-		ProgramID:        pgconv.ToPGUUID(programB.ID),
-		ProgramVersionID: versionB.ID,
+	reassigned, err := q.UpdateProgramAssignment(ctx, sqlc.UpdateProgramAssignmentParams{
 		TrainerID:        trainerID,
 		ClientUserID:     pgconv.ToPGUUID(clientUserID),
-		Status:           "active",
+		ProgramID:        pgconv.ToPGUUID(programB.ID),
+		ProgramVersionID: versionB.ID,
 		AssignedAt:       now,
-		CreatedBy:        trainerUserPG,
 		ModifiedAt:       now,
 		ModifiedBy:       trainerUserPG,
 	})
 	if err != nil {
-		t.Fatalf("InsertProgramAssignment after cancel: %v", err)
+		t.Fatalf("UpdateProgramAssignment: %v", err)
 	}
 	if pgconv.FromPGUUID(reassigned.ProgramID) != programB.ID {
 		t.Errorf("program_id = %v, want %v", pgconv.FromPGUUID(reassigned.ProgramID), programB.ID)
+	}
+
+	rows, err := q.DeleteProgramAssignmentByTrainerClient(ctx, sqlc.DeleteProgramAssignmentByTrainerClientParams{
+		TrainerID:    trainerID,
+		ClientUserID: pgconv.ToPGUUID(clientUserID),
+	})
+	if err != nil {
+		t.Fatalf("DeleteProgramAssignmentByTrainerClient: %v", err)
+	}
+	if rows != 1 {
+		t.Fatalf("deleted rows = %d, want 1", rows)
+	}
+
+	_, err = q.GetProgramAssignmentByTrainerClient(ctx, sqlc.GetProgramAssignmentByTrainerClientParams{
+		TrainerID:    trainerID,
+		ClientUserID: pgconv.ToPGUUID(clientUserID),
+	})
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("GetProgramAssignmentByTrainerClient after clear: %v", err)
 	}
 
 	versions, err := q.ListProgramVersionsByProgramID(ctx, pgconv.ToPGUUID(draft.ID))

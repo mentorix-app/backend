@@ -35,7 +35,7 @@ Prefer plain string keys over hashes unless one identity needs multiple fields.
 ## TTL
 
 - **With expiry:** rate-limit windows — set `EXPIRE` on first increment.
-- **No TTL (`0`):** session-like state overwritten on update or cleared explicitly (e.g. active trainer).
+- **No TTL (`0`):** session-like state overwritten on update or cleared explicitly (e.g. active trainer — `Delete` on stale read).
 
 ## Adding a key
 

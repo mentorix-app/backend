@@ -12,36 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const cancelActiveProgramAssignmentsForTrainerClient = `-- name: CancelActiveProgramAssignmentsForTrainerClient :execrows
-UPDATE mentorix.program_assignments
-SET status = 'cancelled',
-    modified_at = $3,
-    modified_by = $4
-WHERE trainer_id = $1
-  AND client_user_id = $2
-  AND status = 'active'
-`
-
-type CancelActiveProgramAssignmentsForTrainerClientParams struct {
-	TrainerID    pgtype.UUID `json:"trainer_id"`
-	ClientUserID pgtype.UUID `json:"client_user_id"`
-	ModifiedAt   time.Time   `json:"modified_at"`
-	ModifiedBy   pgtype.UUID `json:"modified_by"`
-}
-
-func (q *Queries) CancelActiveProgramAssignmentsForTrainerClient(ctx context.Context, arg CancelActiveProgramAssignmentsForTrainerClientParams) (int64, error) {
-	result, err := q.db.Exec(ctx, cancelActiveProgramAssignmentsForTrainerClient,
-		arg.TrainerID,
-		arg.ClientUserID,
-		arg.ModifiedAt,
-		arg.ModifiedBy,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const countActiveProgramAssignmentsByProgramID = `-- name: CountActiveProgramAssignmentsByProgramID :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.program_assignments
@@ -68,6 +38,38 @@ func (q *Queries) CountActiveProgramAssignmentsByVersionID(ctx context.Context, 
 	var total int32
 	err := row.Scan(&total)
 	return total, err
+}
+
+const deleteProgramAssignmentByTrainerClient = `-- name: DeleteProgramAssignmentByTrainerClient :execrows
+DELETE FROM mentorix.program_assignments
+WHERE trainer_id = $1
+  AND client_user_id = $2
+`
+
+type DeleteProgramAssignmentByTrainerClientParams struct {
+	TrainerID    pgtype.UUID `json:"trainer_id"`
+	ClientUserID pgtype.UUID `json:"client_user_id"`
+}
+
+func (q *Queries) DeleteProgramAssignmentByTrainerClient(ctx context.Context, arg DeleteProgramAssignmentByTrainerClientParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProgramAssignmentByTrainerClient, arg.TrainerID, arg.ClientUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteProgramAssignmentsByProgramID = `-- name: DeleteProgramAssignmentsByProgramID :execrows
+DELETE FROM mentorix.program_assignments
+WHERE program_id = $1
+`
+
+func (q *Queries) DeleteProgramAssignmentsByProgramID(ctx context.Context, programID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProgramAssignmentsByProgramID, programID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getActiveProgramAssignmentByTrainerClient = `-- name: GetActiveProgramAssignmentByTrainerClient :one
@@ -110,6 +112,37 @@ WHERE id = $1
 
 func (q *Queries) GetProgramAssignmentByID(ctx context.Context, id pgtype.UUID) (MentorixProgramAssignment, error) {
 	row := q.db.QueryRow(ctx, getProgramAssignmentByID, id)
+	var i MentorixProgramAssignment
+	err := row.Scan(
+		&i.ID,
+		&i.ProgramID,
+		&i.ProgramVersionID,
+		&i.TrainerID,
+		&i.ClientUserID,
+		&i.Status,
+		&i.AssignedAt,
+		&i.CreatedAt,
+		&i.ModifiedAt,
+		&i.CreatedBy,
+		&i.ModifiedBy,
+	)
+	return i, err
+}
+
+const getProgramAssignmentByTrainerClient = `-- name: GetProgramAssignmentByTrainerClient :one
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+FROM mentorix.program_assignments
+WHERE trainer_id = $1
+  AND client_user_id = $2
+`
+
+type GetProgramAssignmentByTrainerClientParams struct {
+	TrainerID    pgtype.UUID `json:"trainer_id"`
+	ClientUserID pgtype.UUID `json:"client_user_id"`
+}
+
+func (q *Queries) GetProgramAssignmentByTrainerClient(ctx context.Context, arg GetProgramAssignmentByTrainerClientParams) (MentorixProgramAssignment, error) {
+	row := q.db.QueryRow(ctx, getProgramAssignmentByTrainerClient, arg.TrainerID, arg.ClientUserID)
 	var i MentorixProgramAssignment
 	err := row.Scan(
 		&i.ID,
@@ -292,6 +325,55 @@ func (q *Queries) TrainerClientLinkActive(ctx context.Context, arg TrainerClient
 	var status string
 	err := row.Scan(&status)
 	return status, err
+}
+
+const updateProgramAssignment = `-- name: UpdateProgramAssignment :one
+UPDATE mentorix.program_assignments
+SET program_id = $3,
+    program_version_id = $4,
+    assigned_at = $5,
+    modified_at = $6,
+    modified_by = $7
+WHERE trainer_id = $1
+  AND client_user_id = $2
+RETURNING id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+`
+
+type UpdateProgramAssignmentParams struct {
+	TrainerID        pgtype.UUID `json:"trainer_id"`
+	ClientUserID     pgtype.UUID `json:"client_user_id"`
+	ProgramID        pgtype.UUID `json:"program_id"`
+	ProgramVersionID pgtype.UUID `json:"program_version_id"`
+	AssignedAt       time.Time   `json:"assigned_at"`
+	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
+}
+
+func (q *Queries) UpdateProgramAssignment(ctx context.Context, arg UpdateProgramAssignmentParams) (MentorixProgramAssignment, error) {
+	row := q.db.QueryRow(ctx, updateProgramAssignment,
+		arg.TrainerID,
+		arg.ClientUserID,
+		arg.ProgramID,
+		arg.ProgramVersionID,
+		arg.AssignedAt,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
+	)
+	var i MentorixProgramAssignment
+	err := row.Scan(
+		&i.ID,
+		&i.ProgramID,
+		&i.ProgramVersionID,
+		&i.TrainerID,
+		&i.ClientUserID,
+		&i.Status,
+		&i.AssignedAt,
+		&i.CreatedAt,
+		&i.ModifiedAt,
+		&i.CreatedBy,
+		&i.ModifiedBy,
+	)
+	return i, err
 }
 
 const updateProgramAssignmentVersion = `-- name: UpdateProgramAssignmentVersion :execrows

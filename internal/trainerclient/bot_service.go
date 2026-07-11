@@ -201,5 +201,8 @@ func (s *Service) resolveActiveTrainerID(ctx context.Context, telegramUserID str
 			return &id, nil
 		}
 	}
+	if s.activeTrainer != nil {
+		_ = s.activeTrainer.Delete(ctx, telegramUserID)
+	}
 	return nil, ErrActiveTrainerNotSet
 }

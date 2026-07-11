@@ -208,6 +208,20 @@ func (q *Queries) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]stri
 	return items, nil
 }
 
+const purgeStaleRefreshSessions = `-- name: PurgeStaleRefreshSessions :execrows
+DELETE FROM mentorix.auth_refresh_sessions
+WHERE (revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
+   OR (expires_at < now() - interval '30 days')
+`
+
+func (q *Queries) PurgeStaleRefreshSessions(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeStaleRefreshSessions)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeAllUserRefreshSessions = `-- name: RevokeAllUserRefreshSessions :exec
 UPDATE mentorix.auth_refresh_sessions
 SET revoked_at = now()

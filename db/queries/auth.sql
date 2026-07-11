@@ -73,3 +73,8 @@ WHERE token_hash = $1;
 UPDATE mentorix.auth_refresh_sessions
 SET revoked_at = now()
 WHERE user_id = $1 AND revoked_at IS NULL;
+
+-- name: PurgeStaleRefreshSessions :execrows
+DELETE FROM mentorix.auth_refresh_sessions
+WHERE (revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
+   OR (expires_at < now() - interval '30 days');

@@ -19,6 +19,7 @@
 | CI (vet, test, build, lint, contract, integration, 85% coverage) | [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |
 | Render dev | [environments.md](environments.md) |
+| Garbage cleanup (assignments one-row, auto version purge, invites, Redis stale, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Миграции: версия 18 (`./scripts/migrate-check.sh`)._
+_Миграции: версия 19 (`./scripts/migrate-check.sh`)._
 

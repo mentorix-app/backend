@@ -302,3 +302,10 @@ func (s *Store) CleanupProgramVersions(ctx context.Context, programID uuid.UUID)
 	}
 	return result, nil
 }
+
+func (s *Store) cleanupUnusedVersionsBestEffort(ctx context.Context, programID uuid.UUID) {
+	if _, err := s.CleanupProgramVersions(ctx, programID); err != nil {
+		// Best-effort: assignment change already committed; log would need a logger on Store.
+		_ = err
+	}
+}

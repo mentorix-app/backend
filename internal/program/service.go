@@ -22,6 +22,7 @@ type programStore interface {
 	PublishFromDraft(ctx context.Context, id, userID uuid.UUID, d Detail) (Detail, error)
 	FreezePublishedVersion(ctx context.Context, id, userID uuid.UUID, d Detail) (Detail, error)
 	SoftDelete(ctx context.Context, id, userID uuid.UUID) error
+	DeleteProgramAssignments(ctx context.Context, programID uuid.UUID) error
 	AddWeek(ctx context.Context, programID uuid.UUID) (Detail, error)
 	DeleteWeek(ctx context.Context, programID, weekID uuid.UUID) (Detail, error)
 	AddDay(ctx context.Context, programID, weekID uuid.UUID) (Detail, error)
@@ -245,6 +246,12 @@ func (s *Service) Delete(ctx context.Context, userID, id uuid.UUID) error {
 	}
 	if p.DeletedAt != nil {
 		return nil
+	}
+	if err := s.store.DeleteProgramAssignments(ctx, id); err != nil {
+		return err
+	}
+	if _, err := s.store.CleanupProgramVersions(ctx, id); err != nil {
+		return err
 	}
 	if err := s.store.SoftDelete(ctx, id, userID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

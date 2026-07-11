@@ -74,6 +74,23 @@ func (q *Queries) CountTrainerClients(ctx context.Context, arg CountTrainerClien
 	return total, err
 }
 
+const deleteStaleTrainerInvitesByTrainerID = `-- name: DeleteStaleTrainerInvitesByTrainerID :execrows
+DELETE FROM mentorix.trainer_invites
+WHERE trainer_id = $1
+  AND (
+    (consumed_at IS NULL AND expires_at < now())
+    OR (consumed_at IS NOT NULL AND consumed_at < now() - interval '7 days')
+  )
+`
+
+func (q *Queries) DeleteStaleTrainerInvitesByTrainerID(ctx context.Context, trainerID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteStaleTrainerInvitesByTrainerID, trainerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAuthIdentityUserID = `-- name: GetAuthIdentityUserID :one
 SELECT user_id
 FROM mentorix.auth_identities
@@ -459,4 +476,18 @@ func (q *Queries) ListTrainerClients(ctx context.Context, arg ListTrainerClients
 		return nil, err
 	}
 	return items, nil
+}
+
+const purgeStaleTrainerInvites = `-- name: PurgeStaleTrainerInvites :execrows
+DELETE FROM mentorix.trainer_invites
+WHERE (consumed_at IS NULL AND expires_at < now())
+   OR (consumed_at IS NOT NULL AND consumed_at < now() - interval '7 days')
+`
+
+func (q *Queries) PurgeStaleTrainerInvites(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeStaleTrainerInvites)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

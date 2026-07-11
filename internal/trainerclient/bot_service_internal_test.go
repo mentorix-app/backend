@@ -86,4 +86,8 @@ func TestResolveActiveTrainerID_staleStoredID(t *testing.T) {
 	if !errors.Is(err, ErrActiveTrainerNotSet) {
 		t.Fatalf("err = %v", err)
 	}
+	_, ok, err := store.Get(t.Context(), "1")
+	if err != nil || ok {
+		t.Fatalf("stale key should be deleted: ok=%v err=%v", ok, err)
+	}
 }

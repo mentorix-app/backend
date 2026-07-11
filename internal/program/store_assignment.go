@@ -26,7 +26,7 @@ func (s *Store) GetClientProgramAssignment(ctx context.Context, trainerID, clien
 		return nil, err
 	}
 
-	row, err := s.q.GetActiveProgramAssignmentByTrainerClient(ctx, sqlc.GetActiveProgramAssignmentByTrainerClientParams{
+	row, err := s.q.GetProgramAssignmentByTrainerClient(ctx, sqlc.GetProgramAssignmentByTrainerClientParams{
 		TrainerID:    pgconv.ToPGUUID(trainerID),
 		ClientUserID: pgconv.ToPGUUID(clientUserID),
 	})
@@ -34,7 +34,7 @@ func (s *Store) GetClientProgramAssignment(ctx context.Context, trainerID, clien
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("get active assignment: %w", err)
+		return nil, fmt.Errorf("get assignment: %w", err)
 	}
 	return s.assignmentFromDB(ctx, row)
 }
@@ -58,17 +58,38 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	trainerPG := pgconv.ToPGUUID(trainerID)
+	clientPG := pgconv.ToPGUUID(clientUserID)
+	trainerUserPG := pgconv.ToPGUUID(trainerUserID)
+
+	existing, err := qtx.GetProgramAssignmentByTrainerClient(ctx, sqlc.GetProgramAssignmentByTrainerClientParams{
+		TrainerID:    trainerPG,
+		ClientUserID: clientPG,
+	})
+	var previousProgramID *uuid.UUID
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("get assignment: %w", err)
+		}
+	} else {
+		pid := pgconv.FromPGUUID(existing.ProgramID)
+		previousProgramID = &pid
+	}
+
 	if programID == nil {
-		if _, err := qtx.CancelActiveProgramAssignmentsForTrainerClient(ctx, sqlc.CancelActiveProgramAssignmentsForTrainerClientParams{
-			TrainerID:    pgconv.ToPGUUID(trainerID),
-			ClientUserID: pgconv.ToPGUUID(clientUserID),
-			ModifiedAt:   now,
-			ModifiedBy:   pgconv.ToPGUUID(trainerUserID),
-		}); err != nil {
-			return nil, fmt.Errorf("cancel active assignments: %w", err)
+		if previousProgramID != nil {
+			if _, err := qtx.DeleteProgramAssignmentByTrainerClient(ctx, sqlc.DeleteProgramAssignmentByTrainerClientParams{
+				TrainerID:    trainerPG,
+				ClientUserID: clientPG,
+			}); err != nil {
+				return nil, fmt.Errorf("delete assignment: %w", err)
+			}
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return nil, fmt.Errorf("commit: %w", err)
+		}
+		if previousProgramID != nil {
+			s.cleanupUnusedVersionsBestEffort(ctx, *previousProgramID)
 		}
 		return nil, nil
 	}
@@ -98,33 +119,53 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 		return nil, fmt.Errorf("latest program version: %w", err)
 	}
 
-	if _, err := qtx.CancelActiveProgramAssignmentsForTrainerClient(ctx, sqlc.CancelActiveProgramAssignmentsForTrainerClientParams{
-		TrainerID:    pgconv.ToPGUUID(trainerID),
-		ClientUserID: pgconv.ToPGUUID(clientUserID),
-		ModifiedAt:   now,
-		ModifiedBy:   pgconv.ToPGUUID(trainerUserID),
-	}); err != nil {
-		return nil, fmt.Errorf("cancel active assignments: %w", err)
+	var row sqlc.MentorixProgramAssignment
+	if previousProgramID == nil {
+		row, err = qtx.InsertProgramAssignment(ctx, sqlc.InsertProgramAssignmentParams{
+			ProgramID:        pgconv.ToPGUUID(*programID),
+			ProgramVersionID: latest.ID,
+			TrainerID:        trainerPG,
+			ClientUserID:     clientPG,
+			Status:           string(AssignmentStatusActive),
+			AssignedAt:       now,
+			CreatedBy:        trainerUserPG,
+			ModifiedAt:       now,
+			ModifiedBy:       trainerUserPG,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("insert program assignment: %w", err)
+		}
+	} else {
+		row, err = qtx.UpdateProgramAssignment(ctx, sqlc.UpdateProgramAssignmentParams{
+			TrainerID:        trainerPG,
+			ClientUserID:     clientPG,
+			ProgramID:        pgconv.ToPGUUID(*programID),
+			ProgramVersionID: latest.ID,
+			AssignedAt:       now,
+			ModifiedAt:       now,
+			ModifiedBy:       trainerUserPG,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("update program assignment: %w", err)
+		}
 	}
 
-	row, err := qtx.InsertProgramAssignment(ctx, sqlc.InsertProgramAssignmentParams{
-		ProgramID:        pgconv.ToPGUUID(*programID),
-		ProgramVersionID: latest.ID,
-		TrainerID:        pgconv.ToPGUUID(trainerID),
-		ClientUserID:     pgconv.ToPGUUID(clientUserID),
-		Status:           string(AssignmentStatusActive),
-		AssignedAt:       now,
-		CreatedBy:        pgconv.ToPGUUID(trainerUserID),
-		ModifiedAt:       now,
-		ModifiedBy:       pgconv.ToPGUUID(trainerUserID),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("insert program assignment: %w", err)
-	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit: %w", err)
 	}
+
+	if previousProgramID != nil && *previousProgramID != *programID {
+		s.cleanupUnusedVersionsBestEffort(ctx, *previousProgramID)
+	}
+
 	return s.assignmentFromDBWithVersion(ctx, row, latest)
+}
+
+func (s *Store) DeleteProgramAssignments(ctx context.Context, programID uuid.UUID) error {
+	if _, err := s.q.DeleteProgramAssignmentsByProgramID(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return fmt.Errorf("delete program assignments: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) validateProgramForAssignment(ctx context.Context, trainerUserID, programID uuid.UUID) error {
@@ -310,24 +351,27 @@ func (s *Store) SyncProgramAssignments(ctx context.Context, userID, programID uu
 				return AssignmentSyncResult{}, err
 			}
 		}
-		return result, nil
+	} else {
+		for _, id := range req.AssignmentIDs {
+			row, err := s.q.GetProgramAssignmentByID(ctx, pgconv.ToPGUUID(id))
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					result.Skipped = append(result.Skipped, AssignmentSyncSkipped{
+						AssignmentID: id,
+						Reason:       "not_found",
+					})
+					continue
+				}
+				return AssignmentSyncResult{}, fmt.Errorf("get assignment: %w", err)
+			}
+			if err := syncOne(row); err != nil {
+				return AssignmentSyncResult{}, err
+			}
+		}
 	}
 
-	for _, id := range req.AssignmentIDs {
-		row, err := s.q.GetProgramAssignmentByID(ctx, pgconv.ToPGUUID(id))
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				result.Skipped = append(result.Skipped, AssignmentSyncSkipped{
-					AssignmentID: id,
-					Reason:       "not_found",
-				})
-				continue
-			}
-			return AssignmentSyncResult{}, fmt.Errorf("get assignment: %w", err)
-		}
-		if err := syncOne(row); err != nil {
-			return AssignmentSyncResult{}, err
-		}
+	if len(result.Synced) > 0 {
+		s.cleanupUnusedVersionsBestEffort(ctx, programID)
 	}
 	return result, nil
 }

@@ -47,6 +47,23 @@ func TestRedisActiveTrainerStore_getMiss(t *testing.T) {
 	}
 }
 
+func TestRedisActiveTrainerStore_delete(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	store := trainerclient.NewRedisActiveTrainerStore(rdb)
+	id := uuid.New()
+	if err := store.Set(context.Background(), "77", id); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := store.Delete(context.Background(), "77"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	_, ok, err := store.Get(context.Background(), "77")
+	if err != nil || ok {
+		t.Fatalf("ok=%v err=%v", ok, err)
+	}
+}
+
 func TestRedisActiveTrainerStore_nilClient(t *testing.T) {
 	var store *trainerclient.RedisActiveTrainerStore
 	_, ok, err := store.Get(context.Background(), "1")

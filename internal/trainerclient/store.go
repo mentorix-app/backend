@@ -46,6 +46,9 @@ func (s *Store) CreateInvite(ctx context.Context, trainerID uuid.UUID, ttl time.
 		return sqlc.MentorixTrainerInvite{}, "", err
 	}
 	now := time.Now().UTC()
+	if _, err := s.q.DeleteStaleTrainerInvitesByTrainerID(ctx, pgconv.ToPGUUID(trainerID)); err != nil {
+		return sqlc.MentorixTrainerInvite{}, "", fmt.Errorf("delete stale trainer invites: %w", err)
+	}
 	row, err := s.q.InsertTrainerInvite(ctx, sqlc.InsertTrainerInviteParams{
 		TrainerID: pgconv.ToPGUUID(trainerID),
 		Token:     token,

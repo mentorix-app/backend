@@ -844,8 +844,15 @@ func TestProgramService_AssignmentSyncAndVersionCleanup(t *testing.T) {
 		t.Fatalf("synced version = %v, want %v", synced.Synced[0].ProgramVersionID, v2ID)
 	}
 
-	if err := svc.DeleteVersion(ctx, trainerUserID, programID, v1ID); err != nil {
-		t.Fatalf("DeleteVersion v1 after sync: %v", err)
+	versions, err := svc.ListVersions(ctx, trainerUserID, programID)
+	if err != nil {
+		t.Fatalf("ListVersions after auto cleanup: %v", err)
+	}
+	if len(versions.Items) != 1 {
+		t.Fatalf("versions after sync auto cleanup = %d, want 1", len(versions.Items))
+	}
+	if versions.Items[0].ID != v2ID {
+		t.Fatalf("remaining version = %v, want %v", versions.Items[0].ID, v2ID)
 	}
 
 	syncedAgain, err := svc.SyncAssignments(ctx, trainerUserID, programID, program.AssignmentSyncRequest{AllActive: &allActive})
@@ -854,17 +861,6 @@ func TestProgramService_AssignmentSyncAndVersionCleanup(t *testing.T) {
 	}
 	if len(syncedAgain.Skipped) != 1 || syncedAgain.Skipped[0].Reason != "already_on_latest" {
 		t.Fatalf("second sync skipped = %+v, want already_on_latest", syncedAgain.Skipped)
-	}
-
-	versions, err := svc.ListVersions(ctx, trainerUserID, programID)
-	if err != nil {
-		t.Fatalf("ListVersions: %v", err)
-	}
-	if len(versions.Items) != 1 {
-		t.Fatalf("versions after delete v1 = %d, want 1", len(versions.Items))
-	}
-	if versions.Items[0].ID != v2ID {
-		t.Fatalf("remaining version = %v, want %v", versions.Items[0].ID, v2ID)
 	}
 
 	cleanup, err := svc.CleanupVersions(ctx, trainerUserID, programID)
