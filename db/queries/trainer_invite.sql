@@ -51,7 +51,22 @@ SELECT
   pa.status AS assignment_status,
   pa.assigned_at,
   pv.name AS program_name,
-  pv.name_ru AS program_name_ru
+  pv.name_ru AS program_name_ru,
+  COALESCE(
+    CASE
+      WHEN pa.id IS NULL THEN NULL
+      ELSE (
+        pa.program_version_id IS DISTINCT FROM (
+          SELECT lpv.id
+          FROM mentorix.program_versions lpv
+          WHERE lpv.program_id = pa.program_id
+          ORDER BY lpv.version_number DESC
+          LIMIT 1
+        )
+      )::boolean
+    END,
+    false
+  )::boolean AS is_behind_latest
 FROM mentorix.trainer_clients tc
 INNER JOIN mentorix.trainers t ON t.id = tc.trainer_id
 INNER JOIN mentorix.users u ON u.id = tc.client_user_id
@@ -113,7 +128,22 @@ SELECT
   pa.status AS assignment_status,
   pa.assigned_at,
   pv.name AS program_name,
-  pv.name_ru AS program_name_ru
+  pv.name_ru AS program_name_ru,
+  COALESCE(
+    CASE
+      WHEN pa.id IS NULL THEN NULL
+      ELSE (
+        pa.program_version_id IS DISTINCT FROM (
+          SELECT lpv.id
+          FROM mentorix.program_versions lpv
+          WHERE lpv.program_id = pa.program_id
+          ORDER BY lpv.version_number DESC
+          LIMIT 1
+        )
+      )::boolean
+    END,
+    false
+  )::boolean AS is_behind_latest
 FROM ranked_link rl
 INNER JOIN mentorix.trainers t ON t.id = rl.trainer_id
 INNER JOIN mentorix.users u ON u.id = rl.client_user_id

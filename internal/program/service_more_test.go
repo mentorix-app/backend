@@ -1860,6 +1860,20 @@ func TestService_SyncAssignments_forbidden(t *testing.T) {
 	}
 }
 
+func TestService_SyncAssignments_adminNotOwnerForbidden(t *testing.T) {
+	adminID := uuid.New()
+	programID := uuid.New()
+	allActive := true
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: uuid.New(), Status: StatusPublished},
+	}, &fakeRoleQuerier{isAdmin: true})
+
+	_, err := svc.SyncAssignments(context.Background(), adminID, programID, AssignmentSyncRequest{AllActive: &allActive})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("SyncAssignments() error = %v, want ErrForbidden", err)
+	}
+}
+
 func TestService_Publish_archivedRepublication(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()

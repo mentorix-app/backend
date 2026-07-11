@@ -14,7 +14,7 @@ func (s *Service) ListAssignments(ctx context.Context, userID, programID uuid.UU
 }
 
 func (s *Service) SyncAssignments(ctx context.Context, userID, programID uuid.UUID, req AssignmentSyncRequest) (AssignmentSyncResult, error) {
-	if err := s.ensureAccess(ctx, userID, programID); err != nil {
+	if err := s.ensureOwner(ctx, userID, programID); err != nil {
 		return AssignmentSyncResult{}, err
 	}
 	if err := validateAssignmentSyncRequest(req); err != nil {

@@ -537,6 +537,23 @@ func (s *Service) ensureAccess(ctx context.Context, userID, programID uuid.UUID)
 	return s.ensureOwnerOrAdmin(ctx, userID, p.CreatedBy)
 }
 
+func (s *Service) ensureOwner(ctx context.Context, userID, programID uuid.UUID) error {
+	p, err := s.store.GetProgramRow(ctx, programID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if p.DeletedAt != nil {
+		return ErrNotFound
+	}
+	if userID != p.CreatedBy {
+		return ErrForbidden
+	}
+	return nil
+}
+
 func (s *Service) ensureMutable(ctx context.Context, userID, programID uuid.UUID) error {
 	p, err := s.store.GetProgramRow(ctx, programID)
 	if err != nil {

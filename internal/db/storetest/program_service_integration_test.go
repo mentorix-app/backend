@@ -1288,3 +1288,72 @@ func TestProgramService_SetClientAssignment_blockedClient(t *testing.T) {
 		t.Fatalf("SetClientProgramAssignment() error = %v, want ErrClientBlocked", err)
 	}
 }
+
+func TestProgramService_adminCannotSyncOtherUsersProgram(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	ownerID, err := authStore.RegisterTrainerEmailPassword(ctx, "sync-owner@test.com", pwHash, "Owner")
+	if err != nil {
+		t.Fatalf("register owner: %v", err)
+	}
+	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "sync-admin@test.com", pwHash, "Admin")
+	if err != nil {
+		t.Fatalf("register admin: %v", err)
+	}
+	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
+		t.Fatalf("grant admin: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, ownerID, exercise.UpsertInput{
+		Name:        "Squat",
+		NameRu:      "Присед",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupLegs,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+
+	svc := program.NewService(pool)
+	draft, err := svc.Create(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	sets, reps := 3, 10
+	if _, err := createSingleBlock(ctx, svc, ownerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	}); err != nil {
+		t.Fatalf("AddDayExercise: %v", err)
+	}
+	name := "Owner Program"
+	category := program.CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	if _, err := svc.Update(ctx, ownerID, draft.ID, program.UpdateInput{
+		Name:       &name,
+		Category:   &category,
+		Difficulty: &difficulty,
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, err := svc.Publish(ctx, ownerID, draft.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	allActive := true
+	_, err = svc.SyncAssignments(ctx, adminID, draft.ID, program.AssignmentSyncRequest{AllActive: &allActive})
+	if !errors.Is(err, program.ErrForbidden) {
+		t.Fatalf("SyncAssignments() by admin error = %v, want ErrForbidden", err)
+	}
+}

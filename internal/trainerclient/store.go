@@ -123,6 +123,7 @@ func mapTrainerClientRows(rows []sqlc.ListTrainerClientsRow) []clientListRow {
 			assignedAt:     row.AssignedAt,
 			programName:    stringFromPtr(row.ProgramName),
 			programNameRu:  stringFromPtr(row.ProgramNameRu),
+			isBehindLatest: row.IsBehindLatest,
 		}
 	}
 	return out
@@ -144,6 +145,7 @@ func mapAllTrainerClientRows(rows []sqlc.ListAllTrainerClientsRow) []clientListR
 			assignedAt:     row.AssignedAt,
 			programName:    stringFromPtr(row.ProgramName),
 			programNameRu:  stringFromPtr(row.ProgramNameRu),
+			isBehindLatest: row.IsBehindLatest,
 		}
 	}
 	return out
@@ -162,6 +164,7 @@ type clientListRow struct {
 	assignedAt     pgtype.Timestamptz
 	programName    string
 	programNameRu  string
+	isBehindLatest bool
 }
 
 func clientListResult(rows []clientListRow, params ListParams, total int) ClientListResult {
@@ -176,13 +179,17 @@ func clientListResult(rows []clientListRow, params ListParams, total int) Client
 			avatarFilePath: row.avatarFilePath,
 		}
 		if row.assignmentID.Valid {
-			client.ProgramAssignment = &ClientProgramSummary{
+			summary := &ClientProgramSummary{
+				AssignmentID:     pgconv.FromPGUUID(row.assignmentID),
 				ProgramID:        pgconv.FromPGUUID(row.programID),
 				ProgramVersionID: pgconv.FromPGUUID(row.programVersion),
 				AssignedAt:       row.assignedAt.Time.UTC(),
 				ProgramName:      row.programName,
 				ProgramNameRu:    row.programNameRu,
 			}
+			behind := row.isBehindLatest
+			summary.IsBehindLatest = &behind
+			client.ProgramAssignment = summary
 		}
 		out = append(out, client)
 	}

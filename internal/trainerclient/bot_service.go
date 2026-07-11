@@ -83,6 +83,7 @@ func (s *Service) GetTelegramProgram(ctx context.Context, telegramUserID string,
 	}
 	if assignment != nil {
 		resp.Assignment = &ClientProgramSummary{
+			AssignmentID:     assignment.ID,
 			ProgramID:        assignment.ProgramID,
 			ProgramVersionID: assignment.ProgramVersionID,
 			AssignedAt:       assignment.AssignedAt,

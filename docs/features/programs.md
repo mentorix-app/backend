@@ -25,6 +25,7 @@
 - `training_days_count` в `Program` / `ProgramDetail`: число дней с ≥1 блоком или упражнением (пустые дни не считаются); в списке — из SQL, в `GET /programs/{id}` — из загруженных недель.
 - Published: in-place edit + `has_unpublished_changes`; publish-update — новая версия.
 - Trainer видит свои; admin — все.
+- `POST /programs/{id}/assignments/sync` — только владелец программы (`created_by`); admin без владения → `403` (как assign).
 
 ## См. также
 

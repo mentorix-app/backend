@@ -995,7 +995,8 @@ func TestTrainerClient_listIncludesProgramAssignmentNames(t *testing.T) {
 		t.Fatalf("Publish: %v", err)
 	}
 
-	if _, err := progSvc.SetClientProgramAssignment(ctx, trainerUserID, accept.UserID, &draft.ID); err != nil {
+	createdAssignment, err := progSvc.SetClientProgramAssignment(ctx, trainerUserID, accept.UserID, &draft.ID)
+	if err != nil {
 		t.Fatalf("SetClientProgramAssignment: %v", err)
 	}
 
@@ -1015,6 +1016,32 @@ func TestTrainerClient_listIncludesProgramAssignmentNames(t *testing.T) {
 	}
 	if assignment.ProgramNameRu != nameRu {
 		t.Fatalf("program_name_ru = %q, want %q", assignment.ProgramNameRu, nameRu)
+	}
+	if assignment.AssignmentID != createdAssignment.ID {
+		t.Fatalf("assignment_id = %v, want %v", assignment.AssignmentID, createdAssignment.ID)
+	}
+	if assignment.IsBehindLatest == nil || *assignment.IsBehindLatest {
+		t.Fatalf("is_behind_latest = %v, want false on latest version", assignment.IsBehindLatest)
+	}
+
+	updatedName := "Strength Plan v2"
+	if _, err := progSvc.Update(ctx, trainerUserID, draft.ID, program.UpdateInput{Name: &updatedName}); err != nil {
+		t.Fatalf("Update after publish: %v", err)
+	}
+	if _, err := progSvc.PublishUpdate(ctx, trainerUserID, draft.ID); err != nil {
+		t.Fatalf("PublishUpdate: %v", err)
+	}
+
+	listAfterUpdate, err := svc.ListClients(ctx, trainerUserID, trainerclient.DefaultListParams())
+	if err != nil {
+		t.Fatalf("ListClients after publish-update: %v", err)
+	}
+	assignmentAfter := listAfterUpdate.Items[0].ProgramAssignment
+	if assignmentAfter == nil {
+		t.Fatal("expected program_assignment after publish-update")
+	}
+	if assignmentAfter.IsBehindLatest == nil || !*assignmentAfter.IsBehindLatest {
+		t.Fatalf("is_behind_latest = %v, want true before sync", assignmentAfter.IsBehindLatest)
 	}
 }
 
