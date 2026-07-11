@@ -25,7 +25,7 @@
 - Accept: создаёт `user` + `auth_identity(telegram)` + роль `client`, если Telegram id новый; иначе линкует существующего user.
 - Повторный accept того же инвайта тем же user — идемпотентный ok (`already_linked: true` если связь уже была).
 - Инвайт, consumed другим user → 409; просрочен → 410.
-- `GET /trainer/clients` — пагинированный список с опциональным active `program_assignment`; поиск по имени (`q`), сортировка по `name` или `linked_at`.
+- `GET /trainer/clients` — пагинированный список с опциональным active `program_assignment`; поиск по имени (`q`), сортировка по `name` или `linked_at`. Admin видит всех клиентов (dedupe, приоритет своей связи, `trainer_user_id`) — см. [trainer-clients.md](trainer-clients.md).
 - Назначение программы — только после accept; см. [trainer-clients.md](trainer-clients.md).
 
 ## Фазы (Telegram client)

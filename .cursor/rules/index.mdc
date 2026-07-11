@@ -22,6 +22,7 @@ Prefer idiomatic Go: bounded parallelism, worker pools for independent I/O, `con
 | File | When |
 | ---- | ---- |
 | [database-naming.mdc](database-naming.mdc) | `db/**` |
+| [redis-naming.mdc](redis-naming.mdc) | Redis keys in `internal/**` |
 | [go-code.mdc](go-code.mdc) | `**/*.go` |
 | [api-endpoints.mdc](api-endpoints.mdc) | API, handlers, OpenAPI, Postman |
 | [qa-before-push.mdc](qa-before-push.mdc) | every commit / before push |

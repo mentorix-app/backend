@@ -26,7 +26,8 @@ Render dev: [docs/environments.md](docs/environments.md).
 
 ## QA
 
-- **Before commit:** sync docs/rules — see [.cursor/rules/qa-before-push.mdc](.cursor/rules/qa-before-push.mdc) §A.
+- **Pre-commit:** `make install-hooks` (once; included in `make setup`) — hook runs `make check` on every commit. Needs Docker, `.env`, API on `:8080` for smoke; or `PRE_COMMIT_CHECK_FLAGS=--no-smoke`.
+- **Before commit:** sync docs/rules — see [.cursor/rules/qa-before-push.mdc](.cursor/rules/qa-before-push.mdc) §A; `make docs-check`.
 - **Before push:** `make check` (full) or `make check-ci` (CI parity).
 
 Details: [docs/README.md#qa](docs/README.md#qa).

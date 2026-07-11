@@ -18,7 +18,7 @@ AIR_VERSION ?= v1.61.7
 	schema-sync sqlc generate \
 	test test-integration vet fmt lint \
 	validate validate-smoke check check-ci docs-check \
-	coverage coverage-check \
+	coverage coverage-check install-hooks \
 	install-tools install-migrate install-sqlc install-lint install-air
 
 help: ## Show available commands
@@ -36,7 +36,7 @@ build: ## Build API binary to bin/api
 	@mkdir -p bin
 	go build -o bin/api ./cmd/api
 
-setup: docker-up ## First-time local setup: compose, .env, migrations
+setup: docker-up install-hooks ## First-time local setup: compose, .env, migrations, pre-commit hook
 	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example")
 	@$(MAKE) migrate
 
@@ -101,6 +101,12 @@ check-ci: ## CI parity checks only
 
 docs-check: ## Validate docs/rules links, sizes, migration version in docs
 	$(SCRIPTS)/docs-check.sh
+
+install-hooks: ## Install git pre-commit hook (runs make check)
+	@test -d .git/hooks || (echo "Not a git repository (.git/hooks missing)" >&2 && exit 1)
+	@cp $(SCRIPTS)/git-hooks/pre-commit .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "Installed .git/hooks/pre-commit → make check"
 
 coverage: ## Coverage report (unit + integration merge)
 	$(SCRIPTS)/coverage.sh

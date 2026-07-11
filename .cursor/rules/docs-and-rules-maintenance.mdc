@@ -29,6 +29,7 @@ Human mirror: [docs/maintenance.md](../../docs/maintenance.md).
 | Topic | File |
 | ----- | ---- |
 | DB | `database-naming.mdc` or new `*.mdc` with `globs: db/**` |
+| Redis | `redis-naming.mdc` |
 | Go | `go-code.mdc` or new with `globs: **/*.go` |
 | HTTP/API | `api-endpoints.mdc` |
 | QA/CI | `qa-before-push.mdc` |

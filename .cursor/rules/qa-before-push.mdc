@@ -25,6 +25,8 @@ Run `make docs-check` (links, sizes, migration version in docs).
 
 Docs-only commits: still check links, duplicates, contradictions.
 
+**Pre-commit hook:** after `make install-hooks` (included in `make setup`), each `git commit` runs `make check`. Override smoke only: `PRE_COMMIT_CHECK_FLAGS=--no-smoke git commit …`.
+
 ## B. Technical QA — before push
 
 Full run: `make check` or `./scripts/check.sh`. CI parity: `make check-ci`.

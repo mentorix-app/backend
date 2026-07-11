@@ -15,7 +15,7 @@
 - **Webhook** на API (`POST /telegram/webhook`) — один Render Web Service, без отдельного worker.
 - Библиотека: `go-telegram-bot-api/v5` (см. [architecture.md](../architecture.md)).
 - Меню: reply keyboard (`Сегодня`, `Программа`, `Тренеры`, `Помощь`) + inline для выбора тренера.
-- **Активный тренер:** Redis (`mentorix:telegram:active_trainer:<telegram_user_id>`).
+- **Активный тренер:** Redis (`active_trainer` key — см. [redis-naming.mdc](../../.cursor/rules/redis-naming.mdc)).
   - После accept инвайта — автоматически активный = тренер из инвайта.
   - При нескольких тренерах клиент меняет активного в «Тренеры» (inline).
   - Один тренер — выбор не показываем, он активен по умолчанию.

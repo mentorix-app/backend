@@ -28,5 +28,6 @@
 
 ## QA
 
+- **Pre-commit:** `make install-hooks` — hook runs `make check` ([`scripts/git-hooks/pre-commit`](../scripts/git-hooks/pre-commit)); входит в `make setup`.
 - **Перед коммитом:** актуальность docs/rules — [qa-before-push.mdc](../.cursor/rules/qa-before-push.mdc) §A; `make docs-check`.
 - **Перед push:** `make check` или `make check-ci` — тот же файл §B, [`scripts/check.sh`](../scripts/check.sh).

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Installed by: make install-hooks
+# Runs the full local QA suite before each commit.
+#
+# Prerequisites: Go, .env (DATABASE_URL), Docker (migrate-check + integration),
+# API on http://localhost:8080 for Postman smoke (or set PRE_COMMIT_CHECK_FLAGS=--no-smoke).
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+echo "=== pre-commit: make check ==="
+if [[ -n "${PRE_COMMIT_CHECK_FLAGS:-}" ]]; then
+  # shellcheck disable=SC2086
+  make check ${PRE_COMMIT_CHECK_FLAGS}
+else
+  make check
+fi
