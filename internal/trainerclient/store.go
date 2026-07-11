@@ -121,6 +121,8 @@ func mapTrainerClientRows(rows []sqlc.ListTrainerClientsRow) []clientListRow {
 			programID:      row.ProgramID,
 			programVersion: row.ProgramVersionID,
 			assignedAt:     row.AssignedAt,
+			programName:    stringFromPtr(row.ProgramName),
+			programNameRu:  stringFromPtr(row.ProgramNameRu),
 		}
 	}
 	return out
@@ -140,6 +142,8 @@ func mapAllTrainerClientRows(rows []sqlc.ListAllTrainerClientsRow) []clientListR
 			programID:      row.ProgramID,
 			programVersion: row.ProgramVersionID,
 			assignedAt:     row.AssignedAt,
+			programName:    stringFromPtr(row.ProgramName),
+			programNameRu:  stringFromPtr(row.ProgramNameRu),
 		}
 	}
 	return out
@@ -156,6 +160,8 @@ type clientListRow struct {
 	programID      pgtype.UUID
 	programVersion pgtype.UUID
 	assignedAt     pgtype.Timestamptz
+	programName    string
+	programNameRu  string
 }
 
 func clientListResult(rows []clientListRow, params ListParams, total int) ClientListResult {
@@ -174,6 +180,8 @@ func clientListResult(rows []clientListRow, params ListParams, total int) Client
 				ProgramID:        pgconv.FromPGUUID(row.programID),
 				ProgramVersionID: pgconv.FromPGUUID(row.programVersion),
 				AssignedAt:       row.assignedAt.Time.UTC(),
+				ProgramName:      row.programName,
+				ProgramNameRu:    row.programNameRu,
 			}
 		}
 		out = append(out, client)
@@ -396,4 +404,11 @@ func normalizeDisplayName(name string) string {
 func inviteURL(botUsername, token string) string {
 	username := strings.TrimPrefix(strings.TrimSpace(botUsername), "@")
 	return fmt.Sprintf("https://t.me/%s?start=inv_%s", username, token)
+}
+
+func stringFromPtr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

@@ -26,6 +26,7 @@
 - Одна активная `program_assignments` на `(trainer_id, client_user_id)`.
 - Версия — последняя замороженная; снятие — `program_id: null` в PUT.
 - Назначение: `PUT /trainer/clients/program-assignment` — `client_user_ids` (1–100) + `program_id`; ответ `assigned` / `cleared` / `skipped` (как sync). Один клиент — массив из одного id.
+- `program_assignment` в списке: `program_id`, `program_version_id`, `assigned_at`, `program_name`, `program_name_ru` (из замороженной версии).
 - Sync активных назначений — эндпоинты программы (`POST .../assignments/sync`).
 
 ## См. также

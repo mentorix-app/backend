@@ -25,6 +25,8 @@ type ClientProgramSummary struct {
 	ProgramID        uuid.UUID `json:"program_id"`
 	ProgramVersionID uuid.UUID `json:"program_version_id"`
 	AssignedAt       time.Time `json:"assigned_at"`
+	ProgramName      string    `json:"program_name"`
+	ProgramNameRu    string    `json:"program_name_ru"`
 }
 
 type Client struct {

@@ -2595,7 +2595,7 @@ components:
 
     TrainerClientProgramSummary:
       type: object
-      required: [program_id, program_version_id, assigned_at]
+      required: [program_id, program_version_id, assigned_at, program_name, program_name_ru]
       properties:
         program_id:
           type: string
@@ -2606,6 +2606,12 @@ components:
         assigned_at:
           type: string
           format: date-time
+        program_name:
+          type: string
+          description: Frozen version display name (English).
+        program_name_ru:
+          type: string
+          description: Frozen version display name (Russian).
 
     TrainerClient:
       type: object

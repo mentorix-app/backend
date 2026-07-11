@@ -234,7 +234,9 @@ SELECT
   pa.program_id,
   pa.program_version_id,
   pa.status AS assignment_status,
-  pa.assigned_at
+  pa.assigned_at,
+  pv.name AS program_name,
+  pv.name_ru AS program_name_ru
 FROM ranked_link rl
 INNER JOIN mentorix.trainers t ON t.id = rl.trainer_id
 INNER JOIN mentorix.users u ON u.id = rl.client_user_id
@@ -242,6 +244,7 @@ LEFT JOIN mentorix.program_assignments pa
   ON pa.trainer_id = rl.trainer_id
   AND pa.client_user_id = rl.client_user_id
   AND pa.status = 'active'
+LEFT JOIN mentorix.program_versions pv ON pv.id = pa.program_version_id
 WHERE (
   $1::text IS NULL
   OR u.display_name ILIKE $1 ESCAPE '\'
@@ -276,6 +279,8 @@ type ListAllTrainerClientsRow struct {
 	ProgramVersionID pgtype.UUID        `json:"program_version_id"`
 	AssignmentStatus *string            `json:"assignment_status"`
 	AssignedAt       pgtype.Timestamptz `json:"assigned_at"`
+	ProgramName      *string            `json:"program_name"`
+	ProgramNameRu    *string            `json:"program_name_ru"`
 }
 
 func (q *Queries) ListAllTrainerClients(ctx context.Context, arg ListAllTrainerClientsParams) ([]ListAllTrainerClientsRow, error) {
@@ -306,6 +311,8 @@ func (q *Queries) ListAllTrainerClients(ctx context.Context, arg ListAllTrainerC
 			&i.ProgramVersionID,
 			&i.AssignmentStatus,
 			&i.AssignedAt,
+			&i.ProgramName,
+			&i.ProgramNameRu,
 		); err != nil {
 			return nil, err
 		}
@@ -329,7 +336,9 @@ SELECT
   pa.program_id,
   pa.program_version_id,
   pa.status AS assignment_status,
-  pa.assigned_at
+  pa.assigned_at,
+  pv.name AS program_name,
+  pv.name_ru AS program_name_ru
 FROM mentorix.trainer_clients tc
 INNER JOIN mentorix.trainers t ON t.id = tc.trainer_id
 INNER JOIN mentorix.users u ON u.id = tc.client_user_id
@@ -337,6 +346,7 @@ LEFT JOIN mentorix.program_assignments pa
   ON pa.trainer_id = tc.trainer_id
   AND pa.client_user_id = tc.client_user_id
   AND pa.status = 'active'
+LEFT JOIN mentorix.program_versions pv ON pv.id = pa.program_version_id
 WHERE tc.trainer_id = $1
   AND (
     $2::text IS NULL
@@ -372,6 +382,8 @@ type ListTrainerClientsRow struct {
 	ProgramVersionID pgtype.UUID        `json:"program_version_id"`
 	AssignmentStatus *string            `json:"assignment_status"`
 	AssignedAt       pgtype.Timestamptz `json:"assigned_at"`
+	ProgramName      *string            `json:"program_name"`
+	ProgramNameRu    *string            `json:"program_name_ru"`
 }
 
 func (q *Queries) ListTrainerClients(ctx context.Context, arg ListTrainerClientsParams) ([]ListTrainerClientsRow, error) {
@@ -402,6 +414,8 @@ func (q *Queries) ListTrainerClients(ctx context.Context, arg ListTrainerClients
 			&i.ProgramVersionID,
 			&i.AssignmentStatus,
 			&i.AssignedAt,
+			&i.ProgramName,
+			&i.ProgramNameRu,
 		); err != nil {
 			return nil, err
 		}

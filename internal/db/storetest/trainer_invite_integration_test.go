@@ -18,6 +18,7 @@ import (
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
+	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/trainerclient"
 )
@@ -915,6 +916,105 @@ func TestTrainerClient_refreshTelegramAvatar(t *testing.T) {
 	}
 	if path != "photos/refreshed.jpg" {
 		t.Fatalf("avatar_file_path = %q", path)
+	}
+}
+
+func TestTrainerClient_listIncludesProgramAssignmentNames(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-name-trainer@test.com", pwHash, "Trainer")
+	if err != nil {
+		t.Fatalf("register trainer: %v", err)
+	}
+
+	progSvc := program.NewService(pool)
+	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
+		TelegramBotUsername: "mentorix_bot",
+		InviteTTL:           7 * 24 * time.Hour,
+	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
+
+	invite, err := svc.CreateInvite(ctx, trainerUserID)
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+	token := strings.TrimPrefix(strings.Split(invite.InviteURL, "start=")[1], "inv_")
+	accept, err := svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
+		Token:          token,
+		TelegramUserID: "717273",
+		DisplayName:    "Program Client",
+	})
+	if err != nil {
+		t.Fatalf("AcceptInvite: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, exercise.UpsertInput{
+		Name:        "Squat",
+		NameRu:      "Присед",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupLegs,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+
+	draft, err := progSvc.Create(ctx, trainerUserID)
+	if err != nil {
+		t.Fatalf("Create program: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	sets, reps := 3, 10
+	if _, err := createSingleBlock(ctx, progSvc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	}); err != nil {
+		t.Fatalf("AddDayExercise: %v", err)
+	}
+	name := "Strength Plan"
+	nameRu := "Силовой план"
+	category := program.CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	if _, err := progSvc.Update(ctx, trainerUserID, draft.ID, program.UpdateInput{
+		Name:       &name,
+		NameRu:     &nameRu,
+		Category:   &category,
+		Difficulty: &difficulty,
+	}); err != nil {
+		t.Fatalf("Update program: %v", err)
+	}
+	if _, err := progSvc.Publish(ctx, trainerUserID, draft.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	if _, err := progSvc.SetClientProgramAssignment(ctx, trainerUserID, accept.UserID, &draft.ID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+
+	list, err := svc.ListClients(ctx, trainerUserID, trainerclient.DefaultListParams())
+	if err != nil {
+		t.Fatalf("ListClients: %v", err)
+	}
+	if len(list.Items) != 1 {
+		t.Fatalf("clients = %d, want 1", len(list.Items))
+	}
+	assignment := list.Items[0].ProgramAssignment
+	if assignment == nil {
+		t.Fatal("expected program_assignment")
+	}
+	if assignment.ProgramName != name {
+		t.Fatalf("program_name = %q, want %q", assignment.ProgramName, name)
+	}
+	if assignment.ProgramNameRu != nameRu {
+		t.Fatalf("program_name_ru = %q, want %q", assignment.ProgramNameRu, nameRu)
 	}
 }
 
