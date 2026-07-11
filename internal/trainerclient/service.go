@@ -102,7 +102,14 @@ func (s *Service) ListClients(ctx context.Context, userID uuid.UUID, params List
 
 	var result ClientListResult
 	if isAdmin {
-		result, err = s.store.ListAllClients(ctx, params)
+		var preferTrainerID *uuid.UUID
+		trainerID, lookupErr := s.store.TrainerIDForUser(ctx, userID)
+		if lookupErr == nil {
+			preferTrainerID = &trainerID
+		} else if !errors.Is(lookupErr, pgx.ErrNoRows) {
+			return ClientListResult{}, lookupErr
+		}
+		result, err = s.store.ListAllClients(ctx, params, preferTrainerID)
 	} else {
 		var trainerID uuid.UUID
 		trainerID, err = s.store.TrainerIDForUser(ctx, userID)

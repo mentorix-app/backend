@@ -802,7 +802,8 @@ paths:
       description: >
         Clients linked via accepted invites, with optional active program assignment.
         Trainer: only clients linked to the caller. Admin: all clients linked to any trainer
-        (deduplicated by client_user_id; program assignment from the most recent link).
+        (deduplicated by client_user_id; if the admin is also linked as a trainer, that link is
+        preferred; otherwise the most recent link). Program assignment follows the chosen link.
         Search matches client display_name (ILIKE). Default sort: linked_at desc.
       operationId: listTrainerClients
       security:
@@ -2608,11 +2609,23 @@ components:
 
     TrainerClient:
       type: object
-      required: [client_user_id, display_name, status, linked_at, avatar_url]
+      required:
+        - client_user_id
+        - trainer_user_id
+        - display_name
+        - status
+        - linked_at
+        - avatar_url
       properties:
         client_user_id:
           type: string
           format: uuid
+        trainer_user_id:
+          type: string
+          format: uuid
+          description: >
+            User id of the trainer for the client link shown in this item.
+            Compare with user_id from GET /auth/me to allow program assignment.
         display_name:
           type: string
         status:

@@ -1896,7 +1896,7 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/trainer/clients?page=1&limit=20&sort_by=name&sort_order=asc&q=",
-            "description": "Paginated list of linked clients; trainer sees own clients, admin sees all (deduplicated). Search by display_name (q), sort by name or linked_at"
+            "description": "Paginated list of linked clients; trainer sees own clients, admin sees all (deduplicated, preferring admin's own trainer link when present). Search by display_name (q), sort by name or linked_at"
           },
           "response": []
         },

@@ -29,6 +29,7 @@ type ClientProgramSummary struct {
 
 type Client struct {
 	ClientUserID      uuid.UUID             `json:"client_user_id"`
+	TrainerUserID     uuid.UUID             `json:"trainer_user_id"`
 	DisplayName       string                `json:"display_name"`
 	Status            string                `json:"status"`
 	LinkedAt          time.Time             `json:"linked_at"`

@@ -81,19 +81,25 @@ func (s *Store) ListClients(ctx context.Context, trainerID uuid.UUID, params Lis
 	return clientListResult(mapTrainerClientRows(rows), params, int(total)), nil
 }
 
-func (s *Store) ListAllClients(ctx context.Context, params ListParams) (ClientListResult, error) {
+func (s *Store) ListAllClients(ctx context.Context, params ListParams, preferTrainerID *uuid.UUID) (ClientListResult, error) {
 	qPattern := qPattern(params.Query)
 	total, err := s.q.CountAllTrainerClients(ctx, qPattern)
 	if err != nil {
 		return ClientListResult{}, fmt.Errorf("count all trainer clients: %w", err)
 	}
 
+	var prefer pgtype.UUID
+	if preferTrainerID != nil {
+		prefer = pgconv.ToPGUUID(*preferTrainerID)
+	}
+
 	rows, err := s.q.ListAllTrainerClients(ctx, sqlc.ListAllTrainerClientsParams{
-		QPattern:  qPattern,
-		SortBy:    params.SortBy,
-		SortOrder: params.SortOrder,
-		Limit:     int32(params.Limit),
-		Offset:    int32(params.Offset()),
+		PreferTrainerID: prefer,
+		QPattern:        qPattern,
+		SortBy:          params.SortBy,
+		SortOrder:       params.SortOrder,
+		Limit:           int32(params.Limit),
+		Offset:          int32(params.Offset()),
 	})
 	if err != nil {
 		return ClientListResult{}, fmt.Errorf("list all trainer clients: %w", err)
@@ -106,6 +112,7 @@ func mapTrainerClientRows(rows []sqlc.ListTrainerClientsRow) []clientListRow {
 	for i, row := range rows {
 		out[i] = clientListRow{
 			clientUserID:   row.ClientUserID,
+			trainerUserID:  row.TrainerUserID,
 			status:         row.Status,
 			linkedAt:       row.CreatedAt,
 			displayName:    row.DisplayName,
@@ -124,6 +131,7 @@ func mapAllTrainerClientRows(rows []sqlc.ListAllTrainerClientsRow) []clientListR
 	for i, row := range rows {
 		out[i] = clientListRow{
 			clientUserID:   row.ClientUserID,
+			trainerUserID:  row.TrainerUserID,
 			status:         row.Status,
 			linkedAt:       row.CreatedAt,
 			displayName:    row.DisplayName,
@@ -139,6 +147,7 @@ func mapAllTrainerClientRows(rows []sqlc.ListAllTrainerClientsRow) []clientListR
 
 type clientListRow struct {
 	clientUserID   pgtype.UUID
+	trainerUserID  pgtype.UUID
 	status         string
 	linkedAt       time.Time
 	displayName    string
@@ -154,6 +163,7 @@ func clientListResult(rows []clientListRow, params ListParams, total int) Client
 	for _, row := range rows {
 		client := Client{
 			ClientUserID:   pgconv.FromPGUUID(row.clientUserID),
+			TrainerUserID:  pgconv.FromPGUUID(row.trainerUserID),
 			DisplayName:    row.displayName,
 			Status:         row.status,
 			LinkedAt:       row.linkedAt.UTC(),
