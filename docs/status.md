@@ -19,7 +19,6 @@
 | CI (vet, test, build, lint, contract, integration, 85% coverage) | [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |
 | Render dev | [environments.md](environments.md) |
-| Dev seed | [environments.md](environments.md) |
 
 _Миграции: версия 18 (`./scripts/migrate-check.sh`)._
 

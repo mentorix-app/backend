@@ -22,7 +22,7 @@ Import `postman/mentorix-backend.postman_collection.json` + `mentorix-local.post
 
 Validate contract: `make validate`
 
-Render dev / seed credentials: [docs/environments.md](docs/environments.md).
+Render dev: [docs/environments.md](docs/environments.md).
 
 ## QA
 

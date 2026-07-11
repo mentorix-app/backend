@@ -14,7 +14,6 @@ No commit with code/API/DB changes without aligned docs/rules.
 | `internal/<feature>/`, handlers, service | `docs/features/<feature>.md` |
 | `api/openapi.yaml`, Postman, apicheck | same feature doc; remove stale endpoints from docs |
 | `db/migrations/`, `db/queries/` | feature doc tables; new capability → `docs/status.md` |
-| `internal/seed/` | `docs/environments.md` |
 | New naming/process pattern | matching `.cursor/rules/*.mdc` |
 | Docs/rules only | no conflict with code, OpenAPI, `db/schema.sql` |
 

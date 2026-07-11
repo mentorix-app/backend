@@ -10,7 +10,7 @@
 
 ## Файлы env (единый паттерн)
 
-Одинаковый набор переменных (24), один порядок, canon: `internal/config/config.go`.
+Одинаковый набор переменных (23), один порядок, canon: `internal/config/config.go`.
 
 | Файл | В git | Назначение |
 | ---- | ----- | ---------- |
@@ -24,8 +24,6 @@
 **Локально:** `make setup` создаёт `.env` из `.env.example`, если файла нет.
 
 **Render:** значения из `.env.dev` / `.env.prod` копируешь в Render Dashboard (и наоборот). Файлы только у себя, не в GitHub.
-
-**Seed на dev DB:** `DATABASE_URL` из `.env.dev` → `export DATABASE_URL=...` + `SEED_CONFIRM=yes make seed`.
 
 ## Переменные по критичности
 
@@ -54,26 +52,11 @@ Cross-site фронт: `REFRESH_COOKIE_SAMESITE=none`, `REFRESH_COOKIE_SECURE=tr
 
 `APP_ENV`, `PORT`, TTL токенов, cookie, rate limit, `TRAINER_INVITE_TTL_DAYS`.
 
-### CLI
-
-| Переменная | Dev | Prod |
-| ---------- | --- | ---- |
-| `SEED_CONFIRM` | `yes` (после migrate) | пусто — seed не запускать |
-
 ## Render dev — порядок
 
 1. `migrate up`
 2. `cp .env.dev.example .env.dev` → заполнить → скопировать в Render Dashboard
 3. Деплой → лог `telegram webhook registered`
-4. `SEED_CONFIRM=yes make seed` (с External `DATABASE_URL` из `.env.dev`)
-5. E2E: login → invite → Telegram → assign
-
-## Seed
-
-**Заполняет:** dev-тренер, `exercises`, `programs` (published/draft/archived).
-
-**Не заполняет:** `trainer_invites`, `trainer_clients`, Telegram identities, `program_assignments`.
-
-Учётка: `dev-trainer@test.com` / `Password123`. На prod seed не использовать.
+4. E2E: login → invite → Telegram → assign
 
 Фронт: access в JSON, refresh в HttpOnly cookie; `credentials: 'include'`; при 401 — `POST /auth/refresh`.
