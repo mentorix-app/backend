@@ -59,3 +59,31 @@ func findDay(days []program.Day, dayNumber int) (*program.Day, bool) {
 	}
 	return nil, false
 }
+
+func nextSelectableDayInWeek(week program.Week, currentDayNumber int) (int, bool) {
+	foundCurrent := false
+	for _, d := range week.Days {
+		if d.DayNumber == currentDayNumber {
+			foundCurrent = true
+			continue
+		}
+		if foundCurrent && dayHasExercises(d) {
+			return d.DayNumber, true
+		}
+	}
+	return 0, false
+}
+
+func nextSelectableWeek(weeks []program.Week, currentWeekNumber int) (int, bool) {
+	foundCurrent := false
+	for _, w := range weeks {
+		if w.WeekNumber == currentWeekNumber {
+			foundCurrent = true
+			continue
+		}
+		if foundCurrent && weekHasSelectableDays(w) {
+			return w.WeekNumber, true
+		}
+	}
+	return 0, false
+}

@@ -120,3 +120,27 @@ func programDaysKeyboard(weekNumber int, days []program.Day) tgbotapi.InlineKeyb
 	}
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
+
+func programDayNavKeyboard(weeks []program.Week, weekNumber, dayNumber int) tgbotapi.InlineKeyboardMarkup {
+	week, ok := findWeek(weeks, weekNumber)
+	if !ok {
+		return tgbotapi.InlineKeyboardMarkup{}
+	}
+	if nextDay, ok := nextSelectableDayInWeek(*week, dayNumber); ok {
+		return tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"Следующий день",
+				programDayCallbackData(weekNumber, nextDay),
+			),
+		))
+	}
+	if nextWeek, ok := nextSelectableWeek(weeks, weekNumber); ok {
+		return tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				"Следующая неделя",
+				programWeekCallbackData(nextWeek),
+			),
+		))
+	}
+	return tgbotapi.InlineKeyboardMarkup{}
+}

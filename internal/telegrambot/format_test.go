@@ -91,7 +91,6 @@ func TestFormatProgramSummary_withCounts(t *testing.T) {
 		},
 	})
 	for _, part := range []string{
-		"📅 Программа",
 		"👤 Тренер: Anna",
 		"💪 Программа: Сила",
 		"📆 Недель: 1",
@@ -236,6 +235,33 @@ func TestParseProgramCallbacks(t *testing.T) {
 	}
 	if _, _, ok := parseProgramDayCallback("bad"); ok {
 		t.Fatal("expected invalid day callback")
+	}
+}
+
+func TestProgramDayNavKeyboard_nextDayAndWeek(t *testing.T) {
+	sets, reps := 3, 10
+	ex := []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}}
+	weeks := []program.Week{
+		{WeekNumber: 1, Days: []program.Day{
+			{DayNumber: 1, Blocks: ex},
+			{DayNumber: 2, Blocks: ex},
+		}},
+		{WeekNumber: 2, Days: []program.Day{{DayNumber: 1, Blocks: ex}}},
+	}
+
+	kb := programDayNavKeyboard(weeks, 1, 1)
+	if len(kb.InlineKeyboard) != 1 || kb.InlineKeyboard[0][0].Text != "Следующий день" {
+		t.Fatalf("day 1 nav = %+v", kb.InlineKeyboard)
+	}
+
+	kb = programDayNavKeyboard(weeks, 1, 2)
+	if len(kb.InlineKeyboard) != 1 || kb.InlineKeyboard[0][0].Text != "Следующая неделя" {
+		t.Fatalf("last day nav = %+v", kb.InlineKeyboard)
+	}
+
+	kb = programDayNavKeyboard(weeks, 2, 1)
+	if len(kb.InlineKeyboard) != 0 {
+		t.Fatalf("final day nav = %+v", kb.InlineKeyboard)
 	}
 }
 

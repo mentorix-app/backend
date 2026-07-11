@@ -38,7 +38,6 @@ func formatProgramSummary(resp trainerclient.TelegramProgramResponse) string {
 	}
 	name := programDisplayName(resp.Program.Name, resp.Program.NameRu)
 	var b strings.Builder
-	b.WriteString("📅 Программа\n")
 	fmt.Fprintf(&b, "👤 Тренер: %s\n", escapeTelegramMarkdown(resp.TrainerDisplayName))
 	fmt.Fprintf(&b, "💪 Программа: %s\n", escapeTelegramMarkdown(name))
 	fmt.Fprintf(&b, "📆 Недель: %d\n", countSelectableWeeks(resp.Program.Weeks))

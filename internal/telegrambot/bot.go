@@ -158,7 +158,17 @@ func (b *Bot) handleProgramDay(ctx context.Context, chatID int64, telegramUserID
 		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
 		return
 	}
-	b.sendMarkdown(chatID, formatProgramDay(weekNumber, dayNumber, *day), mainMenuKeyboard())
+	b.sendProgramDay(chatID, weekNumber, dayNumber, *day, resp.Program.Weeks)
+}
+
+func (b *Bot) sendProgramDay(chatID int64, weekNumber, dayNumber int, day program.Day, weeks []program.Week) {
+	text := formatProgramDay(weekNumber, dayNumber, day)
+	inline := programDayNavKeyboard(weeks, weekNumber, dayNumber)
+	if len(inline.InlineKeyboard) == 0 {
+		b.sendMarkdown(chatID, text, mainMenuKeyboard())
+		return
+	}
+	b.sendMarkdownWithInline(chatID, text, mainMenuKeyboard(), inline)
 }
 
 func (b *Bot) handleTrainers(ctx context.Context, chatID int64, telegramUserID string) {

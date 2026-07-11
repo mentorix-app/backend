@@ -68,3 +68,44 @@ func TestFindWeekAndDay(t *testing.T) {
 		t.Fatal("expected missing week")
 	}
 }
+
+func TestNextSelectableDayInWeek(t *testing.T) {
+	sets, reps := 3, 10
+	ex := program.DayBlock{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}
+	week := program.Week{
+		Days: []program.Day{
+			{DayNumber: 1, Blocks: []program.DayBlock{ex}},
+			{DayNumber: 2},
+			{DayNumber: 3, Blocks: []program.DayBlock{ex}},
+			{DayNumber: 4, Blocks: []program.DayBlock{ex}},
+		},
+	}
+	next, ok := nextSelectableDayInWeek(week, 1)
+	if !ok || next != 3 {
+		t.Fatalf("next = %d ok=%v, want day 3", next, ok)
+	}
+	next, ok = nextSelectableDayInWeek(week, 3)
+	if !ok || next != 4 {
+		t.Fatalf("next = %d ok=%v, want day 4", next, ok)
+	}
+	if _, ok := nextSelectableDayInWeek(week, 4); ok {
+		t.Fatal("expected no next day after last training day")
+	}
+}
+
+func TestNextSelectableWeek(t *testing.T) {
+	sets, reps := 3, 10
+	ex := []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}}
+	weeks := []program.Week{
+		{WeekNumber: 1, Days: []program.Day{{DayNumber: 1, Blocks: ex}}},
+		{WeekNumber: 2, Days: []program.Day{{DayNumber: 1}}},
+		{WeekNumber: 3, Days: []program.Day{{DayNumber: 1, Blocks: ex}}},
+	}
+	next, ok := nextSelectableWeek(weeks, 1)
+	if !ok || next != 3 {
+		t.Fatalf("next week = %d ok=%v, want 3", next, ok)
+	}
+	if _, ok := nextSelectableWeek(weeks, 3); ok {
+		t.Fatal("expected no next week")
+	}
+}

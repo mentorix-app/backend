@@ -152,6 +152,7 @@ func (f *fakeTrainerClient) GetTelegramProgram(context.Context, string, *uuid.UU
 		return f.program, nil
 	}
 	sets, reps := 3, 10
+	ex := program.DayExercise{ExerciseNameRu: "Присед", Sets: &sets, Reps: &reps}
 	return trainerclient.TelegramProgramResponse{
 		TrainerDisplayName: "Anna",
 		HasProgram:         true,
@@ -159,14 +160,10 @@ func (f *fakeTrainerClient) GetTelegramProgram(context.Context, string, *uuid.UU
 			Program: program.Program{NameRu: "Сила"},
 			Weeks: []program.Week{{
 				WeekNumber: 1,
-				Days: []program.Day{{
-					DayNumber: 1,
-					Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{
-						ExerciseNameRu: "Присед",
-						Sets:           &sets,
-						Reps:           &reps,
-					}}}},
-				}},
+				Days: []program.Day{
+					{DayNumber: 1, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{ex}}}},
+					{DayNumber: 2, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{ex}}}},
+				},
 			}},
 		},
 	}, nil
@@ -343,6 +340,25 @@ func TestBot_handleCallbackQuery_programWeekAndDay(t *testing.T) {
 	}
 	if !strings.Contains(api.sent[0].Text, "Присед") {
 		t.Fatalf("text = %q", api.sent[0].Text)
+	}
+	inline, ok := api.sent[0].ReplyMarkup.(tgbotapi.InlineKeyboardMarkup)
+	if !ok || len(inline.InlineKeyboard) != 1 || inline.InlineKeyboard[0][0].Text != "Следующий день" {
+		t.Fatalf("reply markup = %+v", api.sent[0].ReplyMarkup)
+	}
+
+	api.sent = nil
+	bot.handleCallbackQuery(context.Background(), &tgbotapi.CallbackQuery{
+		ID:      "cb-next-day",
+		Data:    programDayCallbackData(1, 2),
+		From:    user,
+		Message: &tgbotapi.Message{Chat: chat},
+	})
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "День 2") {
+		t.Fatalf("next day sent = %+v", api.sent)
+	}
+	inline, ok = api.sent[0].ReplyMarkup.(tgbotapi.InlineKeyboardMarkup)
+	if ok && len(inline.InlineKeyboard) != 0 {
+		t.Fatalf("last day should have no nav inline, got %+v", inline)
 	}
 }
 
