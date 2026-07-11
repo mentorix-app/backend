@@ -10,7 +10,7 @@ func programDisplayName(name, nameRu string) string {
 }
 
 func assignedMessage(trainerName, programName string) string {
-	return "Тренер " + trainerName + " назначил вам программу «" + programName + "».\n\nОткройте «Сегодня» или «Программа» в меню."
+	return "Тренер " + trainerName + " назначил вам программу «" + programName + "».\n\nОткройте «Программа» в меню."
 }
 
 func syncedMessage(trainerName, programName string) string {

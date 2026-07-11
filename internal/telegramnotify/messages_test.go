@@ -4,7 +4,7 @@ import "testing"
 
 func TestAssignedMessage(t *testing.T) {
 	got := assignedMessage("Иван", "Сила")
-	want := "Тренер Иван назначил вам программу «Сила».\n\nОткройте «Сегодня» или «Программа» в меню."
+	want := "Тренер Иван назначил вам программу «Сила».\n\nОткройте «Программа» в меню."
 	if got != want {
 		t.Fatalf("message = %q, want %q", got, want)
 	}

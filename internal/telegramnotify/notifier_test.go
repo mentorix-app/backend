@@ -98,7 +98,7 @@ func TestNotifier_notifyAssigned_success(t *testing.T) {
 	if sender.calls != 1 || sender.chatID != 424242 {
 		t.Fatalf("sender = %+v", sender)
 	}
-	want := "Тренер Иван назначил вам программу «Сила».\n\nОткройте «Сегодня» или «Программа» в меню."
+	want := "Тренер Иван назначил вам программу «Сила».\n\nОткройте «Программа» в меню."
 	if sender.text != want {
 		t.Fatalf("text = %q", sender.text)
 	}

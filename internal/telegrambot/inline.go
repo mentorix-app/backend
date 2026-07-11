@@ -1,15 +1,22 @@
 package telegrambot
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/google/uuid"
 
+	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/trainerclient"
 )
 
-const trainerCallbackPrefix = "active_trainer:"
+const (
+	trainerCallbackPrefix     = "active_trainer:"
+	programWeekCallbackPrefix = "program_week:"
+	programDayCallbackPrefix  = "program_day:"
+)
 
 func trainerCallbackData(trainerID uuid.UUID) string {
 	return trainerCallbackPrefix + trainerID.String()
@@ -38,6 +45,77 @@ func trainersInlineKeyboard(trainers []trainerclient.TelegramTrainer) tgbotapi.I
 		}
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(label, trainerCallbackData(t.TrainerID)),
+		))
+	}
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+func programWeekCallbackData(weekNumber int) string {
+	return fmt.Sprintf("%s%d", programWeekCallbackPrefix, weekNumber)
+}
+
+func programDayCallbackData(weekNumber, dayNumber int) string {
+	return fmt.Sprintf("%s%d:%d", programDayCallbackPrefix, weekNumber, dayNumber)
+}
+
+func parseProgramWeekCallback(data string) (int, bool) {
+	if !strings.HasPrefix(data, programWeekCallbackPrefix) {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(data, programWeekCallbackPrefix))
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+func parseProgramDayCallback(data string) (weekNum, dayNum int, ok bool) {
+	if !strings.HasPrefix(data, programDayCallbackPrefix) {
+		return 0, 0, false
+	}
+	rest := strings.TrimPrefix(data, programDayCallbackPrefix)
+	parts := strings.SplitN(rest, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	weekNum, err := strconv.Atoi(parts[0])
+	if err != nil || weekNum <= 0 {
+		return 0, 0, false
+	}
+	dayNum, err = strconv.Atoi(parts[1])
+	if err != nil || dayNum <= 0 {
+		return 0, 0, false
+	}
+	return weekNum, dayNum, true
+}
+
+func programWeeksKeyboard(weeks []program.Week) tgbotapi.InlineKeyboardMarkup {
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(weeks))
+	for _, w := range weeks {
+		if !weekHasSelectableDays(w) {
+			continue
+		}
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				fmt.Sprintf("Неделя %d", w.WeekNumber),
+				programWeekCallbackData(w.WeekNumber),
+			),
+		))
+	}
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+func programDaysKeyboard(weekNumber int, days []program.Day) tgbotapi.InlineKeyboardMarkup {
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(days))
+	for _, d := range days {
+		if !dayHasExercises(d) {
+			continue
+		}
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(
+				fmt.Sprintf("День %d", d.DayNumber),
+				programDayCallbackData(weekNumber, d.DayNumber),
+			),
 		))
 	}
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)

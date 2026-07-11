@@ -9,10 +9,7 @@ import (
 	"mentorix-backend/internal/trainerclient"
 )
 
-const (
-	telegramMessageLimit       = 4000
-	cyrillicMultiplicationSign = "х"
-)
+const cyrillicMultiplicationSign = "х"
 
 func formatToday(resp trainerclient.TelegramTodayResponse) string {
 	if !resp.HasProgram {
@@ -35,56 +32,41 @@ func formatToday(resp trainerclient.TelegramTodayResponse) string {
 	return b.String()
 }
 
-func formatProgramHeader(trainerName, programName string) string {
-	return fmt.Sprintf("📅 Программа\n👤 Тренер: %s\n💪 Программа: %s\n",
-		escapeTelegramMarkdown(trainerName),
-		escapeTelegramMarkdown(programName))
-}
-
-func formatProgram(resp trainerclient.TelegramProgramResponse) []string {
+func formatProgramSummary(resp trainerclient.TelegramProgramResponse) string {
 	if !resp.HasProgram || resp.Program == nil {
-		return []string{fmt.Sprintf("%s пока не назначил программу.", resp.TrainerDisplayName)}
+		return fmt.Sprintf("%s пока не назначил программу.", resp.TrainerDisplayName)
 	}
 	name := programDisplayName(resp.Program.Name, resp.Program.NameRu)
-	header := formatProgramHeader(resp.TrainerDisplayName, name)
+	var b strings.Builder
+	b.WriteString("📅 Программа\n")
+	fmt.Fprintf(&b, "👤 Тренер: %s\n", escapeTelegramMarkdown(resp.TrainerDisplayName))
+	fmt.Fprintf(&b, "💪 Программа: %s\n", escapeTelegramMarkdown(name))
+	fmt.Fprintf(&b, "📆 Недель: %d\n", countSelectableWeeks(resp.Program.Weeks))
+	fmt.Fprintf(&b, "🏋 Тренировочных дней: %d\n\n", countSelectableDays(resp.Program.Weeks))
+	b.WriteString("Выберите неделю:")
+	return b.String()
+}
 
-	var parts []string
-	var current strings.Builder
-	current.WriteString(header)
+func formatProgramEmptyTrainingDays(trainerName string) string {
+	return fmt.Sprintf("%s пока не добавил тренировочные дни в программу.", trainerName)
+}
 
-	for _, week := range resp.Program.Weeks {
-		weekHeader := fmt.Sprintf("\n📆 Неделя %d\n", week.WeekNumber)
-		if current.Len()+len(weekHeader) > telegramMessageLimit {
-			parts = append(parts, current.String())
-			current.Reset()
-		}
-		current.WriteString(weekHeader)
-		for _, day := range week.Days {
-			dayHeader := fmt.Sprintf("📆 День %d\n", day.DayNumber)
-			if current.Len()+len(dayHeader) > telegramMessageLimit {
-				parts = append(parts, current.String())
-				current.Reset()
-			}
-			current.WriteString(dayHeader)
-			blockText := formatBlocks(day.Blocks)
-			if blockText == "" {
-				blockText = "😴 отдых"
-			}
-			if current.Len()+len(blockText) > telegramMessageLimit {
-				parts = append(parts, current.String())
-				current.Reset()
-			}
-			current.WriteString(blockText)
-			current.WriteString("\n\n")
-		}
+func formatProgramWeekPicker(weekNumber int) string {
+	return fmt.Sprintf("📆 Неделя %d\n\nВыберите день:", weekNumber)
+}
+
+func formatProgramDay(weekNumber, dayNumber int, day program.Day) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "📆 Неделя %d / День %d", weekNumber, dayNumber)
+	if blockText := formatBlocks(day.Blocks); blockText != "" {
+		b.WriteString("\n\n")
+		b.WriteString(blockText)
 	}
-	if current.Len() > 0 {
-		parts = append(parts, strings.TrimRight(current.String(), "\n"))
-	}
-	if len(parts) == 0 {
-		return []string{header + "\nПрограмма пуста."}
-	}
-	return parts
+	return b.String()
+}
+
+func formatProgramNotFoundMessage() string {
+	return "Раздел не найден. Откройте «Программа» снова."
 }
 
 func formatTrainers(list trainerclient.TelegramTrainerList) (string, []trainerclient.TelegramTrainer) {

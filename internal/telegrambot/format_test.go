@@ -60,13 +60,84 @@ func TestFormatToday_header(t *testing.T) {
 	}
 }
 
-func TestFormatProgram_noProgram(t *testing.T) {
-	parts := formatProgram(trainerclient.TelegramProgramResponse{
+func TestFormatProgramSummary_noProgram(t *testing.T) {
+	text := formatProgramSummary(trainerclient.TelegramProgramResponse{
 		TrainerDisplayName: "Anna",
 		HasProgram:         false,
 	})
-	if len(parts) != 1 {
-		t.Fatalf("parts = %d", len(parts))
+	if text == "" || !strings.Contains(text, "не назначил программу") {
+		t.Fatalf("text = %q", text)
+	}
+}
+
+func TestFormatProgramSummary_withCounts(t *testing.T) {
+	sets, reps := 3, 10
+	text := formatProgramSummary(trainerclient.TelegramProgramResponse{
+		TrainerDisplayName: "Anna",
+		HasProgram:         true,
+		Program: &program.Detail{
+			Program: program.Program{NameRu: "Сила"},
+			Weeks: []program.Week{
+				{WeekNumber: 1, Days: []program.Day{{}}},
+				{WeekNumber: 2, Days: []program.Day{{
+					DayNumber: 1,
+					Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{
+						ExerciseNameRu: "Присед",
+						Sets:           &sets,
+						Reps:           &reps,
+					}}}},
+				}}},
+			},
+		},
+	})
+	for _, part := range []string{
+		"📅 Программа",
+		"👤 Тренер: Anna",
+		"💪 Программа: Сила",
+		"📆 Недель: 1",
+		"🏋 Тренировочных дней: 1",
+		"Выберите неделю",
+	} {
+		if !strings.Contains(text, part) {
+			t.Fatalf("missing %q in %q", part, text)
+		}
+	}
+}
+
+func TestFormatProgramDay(t *testing.T) {
+	sets, reps := 3, 10
+	text := formatProgramDay(2, 3, program.Day{
+		Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{
+			ExerciseNameRu: "Присед",
+			Sets:           &sets,
+			Reps:           &reps,
+		}}}},
+	})
+	if !strings.Contains(text, "Неделя 2 / День 3") {
+		t.Fatalf("text = %q", text)
+	}
+	if !strings.Contains(text, "🏋 Присед - 3х10") {
+		t.Fatalf("text = %q", text)
+	}
+}
+
+func TestFormatProgramWeekPicker(t *testing.T) {
+	text := formatProgramWeekPicker(4)
+	if text != "📆 Неделя 4\n\nВыберите день:" {
+		t.Fatalf("text = %q", text)
+	}
+}
+
+func TestFormatProgramEmptyTrainingDays(t *testing.T) {
+	text := formatProgramEmptyTrainingDays("Anna")
+	if !strings.Contains(text, "Anna") || !strings.Contains(text, "тренировочные дни") {
+		t.Fatalf("text = %q", text)
+	}
+}
+
+func TestFormatProgramNotFoundMessage(t *testing.T) {
+	if formatProgramNotFoundMessage() == "" {
+		t.Fatal("expected message")
 	}
 }
 
@@ -120,34 +191,51 @@ func TestFormatBlocks_groupExerciseInstruction(t *testing.T) {
 	}
 }
 
-func TestFormatProgram_splitsLongMessage(t *testing.T) {
+func TestProgramWeeksKeyboard_filtersEmptyWeeks(t *testing.T) {
 	sets, reps := 3, 10
-	ex := program.DayExercise{
-		ExerciseNameRu: "Присед",
-		Sets:           &sets,
-		Reps:           &reps,
-		Instruction:    strings.Repeat("объём ", 500),
-	}
-	days := make([]program.Day, 5)
-	for i := range days {
-		days[i] = program.Day{
-			DayNumber: i + 1,
-			Blocks:    []program.DayBlock{{Exercises: []program.DayExercise{ex}}},
-		}
-	}
-	parts := formatProgram(trainerclient.TelegramProgramResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         true,
-		Program: &program.Detail{
-			Program: program.Program{NameRu: "Сила"},
-			Weeks: []program.Week{{
-				WeekNumber: 1,
-				Days:       days,
-			}},
-		},
+	kb := programWeeksKeyboard([]program.Week{
+		{WeekNumber: 1, Days: []program.Day{{}}},
+		{WeekNumber: 2, Days: []program.Day{{
+			Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}},
+		}}},
 	})
-	if len(parts) < 2 {
-		t.Fatalf("expected message split, got %d parts", len(parts))
+	if len(kb.InlineKeyboard) != 1 {
+		t.Fatalf("rows = %d, want 1", len(kb.InlineKeyboard))
+	}
+	if kb.InlineKeyboard[0][0].Text != "Неделя 2" {
+		t.Fatalf("label = %q", kb.InlineKeyboard[0][0].Text)
+	}
+}
+
+func TestProgramDaysKeyboard_filtersEmptyDays(t *testing.T) {
+	sets, reps := 3, 10
+	kb := programDaysKeyboard(1, []program.Day{
+		{DayNumber: 1},
+		{DayNumber: 2, Blocks: []program.DayBlock{{BlockType: program.BlockTypeComplex}}},
+		{DayNumber: 3, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}}},
+	})
+	if len(kb.InlineKeyboard) != 1 {
+		t.Fatalf("rows = %d, want 1", len(kb.InlineKeyboard))
+	}
+	if kb.InlineKeyboard[0][0].Text != "День 3" {
+		t.Fatalf("label = %q", kb.InlineKeyboard[0][0].Text)
+	}
+}
+
+func TestParseProgramCallbacks(t *testing.T) {
+	week, ok := parseProgramWeekCallback(programWeekCallbackData(2))
+	if !ok || week != 2 {
+		t.Fatalf("week = %d ok=%v", week, ok)
+	}
+	gotWeek, gotDay, ok := parseProgramDayCallback(programDayCallbackData(2, 3))
+	if !ok || gotWeek != 2 || gotDay != 3 {
+		t.Fatalf("week=%d day=%d ok=%v", gotWeek, gotDay, ok)
+	}
+	if _, ok := parseProgramWeekCallback("bad"); ok {
+		t.Fatal("expected invalid week callback")
+	}
+	if _, _, ok := parseProgramDayCallback("bad"); ok {
+		t.Fatal("expected invalid day callback")
 	}
 }
 
@@ -251,93 +339,6 @@ func TestFormatToday_withBlocks(t *testing.T) {
 	})
 	if text == "" {
 		t.Fatal("expected text")
-	}
-}
-
-func TestFormatProgram_withWeeks(t *testing.T) {
-	sets, reps := 3, 10
-	parts := formatProgram(trainerclient.TelegramProgramResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         true,
-		Program: &program.Detail{
-			Program: program.Program{NameRu: "Сила"},
-			Weeks: []program.Week{{
-				WeekNumber: 1,
-				Days: []program.Day{{
-					DayNumber: 1,
-					Blocks: []program.DayBlock{{
-						Exercises: []program.DayExercise{{
-							ExerciseNameRu: "Присед",
-							Sets:           &sets,
-							Reps:           &reps,
-						}},
-					}},
-				}},
-			}},
-		},
-	})
-	if len(parts) == 0 || parts[0] == "" {
-		t.Fatal("expected program text")
-	}
-}
-
-func TestFormatProgram_headerAndRestDay(t *testing.T) {
-	parts := formatProgram(trainerclient.TelegramProgramResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         true,
-		Program: &program.Detail{
-			Program: program.Program{NameRu: "Сила"},
-			Weeks: []program.Week{{
-				WeekNumber: 1,
-				Days:       []program.Day{{DayNumber: 1, Blocks: nil}},
-			}},
-		},
-	})
-	if len(parts) == 0 || !strings.Contains(parts[0], "📅 Программа") {
-		t.Fatalf("parts = %+v", parts)
-	}
-	if !strings.Contains(parts[0], "👤 Тренер: Anna") {
-		t.Fatalf("parts = %+v", parts)
-	}
-	if !strings.Contains(parts[0], "💪 Программа: Сила") {
-		t.Fatalf("parts = %+v", parts)
-	}
-	if !strings.Contains(parts[0], "📆 Неделя 1") {
-		t.Fatalf("parts = %+v", parts)
-	}
-	if !strings.Contains(parts[0], "📆 День 1") {
-		t.Fatalf("parts = %+v", parts)
-	}
-	if !strings.Contains(parts[0], "😴 отдых") {
-		t.Fatalf("parts = %+v", parts)
-	}
-}
-
-func TestFormatProgram_restDayInWeek(t *testing.T) {
-	parts := formatProgram(trainerclient.TelegramProgramResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         true,
-		Program: &program.Detail{
-			Program: program.Program{NameRu: "Сила"},
-			Weeks: []program.Week{{
-				WeekNumber: 1,
-				Days:       []program.Day{{DayNumber: 1, Blocks: nil}},
-			}},
-		},
-	})
-	if len(parts) == 0 || !strings.Contains(parts[0], "отдых") {
-		t.Fatalf("parts = %+v", parts)
-	}
-}
-
-func TestFormatProgram_nilProgramUsesEmptyMessage(t *testing.T) {
-	parts := formatProgram(trainerclient.TelegramProgramResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         true,
-		Program:            nil,
-	})
-	if len(parts) != 1 {
-		t.Fatalf("parts = %d", len(parts))
 	}
 }
 

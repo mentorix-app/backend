@@ -90,6 +90,9 @@ func TestMainMenuKeyboard_buttons(t *testing.T) {
 	if len(kb.Keyboard) != 2 {
 		t.Fatalf("rows = %d", len(kb.Keyboard))
 	}
+	if len(kb.Keyboard[0]) != 2 || len(kb.Keyboard[1]) != 1 {
+		t.Fatalf("unexpected layout: %+v", kb.Keyboard)
+	}
 }
 
 type fakeTelegramAPI struct {
@@ -114,8 +117,8 @@ type fakeTrainerClient struct {
 	calls       []trainerclient.AcceptInviteRequest
 	trainers    trainerclient.TelegramTrainerList
 	trainersErr error
-	todayErr    error
 	programErr  error
+	program     trainerclient.TelegramProgramResponse
 }
 
 func (f *fakeTrainerClient) AcceptInvite(_ context.Context, req trainerclient.AcceptInviteRequest) (trainerclient.AcceptInviteResult, error) {
@@ -141,21 +144,31 @@ func (f *fakeTrainerClient) SetTelegramActiveTrainer(_ context.Context, _ string
 	return &trainerclient.ActiveTrainerResponse{TrainerID: id, DisplayName: "Anna"}, nil
 }
 
-func (f *fakeTrainerClient) GetTelegramToday(context.Context, string, *uuid.UUID) (trainerclient.TelegramTodayResponse, error) {
-	if f.todayErr != nil {
-		return trainerclient.TelegramTodayResponse{}, f.todayErr
-	}
-	return trainerclient.TelegramTodayResponse{TrainerDisplayName: "Anna", HasProgram: true, ProgramNameRu: "Сила", ProgramDayNumber: 1, WeekNumber: 1, DayNumber: 1}, nil
-}
-
 func (f *fakeTrainerClient) GetTelegramProgram(context.Context, string, *uuid.UUID) (trainerclient.TelegramProgramResponse, error) {
 	if f.programErr != nil {
 		return trainerclient.TelegramProgramResponse{}, f.programErr
 	}
+	if f.program.TrainerDisplayName != "" || f.program.Program != nil {
+		return f.program, nil
+	}
+	sets, reps := 3, 10
 	return trainerclient.TelegramProgramResponse{
 		TrainerDisplayName: "Anna",
 		HasProgram:         true,
-		Program:            &program.Detail{Program: program.Program{NameRu: "Сила"}},
+		Program: &program.Detail{
+			Program: program.Program{NameRu: "Сила"},
+			Weeks: []program.Week{{
+				WeekNumber: 1,
+				Days: []program.Day{{
+					DayNumber: 1,
+					Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{
+						ExerciseNameRu: "Присед",
+						Sets:           &sets,
+						Reps:           &reps,
+					}}}},
+				}},
+			}},
+		},
 	}, nil
 }
 
@@ -210,7 +223,7 @@ func TestBot_handleMessage_menuButtons(t *testing.T) {
 	api := &fakeTelegramAPI{}
 	bot := New(api, &fakeTrainerClient{})
 
-	for _, text := range []string{btnToday, btnProgram, btnTrainers, btnHelp, "random text"} {
+	for _, text := range []string{btnProgram, btnTrainers, btnHelp, "random text"} {
 		api.sent = nil
 		bot.handleMessage(context.Background(), &tgbotapi.Message{
 			Chat: &tgbotapi.Chat{ID: 1},
@@ -242,13 +255,94 @@ func TestBot_handleMessage_commands(t *testing.T) {
 	}
 }
 
-func TestBot_handleToday_andProgram(t *testing.T) {
+func TestBot_handleProgram_noProgram(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{
+		program: trainerclient.TelegramProgramResponse{
+			TrainerDisplayName: "Anna",
+			HasProgram:         false,
+		},
+	})
+	bot.handleProgram(context.Background(), 1, "42")
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "не назначил программу") {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+}
+
+func TestBot_handleProgram_emptyTrainingDays(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{
+		program: trainerclient.TelegramProgramResponse{
+			TrainerDisplayName: "Anna",
+			HasProgram:         true,
+			Program: &program.Detail{
+				Program: program.Program{NameRu: "Сила"},
+				Weeks:   []program.Week{{WeekNumber: 1, Days: []program.Day{{DayNumber: 1}}}},
+			},
+		},
+	})
+	bot.handleProgram(context.Background(), 1, "42")
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "тренировочные дни") {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+}
+
+func TestBot_handleProgramWeek_invalidWeek(t *testing.T) {
 	api := &fakeTelegramAPI{}
 	bot := New(api, &fakeTrainerClient{})
-	bot.handleToday(context.Background(), 1, "42")
+	bot.handleProgramWeek(context.Background(), 1, "42", 99)
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "не найден") {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+}
+
+func TestBot_handleProgramDay_invalidDay(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{})
+	bot.handleProgramDay(context.Background(), 1, "42", 1, 99)
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "не найден") {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+}
+
+func TestBot_handleProgram(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{})
 	bot.handleProgram(context.Background(), 1, "42")
-	if len(api.sent) < 2 {
+	if len(api.sent) != 1 {
 		t.Fatalf("sent = %d", len(api.sent))
+	}
+}
+
+func TestBot_handleCallbackQuery_programWeekAndDay(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{})
+	chat := &tgbotapi.Chat{ID: 1}
+	user := &tgbotapi.User{ID: 42}
+
+	api.sent = nil
+	bot.handleCallbackQuery(context.Background(), &tgbotapi.CallbackQuery{
+		ID:      "cb-week",
+		Data:    programWeekCallbackData(1),
+		From:    user,
+		Message: &tgbotapi.Message{Chat: chat},
+	})
+	if len(api.sent) != 1 {
+		t.Fatalf("week sent = %d", len(api.sent))
+	}
+
+	api.sent = nil
+	bot.handleCallbackQuery(context.Background(), &tgbotapi.CallbackQuery{
+		ID:      "cb-day",
+		Data:    programDayCallbackData(1, 1),
+		From:    user,
+		Message: &tgbotapi.Message{Chat: chat},
+	})
+	if len(api.sent) != 1 {
+		t.Fatalf("day sent = %d", len(api.sent))
+	}
+	if !strings.Contains(api.sent[0].Text, "Присед") {
+		t.Fatalf("text = %q", api.sent[0].Text)
 	}
 }
 
@@ -324,15 +418,6 @@ func TestBot_handleCallbackQuery_invalidData(t *testing.T) {
 		Message: &tgbotapi.Message{Chat: &tgbotapi.Chat{ID: 1}},
 	})
 	if len(api.sent) != 0 {
-		t.Fatalf("sent = %d", len(api.sent))
-	}
-}
-
-func TestBot_handleToday_error(t *testing.T) {
-	api := &fakeTelegramAPI{}
-	bot := New(api, &fakeTrainerClient{todayErr: trainerclient.ErrActiveTrainerNotSet})
-	bot.handleToday(context.Background(), 1, "42")
-	if len(api.sent) != 1 {
 		t.Fatalf("sent = %d", len(api.sent))
 	}
 }
