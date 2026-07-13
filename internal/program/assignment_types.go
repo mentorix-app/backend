@@ -18,16 +18,17 @@ const (
 const MaxBulkClientAssignments = 100
 
 type Assignment struct {
-	ID               uuid.UUID        `json:"id"`
-	ProgramID        uuid.UUID        `json:"program_id"`
-	ProgramVersionID uuid.UUID        `json:"program_version_id"`
-	TrainerID        uuid.UUID        `json:"trainer_id"`
-	ClientUserID     uuid.UUID        `json:"client_user_id"`
-	Status           AssignmentStatus `json:"status"`
-	AssignedAt       time.Time        `json:"assigned_at"`
-	CreatedAt        time.Time        `json:"created_at"`
-	ClientPlanAt     *time.Time       `json:"client_plan_at,omitempty"`
-	IsBehindLatest   *bool            `json:"is_behind_latest,omitempty"`
+	ID                uuid.UUID        `json:"id"`
+	ProgramID         uuid.UUID        `json:"program_id"`
+	ProgramVersionID  uuid.UUID        `json:"program_version_id"`
+	TrainerID         uuid.UUID        `json:"trainer_id"`
+	ClientUserID      uuid.UUID        `json:"client_user_id"`
+	Status            AssignmentStatus `json:"status"`
+	AssignedAt        time.Time        `json:"assigned_at"`
+	CreatedAt         time.Time        `json:"created_at"`
+	CompletionCycleID uuid.UUID        `json:"-"`
+	ClientPlanAt      *time.Time       `json:"client_plan_at,omitempty"`
+	IsBehindLatest    *bool            `json:"is_behind_latest,omitempty"`
 }
 
 type AssignmentListResult struct {

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -27,12 +28,44 @@ func TestRequestLog_success(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	if !bytes.Contains(buf.Bytes(), []byte("request")) {
-		t.Fatalf("log = %q", buf.String())
+	log := buf.String()
+	if !strings.Contains(log, "level=INFO") {
+		t.Fatalf("want INFO log, got %q", log)
+	}
+	if !strings.Contains(log, "status=200") {
+		t.Fatalf("want status=200, got %q", log)
 	}
 }
 
-func TestRequestLog_error(t *testing.T) {
+func TestRequestLog_httpErrorUsesRealStatus(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+	e := echo.New()
+	e.Use(RequestLog(logger))
+	e.GET("/missing", func(c echo.Context) error {
+		return echo.NewHTTPError(http.StatusNotFound, "avatar not found")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	log := buf.String()
+	if !strings.Contains(log, "level=WARN") {
+		t.Fatalf("want WARN for 4xx, got %q", log)
+	}
+	if !strings.Contains(log, "status=404") {
+		t.Fatalf("want status=404, got %q", log)
+	}
+	if !strings.Contains(log, "avatar not found") {
+		t.Fatalf("want error message, got %q", log)
+	}
+}
+
+func TestRequestLog_internalError(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&buf, nil))
 	e := echo.New()
@@ -45,8 +78,15 @@ func TestRequestLog_error(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if !bytes.Contains(buf.Bytes(), []byte("boom")) {
-		t.Fatalf("log = %q", buf.String())
+	log := buf.String()
+	if !strings.Contains(log, "level=ERROR") {
+		t.Fatalf("want ERROR for 5xx, got %q", log)
+	}
+	if !strings.Contains(log, "status=500") {
+		t.Fatalf("want status=500, got %q", log)
+	}
+	if !strings.Contains(log, "boom") {
+		t.Fatalf("log = %q", log)
 	}
 }
 

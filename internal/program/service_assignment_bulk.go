@@ -64,6 +64,8 @@ func bulkAssignmentSkipReason(err error) string {
 		return "blocked"
 	case errors.Is(err, ErrClientNotFound):
 		return "not_found"
+	case errors.Is(err, ErrAlreadyAssigned):
+		return "already_assigned"
 	default:
 		return ""
 	}

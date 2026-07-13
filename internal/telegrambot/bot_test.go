@@ -112,13 +112,15 @@ func (f *fakeTelegramAPI) Request(tgbotapi.Chattable) (*tgbotapi.APIResponse, er
 }
 
 type fakeTrainerClient struct {
-	result      trainerclient.AcceptInviteResult
-	err         error
-	calls       []trainerclient.AcceptInviteRequest
-	trainers    trainerclient.TelegramTrainerList
-	trainersErr error
-	programErr  error
-	program     trainerclient.TelegramProgramResponse
+	result       trainerclient.AcceptInviteResult
+	err          error
+	calls        []trainerclient.AcceptInviteRequest
+	trainers     trainerclient.TelegramTrainerList
+	trainersErr  error
+	programErr   error
+	program      trainerclient.TelegramProgramResponse
+	clientUserID uuid.UUID
+	clientUserEr error
 }
 
 func (f *fakeTrainerClient) AcceptInvite(_ context.Context, req trainerclient.AcceptInviteRequest) (trainerclient.AcceptInviteResult, error) {
@@ -167,6 +169,16 @@ func (f *fakeTrainerClient) GetTelegramProgram(context.Context, string, *uuid.UU
 			}},
 		},
 	}, nil
+}
+
+func (f *fakeTrainerClient) ClientUserIDByTelegram(context.Context, string) (uuid.UUID, error) {
+	if f.clientUserEr != nil {
+		return uuid.Nil, f.clientUserEr
+	}
+	if f.clientUserID != uuid.Nil {
+		return f.clientUserID, nil
+	}
+	return uuid.MustParse("11111111-1111-1111-1111-111111111111"), nil
 }
 
 func commandMessage(command, args string) *tgbotapi.Message {
@@ -342,8 +354,14 @@ func TestBot_handleCallbackQuery_programWeekAndDay(t *testing.T) {
 		t.Fatalf("text = %q", api.sent[0].Text)
 	}
 	inline, ok := api.sent[0].ReplyMarkup.(tgbotapi.InlineKeyboardMarkup)
-	if !ok || len(inline.InlineKeyboard) != 1 || inline.InlineKeyboard[0][0].Text != "Следующий день" {
+	if !ok || len(inline.InlineKeyboard) < 2 {
 		t.Fatalf("reply markup = %+v", api.sent[0].ReplyMarkup)
+	}
+	if inline.InlineKeyboard[0][0].Text != btnCompleteWorkout {
+		t.Fatalf("complete btn = %q", inline.InlineKeyboard[0][0].Text)
+	}
+	if inline.InlineKeyboard[1][0].Text != "Следующий день" {
+		t.Fatalf("nav btn = %q", inline.InlineKeyboard[1][0].Text)
 	}
 
 	api.sent = nil
@@ -357,8 +375,8 @@ func TestBot_handleCallbackQuery_programWeekAndDay(t *testing.T) {
 		t.Fatalf("next day sent = %+v", api.sent)
 	}
 	inline, ok = api.sent[0].ReplyMarkup.(tgbotapi.InlineKeyboardMarkup)
-	if ok && len(inline.InlineKeyboard) != 0 {
-		t.Fatalf("last day should have no nav inline, got %+v", inline)
+	if !ok || len(inline.InlineKeyboard) != 1 || inline.InlineKeyboard[0][0].Text != btnCompleteWorkout {
+		t.Fatalf("last day should only have complete btn, got %+v", inline)
 	}
 }
 

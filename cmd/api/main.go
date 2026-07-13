@@ -24,6 +24,7 @@ import (
 	"mentorix-backend/internal/telegrambot"
 	"mentorix-backend/internal/telegramnotify"
 	"mentorix-backend/internal/trainerclient"
+	"mentorix-backend/internal/workoutcompletion"
 )
 
 const (
@@ -144,8 +145,13 @@ func main() {
 		)
 		trainerclient.NewHandlers(trainerClientSvc, pool, cfg.JWTSecret).Mount(e)
 
+		workoutSvc := workoutcompletion.NewService(pool)
+		workoutPending := workoutcompletion.NewPendingStore(rdb)
+
 		if cfg.BotToken != "" && cfg.BotWebhookURL != "" {
-			tgBot, err := telegrambot.NewFromToken(cfg.BotToken, trainerClientSvc)
+			tgBot, err := telegrambot.NewFromToken(cfg.BotToken, trainerClientSvc,
+				telegrambot.WithWorkoutCompletions(workoutSvc, workoutPending),
+			)
 			if err != nil {
 				logger.Error("telegram webhook bot init failed", "error", err)
 				os.Exit(1)

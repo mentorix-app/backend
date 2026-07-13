@@ -78,8 +78,9 @@ INSERT INTO mentorix.program_version_week_days (
   program_version_id,
   program_version_week_id,
   day_number,
-  sort_order
-) VALUES ($1, $2, $3, $4)
+  sort_order,
+  day_key
+) VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: InsertProgramVersionDayBlock :one

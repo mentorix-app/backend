@@ -1,8 +1,10 @@
 package http
 
 import (
+	"errors"
 	"log/slog"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -15,22 +17,49 @@ func RequestLog(logger *slog.Logger) echo.MiddlewareFunc {
 			start := time.Now()
 			err := next(c)
 			req := c.Request()
+			status := responseStatus(c, err)
 			attrs := []any{
 				"method", req.Method,
 				"path", req.URL.Path,
-				"status", c.Response().Status,
+				"status", status,
 				"latency_ms", time.Since(start).Milliseconds(),
 				"request_id", c.Response().Header().Get(echo.HeaderXRequestID),
 				"remote_ip", c.RealIP(),
 			}
-			if err != nil {
-				logger.Error("request", append(attrs, "error", err.Error())...)
-			} else {
+			switch {
+			case status >= http.StatusInternalServerError:
+				if err != nil {
+					attrs = append(attrs, "error", err.Error())
+				}
+				logger.Error("request", attrs...)
+			case status >= http.StatusBadRequest:
+				if err != nil {
+					attrs = append(attrs, "error", err.Error())
+				}
+				logger.Warn("request", attrs...)
+			default:
 				logger.Info("request", attrs...)
 			}
 			return err
 		}
 	}
+}
+
+func responseStatus(c echo.Context, err error) int {
+	if err != nil {
+		var he *echo.HTTPError
+		if errors.As(err, &he) && he.Code > 0 {
+			return he.Code
+		}
+		if status := c.Response().Status; status >= http.StatusBadRequest {
+			return status
+		}
+		return http.StatusInternalServerError
+	}
+	if status := c.Response().Status; status > 0 {
+		return status
+	}
+	return http.StatusOK
 }
 
 func ConfigureIPExtractor(e *echo.Echo, trustedCIDRs []string) {

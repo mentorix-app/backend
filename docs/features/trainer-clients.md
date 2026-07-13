@@ -23,7 +23,8 @@
 
 Неочевидные правила:
 
-- Одна активная `program_assignments` на `(trainer_id, client_user_id)` — **одна строка** в БД; `reassign` обновляет её, `clear` удаляет.
+- Одна активная `program_assignments` на `(trainer_id, client_user_id)` — **одна строка** в БД; `reassign` обновляет её (новый `completion_cycle_id` при смене `program_id`), `clear` удаляет.
+- Повторный `PUT` с тем же `program_id` — skip `already_assigned` (без UPDATE).
 - Версия — последняя замороженная; снятие — `program_id: null` в PUT.
 - Назначение: `PUT /trainer/clients/program-assignment` — `client_user_ids` (1–100) + `program_id`; ответ `assigned` / `cleared` / `skipped` (как sync). Один клиент — массив из одного id.
 - `program_assignment` в списке: `assignment_id`, `program_id`, `program_version_id`, `assigned_at`, `program_name`, `program_name_ru` (из замороженной версии), `is_behind_latest` (можно sync, если `true`; `assignment_id` — в body sync).

@@ -116,11 +116,16 @@ func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, us
 			return fmt.Errorf("insert program version week: %w", err)
 		}
 		for _, day := range week.Days {
+			dayKey := day.DayKey
+			if dayKey == uuid.Nil {
+				dayKey = uuid.New()
+			}
 			dayRow, err := q.InsertProgramVersionDay(ctx, sqlc.InsertProgramVersionDayParams{
 				ProgramVersionID:     versionPG,
 				ProgramVersionWeekID: weekRow.ID,
 				DayNumber:            int32(day.DayNumber),
 				SortOrder:            int32(day.SortOrder),
+				DayKey:               pgconv.ToPGUUID(dayKey),
 			})
 			if err != nil {
 				return fmt.Errorf("insert program version day: %w", err)

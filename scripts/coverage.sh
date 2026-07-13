@@ -51,7 +51,7 @@ if ((${#packages[@]} == 0)); then
 fi
 
 coverpkg="$(IFS=,; echo "${packages[*]}")"
-integration_coverpkg="mentorix-backend/internal/auth,mentorix-backend/internal/cleanup,mentorix-backend/internal/exercise,mentorix-backend/internal/program,mentorix-backend/internal/trainerclient,mentorix-backend/internal/db/pgconv,mentorix-backend/internal/health"
+integration_coverpkg="mentorix-backend/internal/auth,mentorix-backend/internal/cleanup,mentorix-backend/internal/exercise,mentorix-backend/internal/program,mentorix-backend/internal/trainerclient,mentorix-backend/internal/workoutcompletion,mentorix-backend/internal/db/pgconv,mentorix-backend/internal/health"
 
 echo "=== Unit test coverage ==="
 go test -count=1 -covermode=atomic -coverprofile="$tmp/unit.out" "${packages[@]}"

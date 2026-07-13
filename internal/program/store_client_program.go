@@ -43,6 +43,7 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 		weekID := pgconv.FromPGUUID(dayRow.ProgramVersionWeekID)
 		daysByWeek[weekID] = append(daysByWeek[weekID], Day{
 			ID:        pgconv.FromPGUUID(dayRow.ID),
+			DayKey:    pgconv.FromPGUUID(dayRow.DayKey),
 			DayNumber: int(dayRow.DayNumber),
 			SortOrder: int(dayRow.SortOrder),
 			Blocks:    nil,

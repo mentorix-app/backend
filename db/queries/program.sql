@@ -11,7 +11,7 @@ RETURNING id;
 -- name: InsertProgramDay :one
 INSERT INTO mentorix.program_week_days (program_id, week_id, day_number, sort_order)
 VALUES ($1, $2, $3, $4)
-RETURNING id;
+RETURNING id, day_key;
 
 -- name: GetProgramByID :one
 SELECT
@@ -175,7 +175,7 @@ SELECT EXISTS(
 ) AS ok;
 
 -- name: ListProgramDaysForWeek :many
-SELECT id, day_number, sort_order, created_at
+SELECT id, day_number, sort_order, created_at, day_key
 FROM mentorix.program_week_days
 WHERE week_id = $1
 ORDER BY sort_order ASC, day_number ASC;
