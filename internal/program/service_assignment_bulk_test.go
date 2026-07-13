@@ -9,6 +9,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+func TestBulkAssignmentSkipReason_alreadyAssigned(t *testing.T) {
+	if bulkAssignmentSkipReason(ErrAlreadyAssigned) != "already_assigned" {
+		t.Fatal(bulkAssignmentSkipReason(ErrAlreadyAssigned))
+	}
+}
+
 func TestBulkSetClientProgramAssignmentRequest_validate(t *testing.T) {
 	if err := (BulkSetClientProgramAssignmentRequest{}).Validate(); !errors.Is(err, ErrValidation) {
 		t.Fatalf("error = %v", err)

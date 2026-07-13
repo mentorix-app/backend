@@ -12,6 +12,7 @@ import (
 
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/trainerclient"
+	"mentorix-backend/internal/workoutcompletion"
 )
 
 const inviteStartPrefix = "inv_"
@@ -22,6 +23,7 @@ type trainerClient interface {
 	ListTelegramTrainers(ctx context.Context, telegramUserID string) (trainerclient.TelegramTrainerList, error)
 	SetTelegramActiveTrainer(ctx context.Context, telegramUserID string, trainerID uuid.UUID) (*trainerclient.ActiveTrainerResponse, error)
 	GetTelegramProgram(ctx context.Context, telegramUserID string, trainerID *uuid.UUID) (trainerclient.TelegramProgramResponse, error)
+	ClientUserIDByTelegram(ctx context.Context, telegramUserID string) (uuid.UUID, error)
 }
 
 type telegramAPI interface {
@@ -30,21 +32,36 @@ type telegramAPI interface {
 }
 
 type Bot struct {
-	api     telegramAPI
-	clients trainerClient
+	api      telegramAPI
+	clients  trainerClient
+	workouts *workoutcompletion.Service
+	pending  workoutcompletion.PendingStore
 }
 
-func New(api telegramAPI, clients trainerClient) *Bot {
-	return &Bot{api: api, clients: clients}
+type BotOption func(*Bot)
+
+func WithWorkoutCompletions(svc *workoutcompletion.Service, pending workoutcompletion.PendingStore) BotOption {
+	return func(b *Bot) {
+		b.workouts = svc
+		b.pending = pending
+	}
 }
 
-func NewFromToken(token string, clients trainerClient) (*Bot, error) {
+func New(api telegramAPI, clients trainerClient, opts ...BotOption) *Bot {
+	b := &Bot{api: api, clients: clients}
+	for _, opt := range opts {
+		opt(b)
+	}
+	return b
+}
+
+func NewFromToken(token string, clients trainerClient, opts ...BotOption) (*Bot, error) {
 	api, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		return nil, fmt.Errorf("telegram bot api: %w", err)
 	}
 	api.Debug = false
-	return New(api, clients), nil
+	return New(api, clients, opts...), nil
 }
 
 func (b *Bot) HandleUpdate(ctx context.Context, update tgbotapi.Update) {
@@ -65,6 +82,7 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	}
 
 	if msg.IsCommand() {
+		b.clearWorkoutPending(ctx, tgID)
 		switch msg.Command() {
 		case "start":
 			b.handleStart(ctx, msg)
@@ -76,12 +94,24 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	}
 
 	switch strings.TrimSpace(msg.Text) {
+	case btnProgram, btnTrainers, btnHelp:
+		b.clearWorkoutPending(ctx, tgID)
+	}
+
+	if b.tryHandleWorkoutResult(ctx, msg) {
+		return
+	}
+
+	switch strings.TrimSpace(msg.Text) {
 	case btnProgram:
 		b.handleProgram(ctx, msg.Chat.ID, tgID)
+		return
 	case btnTrainers:
 		b.handleTrainers(ctx, msg.Chat.ID, tgID)
+		return
 	case btnHelp:
 		b.sendText(msg.Chat.ID, helpText(), mainMenuKeyboard())
+		return
 	default:
 		if strings.TrimSpace(msg.Text) != "" {
 			b.sendText(msg.Chat.ID, "Выберите пункт меню или отправьте /menu.", mainMenuKeyboard())
@@ -158,16 +188,20 @@ func (b *Bot) handleProgramDay(ctx context.Context, chatID int64, telegramUserID
 		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
 		return
 	}
-	b.sendProgramDay(chatID, weekNumber, dayNumber, *day, resp.Program.Weeks)
+	completed := false
+	if b.workouts != nil && resp.Assignment != nil {
+		completed, err = b.workouts.IsCompleted(ctx, resp.Assignment.CompletionCycleID, day.DayKey)
+		if err != nil {
+			b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+			return
+		}
+	}
+	b.sendProgramDay(chatID, weekNumber, dayNumber, *day, resp.Program.Weeks, completed)
 }
 
-func (b *Bot) sendProgramDay(chatID int64, weekNumber, dayNumber int, day program.Day, weeks []program.Week) {
+func (b *Bot) sendProgramDay(chatID int64, weekNumber, dayNumber int, day program.Day, weeks []program.Week, completed bool) {
 	text := formatProgramDay(weekNumber, dayNumber, day)
-	inline := programDayNavKeyboard(weeks, weekNumber, dayNumber)
-	if len(inline.InlineKeyboard) == 0 {
-		b.sendMarkdown(chatID, text, mainMenuKeyboard())
-		return
-	}
+	inline := programDayKeyboard(weeks, weekNumber, dayNumber, completed)
 	b.sendMarkdownWithInline(chatID, text, mainMenuKeyboard(), inline)
 }
 
@@ -190,10 +224,24 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQ
 	if query == nil || query.Message == nil {
 		return
 	}
-	_, _ = b.api.Request(tgbotapi.NewCallback(query.ID, ""))
 
 	tgID := telegramUserID(query.From)
 	chatID := query.Message.Chat.ID
+
+	if query.Data == programDayDoneCancelCallbackData {
+		b.answerCallback(query.ID, "")
+		b.handlePendingCancel(ctx, chatID, tgID)
+		return
+	}
+
+	// Any other button clears pending wait for result text.
+	if weekNum, dayNum, ok := parseProgramDayDoneCallback(query.Data); ok {
+		b.handleProgramDayDone(ctx, chatID, tgID, weekNum, dayNum, query.ID)
+		return
+	}
+
+	b.clearWorkoutPending(ctx, tgID)
+	_, _ = b.api.Request(tgbotapi.NewCallback(query.ID, ""))
 
 	if trainerID, ok := parseTrainerCallback(query.Data); ok {
 		b.handleTrainerCallback(ctx, chatID, tgID, trainerID)

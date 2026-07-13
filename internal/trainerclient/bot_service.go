@@ -71,6 +71,10 @@ func (s *Service) SetTelegramActiveTrainer(ctx context.Context, telegramUserID s
 	return &ActiveTrainerResponse{TrainerID: trainerID, DisplayName: name}, nil
 }
 
+func (s *Service) ClientUserIDByTelegram(ctx context.Context, telegramUserID string) (uuid.UUID, error) {
+	return s.store.ClientUserIDByTelegram(ctx, telegramUserID)
+}
+
 func (s *Service) GetTelegramProgram(ctx context.Context, telegramUserID string, trainerID *uuid.UUID) (TelegramProgramResponse, error) {
 	trainer, name, assignment, detail, err := s.clientProgramView(ctx, telegramUserID, trainerID)
 	if err != nil {
@@ -83,10 +87,11 @@ func (s *Service) GetTelegramProgram(ctx context.Context, telegramUserID string,
 	}
 	if assignment != nil {
 		resp.Assignment = &ClientProgramSummary{
-			AssignmentID:     assignment.ID,
-			ProgramID:        assignment.ProgramID,
-			ProgramVersionID: assignment.ProgramVersionID,
-			AssignedAt:       assignment.AssignedAt,
+			AssignmentID:      assignment.ID,
+			ProgramID:         assignment.ProgramID,
+			ProgramVersionID:  assignment.ProgramVersionID,
+			AssignedAt:        assignment.AssignedAt,
+			CompletionCycleID: assignment.CompletionCycleID,
 		}
 		resp.Program = &detail
 	}

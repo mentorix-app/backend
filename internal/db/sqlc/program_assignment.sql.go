@@ -73,7 +73,7 @@ func (q *Queries) DeleteProgramAssignmentsByProgramID(ctx context.Context, progr
 }
 
 const getActiveProgramAssignmentByTrainerClient = `-- name: GetActiveProgramAssignmentByTrainerClient :one
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by, completion_cycle_id
 FROM mentorix.program_assignments
 WHERE trainer_id = $1
   AND client_user_id = $2
@@ -100,12 +100,13 @@ func (q *Queries) GetActiveProgramAssignmentByTrainerClient(ctx context.Context,
 		&i.ModifiedAt,
 		&i.CreatedBy,
 		&i.ModifiedBy,
+		&i.CompletionCycleID,
 	)
 	return i, err
 }
 
 const getProgramAssignmentByID = `-- name: GetProgramAssignmentByID :one
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by, completion_cycle_id
 FROM mentorix.program_assignments
 WHERE id = $1
 `
@@ -125,12 +126,13 @@ func (q *Queries) GetProgramAssignmentByID(ctx context.Context, id pgtype.UUID) 
 		&i.ModifiedAt,
 		&i.CreatedBy,
 		&i.ModifiedBy,
+		&i.CompletionCycleID,
 	)
 	return i, err
 }
 
 const getProgramAssignmentByTrainerClient = `-- name: GetProgramAssignmentByTrainerClient :one
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by, completion_cycle_id
 FROM mentorix.program_assignments
 WHERE trainer_id = $1
   AND client_user_id = $2
@@ -156,6 +158,7 @@ func (q *Queries) GetProgramAssignmentByTrainerClient(ctx context.Context, arg G
 		&i.ModifiedAt,
 		&i.CreatedBy,
 		&i.ModifiedBy,
+		&i.CompletionCycleID,
 	)
 	return i, err
 }
@@ -183,21 +186,23 @@ INSERT INTO mentorix.program_assignments (
   assigned_at,
   created_by,
   modified_at,
-  modified_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+  modified_by,
+  completion_cycle_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by, completion_cycle_id
 `
 
 type InsertProgramAssignmentParams struct {
-	ProgramID        pgtype.UUID `json:"program_id"`
-	ProgramVersionID pgtype.UUID `json:"program_version_id"`
-	TrainerID        pgtype.UUID `json:"trainer_id"`
-	ClientUserID     pgtype.UUID `json:"client_user_id"`
-	Status           string      `json:"status"`
-	AssignedAt       time.Time   `json:"assigned_at"`
-	CreatedBy        pgtype.UUID `json:"created_by"`
-	ModifiedAt       time.Time   `json:"modified_at"`
-	ModifiedBy       pgtype.UUID `json:"modified_by"`
+	ProgramID         pgtype.UUID `json:"program_id"`
+	ProgramVersionID  pgtype.UUID `json:"program_version_id"`
+	TrainerID         pgtype.UUID `json:"trainer_id"`
+	ClientUserID      pgtype.UUID `json:"client_user_id"`
+	Status            string      `json:"status"`
+	AssignedAt        time.Time   `json:"assigned_at"`
+	CreatedBy         pgtype.UUID `json:"created_by"`
+	ModifiedAt        time.Time   `json:"modified_at"`
+	ModifiedBy        pgtype.UUID `json:"modified_by"`
+	CompletionCycleID pgtype.UUID `json:"completion_cycle_id"`
 }
 
 func (q *Queries) InsertProgramAssignment(ctx context.Context, arg InsertProgramAssignmentParams) (MentorixProgramAssignment, error) {
@@ -211,6 +216,7 @@ func (q *Queries) InsertProgramAssignment(ctx context.Context, arg InsertProgram
 		arg.CreatedBy,
 		arg.ModifiedAt,
 		arg.ModifiedBy,
+		arg.CompletionCycleID,
 	)
 	var i MentorixProgramAssignment
 	err := row.Scan(
@@ -225,12 +231,13 @@ func (q *Queries) InsertProgramAssignment(ctx context.Context, arg InsertProgram
 		&i.ModifiedAt,
 		&i.CreatedBy,
 		&i.ModifiedBy,
+		&i.CompletionCycleID,
 	)
 	return i, err
 }
 
 const listActiveProgramAssignmentsByProgramID = `-- name: ListActiveProgramAssignmentsByProgramID :many
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by, completion_cycle_id
 FROM mentorix.program_assignments
 WHERE program_id = $1
   AND status = 'active'
@@ -258,6 +265,7 @@ func (q *Queries) ListActiveProgramAssignmentsByProgramID(ctx context.Context, p
 			&i.ModifiedAt,
 			&i.CreatedBy,
 			&i.ModifiedBy,
+			&i.CompletionCycleID,
 		); err != nil {
 			return nil, err
 		}
@@ -270,7 +278,7 @@ func (q *Queries) ListActiveProgramAssignmentsByProgramID(ctx context.Context, p
 }
 
 const listProgramAssignmentsByProgramID = `-- name: ListProgramAssignmentsByProgramID :many
-SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+SELECT id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by, completion_cycle_id
 FROM mentorix.program_assignments
 WHERE program_id = $1
 ORDER BY assigned_at DESC
@@ -297,6 +305,7 @@ func (q *Queries) ListProgramAssignmentsByProgramID(ctx context.Context, program
 			&i.ModifiedAt,
 			&i.CreatedBy,
 			&i.ModifiedBy,
+			&i.CompletionCycleID,
 		); err != nil {
 			return nil, err
 		}
@@ -333,20 +342,22 @@ SET program_id = $3,
     program_version_id = $4,
     assigned_at = $5,
     modified_at = $6,
-    modified_by = $7
+    modified_by = $7,
+    completion_cycle_id = $8
 WHERE trainer_id = $1
   AND client_user_id = $2
-RETURNING id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by
+RETURNING id, program_id, program_version_id, trainer_id, client_user_id, status, assigned_at, created_at, modified_at, created_by, modified_by, completion_cycle_id
 `
 
 type UpdateProgramAssignmentParams struct {
-	TrainerID        pgtype.UUID `json:"trainer_id"`
-	ClientUserID     pgtype.UUID `json:"client_user_id"`
-	ProgramID        pgtype.UUID `json:"program_id"`
-	ProgramVersionID pgtype.UUID `json:"program_version_id"`
-	AssignedAt       time.Time   `json:"assigned_at"`
-	ModifiedAt       time.Time   `json:"modified_at"`
-	ModifiedBy       pgtype.UUID `json:"modified_by"`
+	TrainerID         pgtype.UUID `json:"trainer_id"`
+	ClientUserID      pgtype.UUID `json:"client_user_id"`
+	ProgramID         pgtype.UUID `json:"program_id"`
+	ProgramVersionID  pgtype.UUID `json:"program_version_id"`
+	AssignedAt        time.Time   `json:"assigned_at"`
+	ModifiedAt        time.Time   `json:"modified_at"`
+	ModifiedBy        pgtype.UUID `json:"modified_by"`
+	CompletionCycleID pgtype.UUID `json:"completion_cycle_id"`
 }
 
 func (q *Queries) UpdateProgramAssignment(ctx context.Context, arg UpdateProgramAssignmentParams) (MentorixProgramAssignment, error) {
@@ -358,6 +369,7 @@ func (q *Queries) UpdateProgramAssignment(ctx context.Context, arg UpdateProgram
 		arg.AssignedAt,
 		arg.ModifiedAt,
 		arg.ModifiedBy,
+		arg.CompletionCycleID,
 	)
 	var i MentorixProgramAssignment
 	err := row.Scan(
@@ -372,6 +384,7 @@ func (q *Queries) UpdateProgramAssignment(ctx context.Context, arg UpdateProgram
 		&i.ModifiedAt,
 		&i.CreatedBy,
 		&i.ModifiedBy,
+		&i.CompletionCycleID,
 	)
 	return i, err
 }

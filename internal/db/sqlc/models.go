@@ -28,6 +28,26 @@ type MentorixAuthRefreshSession struct {
 	CreatedAt time.Time          `json:"created_at"`
 }
 
+type MentorixClientWorkoutCompletion struct {
+	ID                  pgtype.UUID `json:"id"`
+	ClientUserID        pgtype.UUID `json:"client_user_id"`
+	TrainerID           pgtype.UUID `json:"trainer_id"`
+	CompletedAt         time.Time   `json:"completed_at"`
+	ProgramID           pgtype.UUID `json:"program_id"`
+	ProgramVersionID    pgtype.UUID `json:"program_version_id"`
+	ProgramAssignmentID pgtype.UUID `json:"program_assignment_id"`
+	CompletionCycleID   pgtype.UUID `json:"completion_cycle_id"`
+	DayKey              pgtype.UUID `json:"day_key"`
+	WeekNumber          int32       `json:"week_number"`
+	DayNumber           int32       `json:"day_number"`
+	ProgramName         string      `json:"program_name"`
+	ProgramNameRu       string      `json:"program_name_ru"`
+	DaySnapshot         []byte      `json:"day_snapshot"`
+	ResultText          string      `json:"result_text"`
+	Source              string      `json:"source"`
+	CreatedAt           time.Time   `json:"created_at"`
+}
+
 type MentorixExercise struct {
 	ID              pgtype.UUID        `json:"id"`
 	Name            string             `json:"name"`
@@ -65,17 +85,18 @@ type MentorixProgram struct {
 }
 
 type MentorixProgramAssignment struct {
-	ID               pgtype.UUID `json:"id"`
-	ProgramID        pgtype.UUID `json:"program_id"`
-	ProgramVersionID pgtype.UUID `json:"program_version_id"`
-	TrainerID        pgtype.UUID `json:"trainer_id"`
-	ClientUserID     pgtype.UUID `json:"client_user_id"`
-	Status           string      `json:"status"`
-	AssignedAt       time.Time   `json:"assigned_at"`
-	CreatedAt        time.Time   `json:"created_at"`
-	ModifiedAt       time.Time   `json:"modified_at"`
-	CreatedBy        pgtype.UUID `json:"created_by"`
-	ModifiedBy       pgtype.UUID `json:"modified_by"`
+	ID                pgtype.UUID `json:"id"`
+	ProgramID         pgtype.UUID `json:"program_id"`
+	ProgramVersionID  pgtype.UUID `json:"program_version_id"`
+	TrainerID         pgtype.UUID `json:"trainer_id"`
+	ClientUserID      pgtype.UUID `json:"client_user_id"`
+	Status            string      `json:"status"`
+	AssignedAt        time.Time   `json:"assigned_at"`
+	CreatedAt         time.Time   `json:"created_at"`
+	ModifiedAt        time.Time   `json:"modified_at"`
+	CreatedBy         pgtype.UUID `json:"created_by"`
+	ModifiedBy        pgtype.UUID `json:"modified_by"`
+	CompletionCycleID pgtype.UUID `json:"completion_cycle_id"`
 }
 
 type MentorixProgramVersion struct {
@@ -110,6 +131,7 @@ type MentorixProgramVersionWeekDay struct {
 	DayNumber            int32       `json:"day_number"`
 	SortOrder            int32       `json:"sort_order"`
 	CreatedAt            time.Time   `json:"created_at"`
+	DayKey               pgtype.UUID `json:"day_key"`
 }
 
 type MentorixProgramVersionWeekDayBlock struct {
@@ -151,6 +173,7 @@ type MentorixProgramWeekDay struct {
 	ModifiedAt time.Time   `json:"modified_at"`
 	ModifiedBy pgtype.UUID `json:"modified_by"`
 	WeekID     pgtype.UUID `json:"week_id"`
+	DayKey     pgtype.UUID `json:"day_key"`
 }
 
 type MentorixProgramWeekDayBlock struct {

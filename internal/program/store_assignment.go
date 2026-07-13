@@ -94,6 +94,13 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 		return nil, nil
 	}
 
+	if previousProgramID != nil && *previousProgramID == *programID {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			return nil, fmt.Errorf("rollback: %w", err)
+		}
+		return nil, ErrAlreadyAssigned
+	}
+
 	p, err := s.GetProgramRow(ctx, *programID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -120,30 +127,33 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 	}
 
 	var row sqlc.MentorixProgramAssignment
+	cycleID := pgconv.ToPGUUID(uuid.New())
 	if previousProgramID == nil {
 		row, err = qtx.InsertProgramAssignment(ctx, sqlc.InsertProgramAssignmentParams{
-			ProgramID:        pgconv.ToPGUUID(*programID),
-			ProgramVersionID: latest.ID,
-			TrainerID:        trainerPG,
-			ClientUserID:     clientPG,
-			Status:           string(AssignmentStatusActive),
-			AssignedAt:       now,
-			CreatedBy:        trainerUserPG,
-			ModifiedAt:       now,
-			ModifiedBy:       trainerUserPG,
+			ProgramID:         pgconv.ToPGUUID(*programID),
+			ProgramVersionID:  latest.ID,
+			TrainerID:         trainerPG,
+			ClientUserID:      clientPG,
+			Status:            string(AssignmentStatusActive),
+			AssignedAt:        now,
+			CreatedBy:         trainerUserPG,
+			ModifiedAt:        now,
+			ModifiedBy:        trainerUserPG,
+			CompletionCycleID: cycleID,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("insert program assignment: %w", err)
 		}
 	} else {
 		row, err = qtx.UpdateProgramAssignment(ctx, sqlc.UpdateProgramAssignmentParams{
-			TrainerID:        trainerPG,
-			ClientUserID:     clientPG,
-			ProgramID:        pgconv.ToPGUUID(*programID),
-			ProgramVersionID: latest.ID,
-			AssignedAt:       now,
-			ModifiedAt:       now,
-			ModifiedBy:       trainerUserPG,
+			TrainerID:         trainerPG,
+			ClientUserID:      clientPG,
+			ProgramID:         pgconv.ToPGUUID(*programID),
+			ProgramVersionID:  latest.ID,
+			AssignedAt:        now,
+			ModifiedAt:        now,
+			ModifiedBy:        trainerUserPG,
+			CompletionCycleID: cycleID,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("update program assignment: %w", err)
@@ -227,14 +237,15 @@ func (s *Store) assignmentFromDBWithVersion(ctx context.Context, row sqlc.Mentor
 	}
 
 	a := Assignment{
-		ID:               pgconv.FromPGUUID(row.ID),
-		ProgramID:        programID,
-		ProgramVersionID: pgconv.FromPGUUID(row.ProgramVersionID),
-		TrainerID:        pgconv.FromPGUUID(row.TrainerID),
-		ClientUserID:     pgconv.FromPGUUID(row.ClientUserID),
-		Status:           AssignmentStatus(row.Status),
-		AssignedAt:       row.AssignedAt.UTC(),
-		CreatedAt:        row.CreatedAt.UTC(),
+		ID:                pgconv.FromPGUUID(row.ID),
+		ProgramID:         programID,
+		ProgramVersionID:  pgconv.FromPGUUID(row.ProgramVersionID),
+		TrainerID:         pgconv.FromPGUUID(row.TrainerID),
+		ClientUserID:      pgconv.FromPGUUID(row.ClientUserID),
+		Status:            AssignmentStatus(row.Status),
+		AssignedAt:        row.AssignedAt.UTC(),
+		CreatedAt:         row.CreatedAt.UTC(),
+		CompletionCycleID: pgconv.FromPGUUID(row.CompletionCycleID),
 	}
 	publishedAt := version.PublishedAt.UTC()
 	a.ClientPlanAt = &publishedAt

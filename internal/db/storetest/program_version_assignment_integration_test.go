@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -92,30 +93,32 @@ func TestProgramVersionAndAssignment_oneRowPerTrainerClient(t *testing.T) {
 	trainerUserPG := pgconv.ToPGUUID(trainerUserID)
 
 	_, err = q.InsertProgramAssignment(ctx, sqlc.InsertProgramAssignmentParams{
-		ProgramID:        pgconv.ToPGUUID(draft.ID),
-		ProgramVersionID: version.ID,
-		TrainerID:        trainerID,
-		ClientUserID:     pgconv.ToPGUUID(clientUserID),
-		Status:           "active",
-		AssignedAt:       now,
-		CreatedBy:        trainerUserPG,
-		ModifiedAt:       now,
-		ModifiedBy:       trainerUserPG,
+		ProgramID:         pgconv.ToPGUUID(draft.ID),
+		ProgramVersionID:  version.ID,
+		TrainerID:         trainerID,
+		ClientUserID:      pgconv.ToPGUUID(clientUserID),
+		Status:            "active",
+		AssignedAt:        now,
+		CreatedBy:         trainerUserPG,
+		ModifiedAt:        now,
+		ModifiedBy:        trainerUserPG,
+		CompletionCycleID: pgconv.ToPGUUID(uuid.New()),
 	})
 	if err != nil {
 		t.Fatalf("InsertProgramAssignment: %v", err)
 	}
 
 	_, err = q.InsertProgramAssignment(ctx, sqlc.InsertProgramAssignmentParams{
-		ProgramID:        pgconv.ToPGUUID(programB.ID),
-		ProgramVersionID: versionB.ID,
-		TrainerID:        trainerID,
-		ClientUserID:     pgconv.ToPGUUID(clientUserID),
-		Status:           "active",
-		AssignedAt:       now,
-		CreatedBy:        trainerUserPG,
-		ModifiedAt:       now,
-		ModifiedBy:       trainerUserPG,
+		ProgramID:         pgconv.ToPGUUID(programB.ID),
+		ProgramVersionID:  versionB.ID,
+		TrainerID:         trainerID,
+		ClientUserID:      pgconv.ToPGUUID(clientUserID),
+		Status:            "active",
+		AssignedAt:        now,
+		CreatedBy:         trainerUserPG,
+		ModifiedAt:        now,
+		ModifiedBy:        trainerUserPG,
+		CompletionCycleID: pgconv.ToPGUUID(uuid.New()),
 	})
 	if err == nil {
 		t.Fatal("expected unique violation for second assignment row")
@@ -126,13 +129,14 @@ func TestProgramVersionAndAssignment_oneRowPerTrainerClient(t *testing.T) {
 	}
 
 	reassigned, err := q.UpdateProgramAssignment(ctx, sqlc.UpdateProgramAssignmentParams{
-		TrainerID:        trainerID,
-		ClientUserID:     pgconv.ToPGUUID(clientUserID),
-		ProgramID:        pgconv.ToPGUUID(programB.ID),
-		ProgramVersionID: versionB.ID,
-		AssignedAt:       now,
-		ModifiedAt:       now,
-		ModifiedBy:       trainerUserPG,
+		TrainerID:         trainerID,
+		ClientUserID:      pgconv.ToPGUUID(clientUserID),
+		ProgramID:         pgconv.ToPGUUID(programB.ID),
+		ProgramVersionID:  versionB.ID,
+		AssignedAt:        now,
+		ModifiedAt:        now,
+		ModifiedBy:        trainerUserPG,
+		CompletionCycleID: pgconv.ToPGUUID(uuid.New()),
 	})
 	if err != nil {
 		t.Fatalf("UpdateProgramAssignment: %v", err)

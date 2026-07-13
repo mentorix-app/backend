@@ -198,6 +198,7 @@ func (s *Store) listDaysWithBlocks(ctx context.Context, weekID uuid.UUID) ([]Day
 		}
 		days = append(days, Day{
 			ID:        dayID,
+			DayKey:    pgconv.FromPGUUID(d.DayKey),
 			DayNumber: int(d.DayNumber),
 			SortOrder: int(d.SortOrder),
 			Blocks:    blocks,

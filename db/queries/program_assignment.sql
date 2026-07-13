@@ -8,8 +8,9 @@ INSERT INTO mentorix.program_assignments (
   assigned_at,
   created_by,
   modified_at,
-  modified_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+  modified_by,
+  completion_cycle_id
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
 -- name: GetProgramAssignmentByID :one
@@ -36,7 +37,8 @@ SET program_id = $3,
     program_version_id = $4,
     assigned_at = $5,
     modified_at = $6,
-    modified_by = $7
+    modified_by = $7,
+    completion_cycle_id = $8
 WHERE trainer_id = $1
   AND client_user_id = $2
 RETURNING *;

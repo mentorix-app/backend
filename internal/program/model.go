@@ -21,6 +21,7 @@ var (
 	ErrClientBlocked           = errors.New("client is blocked")
 	ErrClientNotFound          = errors.New("client not found")
 	ErrProgramNotPublished     = errors.New("program is not published")
+	ErrAlreadyAssigned         = errors.New("program already assigned")
 	ErrNoUnpublishedChanges    = errors.New("no unpublished changes to publish")
 	ErrInvalidSyncRequest      = errors.New("invalid sync request")
 	ErrVersionHasAssignments   = errors.New("version has assignments")
@@ -107,6 +108,7 @@ type Week struct {
 
 type Day struct {
 	ID        uuid.UUID  `json:"id"`
+	DayKey    uuid.UUID  `json:"-"`
 	DayNumber int        `json:"day_number"`
 	SortOrder int        `json:"sort_order"`
 	Blocks    []DayBlock `json:"blocks"`

@@ -212,9 +212,10 @@ INSERT INTO mentorix.program_version_week_days (
   program_version_id,
   program_version_week_id,
   day_number,
-  sort_order
-) VALUES ($1, $2, $3, $4)
-RETURNING id, program_version_id, program_version_week_id, day_number, sort_order, created_at
+  sort_order,
+  day_key
+) VALUES ($1, $2, $3, $4, $5)
+RETURNING id, program_version_id, program_version_week_id, day_number, sort_order, created_at, day_key
 `
 
 type InsertProgramVersionDayParams struct {
@@ -222,6 +223,7 @@ type InsertProgramVersionDayParams struct {
 	ProgramVersionWeekID pgtype.UUID `json:"program_version_week_id"`
 	DayNumber            int32       `json:"day_number"`
 	SortOrder            int32       `json:"sort_order"`
+	DayKey               pgtype.UUID `json:"day_key"`
 }
 
 func (q *Queries) InsertProgramVersionDay(ctx context.Context, arg InsertProgramVersionDayParams) (MentorixProgramVersionWeekDay, error) {
@@ -230,6 +232,7 @@ func (q *Queries) InsertProgramVersionDay(ctx context.Context, arg InsertProgram
 		arg.ProgramVersionWeekID,
 		arg.DayNumber,
 		arg.SortOrder,
+		arg.DayKey,
 	)
 	var i MentorixProgramVersionWeekDay
 	err := row.Scan(
@@ -239,6 +242,7 @@ func (q *Queries) InsertProgramVersionDay(ctx context.Context, arg InsertProgram
 		&i.DayNumber,
 		&i.SortOrder,
 		&i.CreatedAt,
+		&i.DayKey,
 	)
 	return i, err
 }
@@ -489,7 +493,7 @@ func (q *Queries) ListProgramVersionDayExercisesWithNamesByVersionID(ctx context
 }
 
 const listProgramVersionDaysByVersionID = `-- name: ListProgramVersionDaysByVersionID :many
-SELECT id, program_version_id, program_version_week_id, day_number, sort_order, created_at
+SELECT id, program_version_id, program_version_week_id, day_number, sort_order, created_at, day_key
 FROM mentorix.program_version_week_days
 WHERE program_version_id = $1
 ORDER BY sort_order ASC, day_number ASC
@@ -511,6 +515,7 @@ func (q *Queries) ListProgramVersionDaysByVersionID(ctx context.Context, program
 			&i.DayNumber,
 			&i.SortOrder,
 			&i.CreatedAt,
+			&i.DayKey,
 		); err != nil {
 			return nil, err
 		}
