@@ -30,7 +30,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | `modified_at` | timestamptz | |
 | `modified_by` | uuid FK → `users` | nullable |
 
-`block_type`: `single`, `emom`, `amrap`, `for_time`, `intervals`, `chipper`, `ladder`, `death_by`, `superset`, `complex`.
+`block_type`: `single`, `emom`, `amrap`, `for_time`, `intervals`, `chipper`, `ladder`, `death_by`, `superset`, `complex`, `skill_work`, `strength`, `conditioning`, `gymnastics`, `weightlifting`.
 
 ### `program_week_day_block_exercises`
 

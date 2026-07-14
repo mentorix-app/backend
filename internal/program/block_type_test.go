@@ -6,7 +6,8 @@ func TestBlockType_valid(t *testing.T) {
 	valid := []BlockType{
 		BlockTypeSingle, BlockTypeEMOM, BlockTypeAMRAP, BlockTypeForTime,
 		BlockTypeIntervals, BlockTypeChipper, BlockTypeLadder, BlockTypeDeathBy,
-		BlockTypeSuperset, BlockTypeComplex,
+		BlockTypeSuperset, BlockTypeComplex, BlockTypeSkillWork, BlockTypeStrength,
+		BlockTypeConditioning, BlockTypeGymnastics, BlockTypeWeightlifting,
 	}
 	for _, bt := range valid {
 		if !bt.valid() {

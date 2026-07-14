@@ -224,7 +224,8 @@ func enumBindings() []enumBinding {
 			string(program.BlockTypeSingle), string(program.BlockTypeEMOM), string(program.BlockTypeAMRAP),
 			string(program.BlockTypeForTime), string(program.BlockTypeIntervals), string(program.BlockTypeChipper),
 			string(program.BlockTypeLadder), string(program.BlockTypeDeathBy), string(program.BlockTypeSuperset),
-			string(program.BlockTypeComplex),
+			string(program.BlockTypeComplex), string(program.BlockTypeSkillWork), string(program.BlockTypeStrength),
+			string(program.BlockTypeConditioning), string(program.BlockTypeGymnastics), string(program.BlockTypeWeightlifting),
 		}},
 	}
 }
