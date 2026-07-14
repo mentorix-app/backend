@@ -197,12 +197,43 @@ func TestProgramWeeksKeyboard_filtersEmptyWeeks(t *testing.T) {
 		{WeekNumber: 2, Days: []program.Day{{
 			Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}},
 		}}},
-	})
+	}, nil)
 	if len(kb.InlineKeyboard) != 1 {
 		t.Fatalf("rows = %d, want 1", len(kb.InlineKeyboard))
 	}
 	if kb.InlineKeyboard[0][0].Text != "Неделя 2" {
 		t.Fatalf("label = %q", kb.InlineKeyboard[0][0].Text)
+	}
+}
+
+func TestProgramWeeksKeyboard_marksCompletedWeek(t *testing.T) {
+	sets, reps := 3, 10
+	ex := program.DayExercise{Sets: &sets, Reps: &reps}
+	d1, d2, d3 := uuid.New(), uuid.New(), uuid.New()
+	weeks := []program.Week{
+		{
+			WeekNumber: 1,
+			Days: []program.Day{
+				{DayNumber: 1, DayKey: d1, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{ex}}}},
+				{DayNumber: 2, DayKey: d2, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{ex}}}},
+			},
+		},
+		{
+			WeekNumber: 2,
+			Days: []program.Day{
+				{DayNumber: 1, DayKey: d3, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{ex}}}},
+			},
+		},
+	}
+	kb := programWeeksKeyboard(weeks, map[uuid.UUID]struct{}{d1: {}, d2: {}})
+	if len(kb.InlineKeyboard) != 2 {
+		t.Fatalf("rows = %d, want 2", len(kb.InlineKeyboard))
+	}
+	if kb.InlineKeyboard[0][0].Text != "✅ Неделя 1" {
+		t.Fatalf("week1 = %q", kb.InlineKeyboard[0][0].Text)
+	}
+	if kb.InlineKeyboard[1][0].Text != "Неделя 2" {
+		t.Fatalf("week2 = %q", kb.InlineKeyboard[1][0].Text)
 	}
 }
 
@@ -212,12 +243,32 @@ func TestProgramDaysKeyboard_filtersEmptyDays(t *testing.T) {
 		{DayNumber: 1},
 		{DayNumber: 2, Blocks: []program.DayBlock{{BlockType: program.BlockTypeComplex}}},
 		{DayNumber: 3, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}}},
-	})
+	}, nil)
 	if len(kb.InlineKeyboard) != 1 {
 		t.Fatalf("rows = %d, want 1", len(kb.InlineKeyboard))
 	}
 	if kb.InlineKeyboard[0][0].Text != "День 3" {
 		t.Fatalf("label = %q", kb.InlineKeyboard[0][0].Text)
+	}
+}
+
+func TestProgramDaysKeyboard_marksCompleted(t *testing.T) {
+	sets, reps := 3, 10
+	done := uuid.New()
+	open := uuid.New()
+	ex := program.DayExercise{Sets: &sets, Reps: &reps}
+	kb := programDaysKeyboard(1, []program.Day{
+		{DayNumber: 1, DayKey: done, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{ex}}}},
+		{DayNumber: 2, DayKey: open, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{ex}}}},
+	}, map[uuid.UUID]struct{}{done: {}})
+	if len(kb.InlineKeyboard) != 2 {
+		t.Fatalf("rows = %d, want 2", len(kb.InlineKeyboard))
+	}
+	if kb.InlineKeyboard[0][0].Text != "✅ День 1" {
+		t.Fatalf("day1 = %q", kb.InlineKeyboard[0][0].Text)
+	}
+	if kb.InlineKeyboard[1][0].Text != "День 2" {
+		t.Fatalf("day2 = %q", kb.InlineKeyboard[1][0].Text)
 	}
 }
 

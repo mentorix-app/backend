@@ -137,7 +137,16 @@ func (b *Bot) handleProgram(ctx context.Context, chatID int64, telegramUserID st
 		b.sendText(chatID, formatProgramSummary(resp), mainMenuKeyboard())
 		return
 	}
-	inline := programWeeksKeyboard(resp.Program.Weeks)
+	var completed map[uuid.UUID]struct{}
+	if b.workouts != nil && resp.Assignment != nil {
+		var cerr error
+		completed, cerr = b.workouts.CompletedDayKeys(ctx, resp.Assignment.CompletionCycleID)
+		if cerr != nil {
+			b.sendText(chatID, menuErrorText(cerr), mainMenuKeyboard())
+			return
+		}
+	}
+	inline := programWeeksKeyboard(resp.Program.Weeks, completed)
 	if len(inline.InlineKeyboard) == 0 {
 		b.sendText(chatID, formatProgramEmptyTrainingDays(resp.TrainerDisplayName), mainMenuKeyboard())
 		return
@@ -160,7 +169,16 @@ func (b *Bot) handleProgramWeek(ctx context.Context, chatID int64, telegramUserI
 		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
 		return
 	}
-	inline := programDaysKeyboard(weekNumber, week.Days)
+	var completed map[uuid.UUID]struct{}
+	if b.workouts != nil && resp.Assignment != nil {
+		var cerr error
+		completed, cerr = b.workouts.CompletedDayKeys(ctx, resp.Assignment.CompletionCycleID)
+		if cerr != nil {
+			b.sendText(chatID, menuErrorText(cerr), mainMenuKeyboard())
+			return
+		}
+	}
+	inline := programDaysKeyboard(weekNumber, week.Days, completed)
 	if len(inline.InlineKeyboard) == 0 {
 		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
 		return

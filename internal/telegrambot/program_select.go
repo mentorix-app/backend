@@ -1,6 +1,10 @@
 package telegrambot
 
-import "mentorix-backend/internal/program"
+import (
+	"github.com/google/uuid"
+
+	"mentorix-backend/internal/program"
+)
 
 func dayHasExercises(day program.Day) bool {
 	for _, block := range day.Blocks {
@@ -18,6 +22,23 @@ func weekHasSelectableDays(week program.Week) bool {
 		}
 	}
 	return false
+}
+
+func weekFullyCompleted(week program.Week, completed map[uuid.UUID]struct{}) bool {
+	if len(completed) == 0 {
+		return false
+	}
+	any := false
+	for _, day := range week.Days {
+		if !dayHasExercises(day) {
+			continue
+		}
+		any = true
+		if _, ok := completed[day.DayKey]; !ok {
+			return false
+		}
+	}
+	return any
 }
 
 func countSelectableWeeks(weeks []program.Week) int {

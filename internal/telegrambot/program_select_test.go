@@ -3,6 +3,8 @@ package telegrambot
 import (
 	"testing"
 
+	"github.com/google/uuid"
+
 	"mentorix-backend/internal/program"
 )
 
@@ -31,6 +33,29 @@ func TestWeekHasSelectableDays(t *testing.T) {
 	}
 	if weekHasSelectableDays(program.Week{Days: []program.Day{{}, {Blocks: []program.DayBlock{{}}}}}) {
 		t.Fatal("week with only empty blocks should not be selectable")
+	}
+}
+
+func TestWeekFullyCompleted(t *testing.T) {
+	d1, d2 := uuid.New(), uuid.New()
+	week := program.Week{
+		Days: []program.Day{
+			{DayKey: d1, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{}}}}},
+			{DayKey: d2}, // rest / empty — ignored
+			{DayKey: uuid.New(), Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{}}}}},
+		},
+	}
+	if weekFullyCompleted(week, map[uuid.UUID]struct{}{d1: {}}) {
+		t.Fatal("partial week should not be fully completed")
+	}
+	if !weekFullyCompleted(week, map[uuid.UUID]struct{}{
+		d1:                  {},
+		week.Days[2].DayKey: {},
+	}) {
+		t.Fatal("all training days done should be fully completed")
+	}
+	if weekFullyCompleted(week, nil) {
+		t.Fatal("nil completed should be false")
 	}
 }
 

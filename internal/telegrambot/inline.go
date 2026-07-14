@@ -89,15 +89,19 @@ func parseProgramDayCallback(data string) (weekNum, dayNum int, ok bool) {
 	return weekNum, dayNum, true
 }
 
-func programWeeksKeyboard(weeks []program.Week) tgbotapi.InlineKeyboardMarkup {
+func programWeeksKeyboard(weeks []program.Week, completed map[uuid.UUID]struct{}) tgbotapi.InlineKeyboardMarkup {
 	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(weeks))
 	for _, w := range weeks {
 		if !weekHasSelectableDays(w) {
 			continue
 		}
+		label := fmt.Sprintf("Неделя %d", w.WeekNumber)
+		if weekFullyCompleted(w, completed) {
+			label = "✅ " + label
+		}
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
-				fmt.Sprintf("Неделя %d", w.WeekNumber),
+				label,
 				programWeekCallbackData(w.WeekNumber),
 			),
 		))
@@ -105,15 +109,19 @@ func programWeeksKeyboard(weeks []program.Week) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
-func programDaysKeyboard(weekNumber int, days []program.Day) tgbotapi.InlineKeyboardMarkup {
+func programDaysKeyboard(weekNumber int, days []program.Day, completed map[uuid.UUID]struct{}) tgbotapi.InlineKeyboardMarkup {
 	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(days))
 	for _, d := range days {
 		if !dayHasExercises(d) {
 			continue
 		}
+		label := fmt.Sprintf("День %d", d.DayNumber)
+		if _, ok := completed[d.DayKey]; ok {
+			label = "✅ " + label
+		}
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(
-				fmt.Sprintf("День %d", d.DayNumber),
+				label,
 				programDayCallbackData(weekNumber, d.DayNumber),
 			),
 		))
