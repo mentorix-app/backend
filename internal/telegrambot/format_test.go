@@ -71,7 +71,7 @@ func TestFormatProgramSummary_noProgram(t *testing.T) {
 }
 
 func TestFormatProgramSummary_withCounts(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	text := formatProgramSummary(trainerclient.TelegramProgramResponse{
 		TrainerDisplayName: "Anna",
 		HasProgram:         true,
@@ -104,7 +104,7 @@ func TestFormatProgramSummary_withCounts(t *testing.T) {
 }
 
 func TestFormatProgramDay(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	text := formatProgramDay(2, 3, program.Day{
 		Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{
 			ExerciseNameRu: "Присед",
@@ -175,7 +175,7 @@ func TestFormatTrainers_singleNoProgram(t *testing.T) {
 }
 
 func TestFormatBlocks_groupExerciseInstruction(t *testing.T) {
-	sets, reps := 3, 5
+	sets, reps := "3", "5"
 	text := formatBlocks([]program.DayBlock{{
 		BlockType: program.BlockTypeComplex,
 		Exercises: []program.DayExercise{{
@@ -191,7 +191,7 @@ func TestFormatBlocks_groupExerciseInstruction(t *testing.T) {
 }
 
 func TestProgramWeeksKeyboard_filtersEmptyWeeks(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	kb := programWeeksKeyboard([]program.Week{
 		{WeekNumber: 1, Days: []program.Day{{}}},
 		{WeekNumber: 2, Days: []program.Day{{
@@ -207,7 +207,7 @@ func TestProgramWeeksKeyboard_filtersEmptyWeeks(t *testing.T) {
 }
 
 func TestProgramWeeksKeyboard_marksCompletedWeek(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	ex := program.DayExercise{Sets: &sets, Reps: &reps}
 	d1, d2, d3 := uuid.New(), uuid.New(), uuid.New()
 	weeks := []program.Week{
@@ -238,7 +238,7 @@ func TestProgramWeeksKeyboard_marksCompletedWeek(t *testing.T) {
 }
 
 func TestProgramDaysKeyboard_filtersEmptyDays(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	kb := programDaysKeyboard(1, []program.Day{
 		{DayNumber: 1},
 		{DayNumber: 2, Blocks: []program.DayBlock{{BlockType: program.BlockTypeComplex}}},
@@ -253,7 +253,7 @@ func TestProgramDaysKeyboard_filtersEmptyDays(t *testing.T) {
 }
 
 func TestProgramDaysKeyboard_marksCompleted(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	done := uuid.New()
 	open := uuid.New()
 	ex := program.DayExercise{Sets: &sets, Reps: &reps}
@@ -290,7 +290,7 @@ func TestParseProgramCallbacks(t *testing.T) {
 }
 
 func TestProgramDayNavKeyboard_nextDayAndWeek(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	ex := []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}}
 	weeks := []program.Week{
 		{WeekNumber: 1, Days: []program.Day{
@@ -317,7 +317,7 @@ func TestProgramDayNavKeyboard_nextDayAndWeek(t *testing.T) {
 }
 
 func TestFormatBlocks_withInstruction(t *testing.T) {
-	sets, reps := 3, 5
+	sets, reps := "3", "5"
 	text := formatBlocks([]program.DayBlock{{
 		BlockType:   program.BlockTypeComplex,
 		Instruction: "3 раунда, отдых 2 мин",
@@ -341,7 +341,7 @@ func TestFormatBlocks_withInstruction(t *testing.T) {
 }
 
 func TestFormatBlocks_exerciseInstruction(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	text := formatBlocks([]program.DayBlock{{
 		Exercises: []program.DayExercise{{
 			ExerciseNameRu: "Присед",
@@ -359,7 +359,7 @@ func TestFormatBlocks_exerciseInstruction(t *testing.T) {
 }
 
 func TestFormatBlocks_multipleStandaloneExercises(t *testing.T) {
-	sets, reps := 3, 8
+	sets, reps := "3", "8"
 	text := formatBlocks([]program.DayBlock{
 		{Exercises: []program.DayExercise{{
 			ExerciseNameRu: "Бросок мяча",
@@ -384,7 +384,7 @@ func TestFormatBlocks_multipleStandaloneExercises(t *testing.T) {
 }
 
 func TestFormatBlocks(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	text := formatBlocks([]program.DayBlock{{
 		Exercises: []program.DayExercise{{
 			ExerciseNameRu: "Присед",
@@ -398,7 +398,7 @@ func TestFormatBlocks(t *testing.T) {
 }
 
 func TestFormatToday_withBlocks(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	text := formatToday(trainerclient.TelegramTodayResponse{
 		TrainerDisplayName: "Anna",
 		HasProgram:         true,

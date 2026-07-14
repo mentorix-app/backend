@@ -61,8 +61,8 @@ func TestParseListParams_invalidCategory(t *testing.T) {
 func TestValidatePublishDetail(t *testing.T) {
 	category := CategoryWeightLoss
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 
 	d := Detail{
 		Program: Program{Name: "Test", Category: &category, Difficulty: &difficulty},

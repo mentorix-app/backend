@@ -145,8 +145,8 @@ func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, us
 						ProgramVersionWeekDayBlockID: blockRow.ID,
 						ExerciseID:                   pgconv.ToPGUUID(ex.ExerciseID),
 						SortOrder:                    int32(ex.SortOrder),
-						Sets:                         intPtrToInt32(ex.Sets),
-						Reps:                         intPtrToInt32(ex.Reps),
+						Sets:                         ex.Sets,
+						Reps:                         ex.Reps,
 						Instruction:                  ex.Instruction,
 					}); err != nil {
 						return fmt.Errorf("insert program version day exercise: %w", err)

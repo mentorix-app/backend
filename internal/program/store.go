@@ -551,8 +551,8 @@ func (s *Store) UpdateBlockExercise(ctx context.Context, userID, programID, week
 		ID:                    pgconv.ToPGUUID(itemID),
 		ProgramWeekDayBlockID: pgconv.ToPGUUID(blockID),
 		ExerciseID:            pgconv.ToPGUUID(in.ExerciseID),
-		Sets:                  intPtrToInt32(in.Sets),
-		Reps:                  intPtrToInt32(in.Reps),
+		Sets:                  in.Sets,
+		Reps:                  in.Reps,
 		Instruction:           instructionString(in.Instruction),
 		ModifiedAt:            now,
 		ModifiedBy:            pgconv.ToPGUUID(userID),
@@ -1011,8 +1011,8 @@ func dayExerciseFromRow(row sqlc.ListBlockExercisesRow) DayExercise {
 		ExerciseName:   row.Name,
 		ExerciseNameRu: row.NameRu,
 		SortOrder:      int(row.SortOrder),
-		Sets:           int32PtrToInt(row.Sets),
-		Reps:           int32PtrToInt(row.Reps),
+		Sets:           row.Sets,
+		Reps:           row.Reps,
 		Instruction:    row.Instruction,
 		CreatedAt:      row.CreatedAt.UTC(),
 	}
@@ -1024,8 +1024,8 @@ func blockExerciseInsertParams(blockPG pgtype.UUID, sort int32, userID uuid.UUID
 		ProgramWeekDayBlockID: blockPG,
 		ExerciseID:            pgconv.ToPGUUID(in.ExerciseID),
 		SortOrder:             sort,
-		Sets:                  intPtrToInt32(in.Sets),
-		Reps:                  intPtrToInt32(in.Reps),
+		Sets:                  in.Sets,
+		Reps:                  in.Reps,
 		Instruction:           instructionString(in.Instruction),
 		ModifiedAt:            now,
 		ModifiedBy:            pgconv.ToPGUUID(userID),
@@ -1037,20 +1037,4 @@ func instructionString(in *string) string {
 		return ""
 	}
 	return *in
-}
-
-func intPtrToInt32(p *int) *int32 {
-	if p == nil {
-		return nil
-	}
-	v := int32(*p)
-	return &v
-}
-
-func int32PtrToInt(p *int32) *int {
-	if p == nil {
-		return nil
-	}
-	v := int(*p)
-	return &v
 }

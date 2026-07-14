@@ -2082,13 +2082,21 @@ components:
         sort_order:
           type: integer
         sets:
-          type: integer
-          minimum: 1
+          type: string
           nullable: true
+          pattern: '^[0-9]+([/-][0-9]+)?$'
+          description: >
+            Optional volume string: digits only (`3`), one slash (`5/4`), or one
+            hyphen (`3-6`).
+          example: "3"
         reps:
-          type: integer
-          minimum: 1
+          type: string
           nullable: true
+          pattern: '^[0-9]+([/-][0-9]+)?$'
+          description: >
+            Optional volume string: digits only (`10`), one slash (`5/4`), or one
+            hyphen (`8-12`).
+          example: "10"
         instruction:
           type: string
         created_at:
@@ -2364,20 +2372,29 @@ components:
       type: object
       required: [exercise_id]
       description: >
-        `sets` and `reps` are optional and may be omitted or `null`; when a
-        numeric value is provided, it must be >= 1.
+        `sets` and `reps` are optional and may be omitted or `null`. When set,
+        each must be digits only (`3`), digits with one `/` (`5/4`), or digits
+        with one `-` (`3-6`).
       properties:
         exercise_id:
           type: string
           format: uuid
         sets:
-          type: integer
-          minimum: 1
+          type: string
           nullable: true
+          pattern: '^[0-9]+([/-][0-9]+)?$'
+          description: >
+            Optional volume string: digits only (`3`), one slash (`5/4`), or one
+            hyphen (`3-6`).
+          example: "3"
         reps:
-          type: integer
-          minimum: 1
+          type: string
           nullable: true
+          pattern: '^[0-9]+([/-][0-9]+)?$'
+          description: >
+            Optional volume string: digits only (`10`), one slash (`5/4`), or one
+            hyphen (`8-12`).
+          example: "10"
         instruction:
           type: string
 

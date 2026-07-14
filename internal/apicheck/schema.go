@@ -76,8 +76,8 @@ func schemaBindings() []schemaBinding {
 			SortOrder int               `json:"sort_order"`
 			Exercise  *struct {
 				ExerciseID  string  `json:"exercise_id"`
-				Sets        *int    `json:"sets"`
-				Reps        *int    `json:"reps"`
+				Sets        *string `json:"sets"`
+				Reps        *string `json:"reps"`
 				Instruction *string `json:"instruction"`
 			} `json:"exercise"`
 		}{})},
@@ -106,8 +106,8 @@ func schemaBindings() []schemaBinding {
 		}{})},
 		{name: "ProgramDayExerciseUpsert", typ: reflect.TypeOf(struct {
 			ExerciseID  string  `json:"exercise_id"`
-			Sets        *int    `json:"sets"`
-			Reps        *int    `json:"reps"`
+			Sets        *string `json:"sets"`
+			Reps        *string `json:"reps"`
 			Instruction *string `json:"instruction"`
 		}{})},
 		{name: "ProgramAssignment", typ: reflect.TypeOf(program.Assignment{})},

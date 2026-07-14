@@ -68,7 +68,7 @@ func (f *fakeWorkoutStore) Insert(_ context.Context, c workoutcompletion.Complet
 
 func programWithAssignment(dayKey uuid.UUID) trainerclient.TelegramProgramResponse {
 	cycle := uuid.New()
-	sets, reps := 3, 8
+	sets, reps := "3", "8"
 	ex := program.DayExercise{ExerciseNameRu: "Присед", Sets: &sets, Reps: &reps}
 	return trainerclient.TelegramProgramResponse{
 		TrainerID:          uuid.New(),

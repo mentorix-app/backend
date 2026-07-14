@@ -285,8 +285,8 @@ func TestService_Publish_invalidTransitionFromPublished(t *testing.T) {
 	programID := uuid.New()
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},

@@ -60,7 +60,7 @@ func TestWeekFullyCompleted(t *testing.T) {
 }
 
 func TestCountSelectableWeeksAndDays(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	weeks := []program.Week{
 		{WeekNumber: 1, Days: []program.Day{{}, {Blocks: []program.DayBlock{{}}}}},
 		{WeekNumber: 2, Days: []program.Day{
@@ -95,7 +95,7 @@ func TestFindWeekAndDay(t *testing.T) {
 }
 
 func TestNextSelectableDayInWeek(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	ex := program.DayBlock{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}
 	week := program.Week{
 		Days: []program.Day{
@@ -119,7 +119,7 @@ func TestNextSelectableDayInWeek(t *testing.T) {
 }
 
 func TestNextSelectableWeek(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	ex := []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}}
 	weeks := []program.Week{
 		{WeekNumber: 1, Days: []program.Day{{DayNumber: 1, Blocks: ex}}},

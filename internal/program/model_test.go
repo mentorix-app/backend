@@ -20,8 +20,8 @@ func singleBlockDay(ex DayExercise) Day {
 func validPublishDetail(name string) Detail {
 	category := CategoryWeightLoss
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 	return Detail{
 		Program: Program{Name: name, Category: &category, Difficulty: &difficulty},
 		Weeks: []Week{{
@@ -59,8 +59,8 @@ func TestValidatePublishDetail_whitespaceName(t *testing.T) {
 
 func TestValidatePublishDetail_missingCategory(t *testing.T) {
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 	d := Detail{
 		Program: Program{Name: "Test", Difficulty: &difficulty},
 		Weeks: []Week{{

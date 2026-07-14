@@ -153,7 +153,7 @@ func (f *fakeTrainerClient) GetTelegramProgram(context.Context, string, *uuid.UU
 	if f.program.TrainerDisplayName != "" || f.program.Program != nil {
 		return f.program, nil
 	}
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	ex := program.DayExercise{ExerciseNameRu: "Присед", Sets: &sets, Reps: &reps}
 	return trainerclient.TelegramProgramResponse{
 		TrainerDisplayName: "Anna",

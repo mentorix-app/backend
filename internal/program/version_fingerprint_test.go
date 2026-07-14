@@ -11,7 +11,7 @@ import (
 func TestDetailFingerprint_stableForSameContent(t *testing.T) {
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	exerciseID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
 	d := Detail{

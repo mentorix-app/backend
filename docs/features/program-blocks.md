@@ -62,7 +62,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 
 ## Publish
 
-- `single`: ровно 1 упражнение; `sets`/`reps` опциональны (можно не передавать или `null`), при значении — ≥ 1.
+- `single`: ровно 1 упражнение; `sets`/`reps` опциональны (`null`/omit); при значении — строка: только цифры (`3`), один `/` (`5/4`) или один `-` (`3-6`).
 - группа (`block_type` ≠ `single`): ≥ 1 упражнение; пустая группа — ошибка; для каждого упражнения те же правила `sets`/`reps`.
 - `instruction` группы может быть `""`.
 

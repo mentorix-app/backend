@@ -192,11 +192,11 @@ func writeInstructionLine(b *strings.Builder, instruction string) {
 func formatExerciseVolume(ex program.DayExercise) string {
 	switch {
 	case ex.Sets != nil && ex.Reps != nil:
-		return fmt.Sprintf("%d%s%d", *ex.Sets, cyrillicMultiplicationSign, *ex.Reps)
+		return fmt.Sprintf("%s%s%s", *ex.Sets, cyrillicMultiplicationSign, *ex.Reps)
 	case ex.Sets != nil:
-		return fmt.Sprintf("%d подх.", *ex.Sets)
+		return fmt.Sprintf("%s подх.", *ex.Sets)
 	case ex.Reps != nil:
-		return fmt.Sprintf("%d повт.", *ex.Reps)
+		return fmt.Sprintf("%s повт.", *ex.Reps)
 	default:
 		return ""
 	}
@@ -210,14 +210,7 @@ func exerciseLetterCyrillic(i int) string {
 }
 
 func blockIsGroup(t program.BlockType) bool {
-	switch t {
-	case program.BlockTypeEMOM, program.BlockTypeAMRAP, program.BlockTypeForTime,
-		program.BlockTypeIntervals, program.BlockTypeChipper, program.BlockTypeLadder,
-		program.BlockTypeDeathBy, program.BlockTypeSuperset, program.BlockTypeComplex:
-		return true
-	default:
-		return false
-	}
+	return t != "" && t != program.BlockTypeSingle
 }
 
 func blockTypeHeading(t program.BlockType) string {

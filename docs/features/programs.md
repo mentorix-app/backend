@@ -21,7 +21,7 @@
 - `PUT …/reorder` (недели, дни, блоки, упражнения в блоке): body — **полный** упорядоченный список id siblings (каждый ровно один раз); частичный список → 400 `invalid reorder: … count mismatch`.
 - Статусы: `draft` → `published` → `archived`; нет `published` → `draft`.
 - Publish из `archived` — только смена статуса, без новой версии.
-- Publish (draft): валидация name/category/difficulty, ≥1 неделя; в каждом непустом дне — блоки с упражнениями (`single`: 1 упражнение; группа: ≥1); `sets`/`reps` опциональны (можно не передавать или `null`), при значении — ≥ 1.
+- Publish (draft): валидация name/category/difficulty, ≥1 неделя; в каждом непустом дне — блоки с упражнениями (`single`: 1 упражнение; группа: ≥1); `sets`/`reps` опциональны (`null`/omit); при значении — строка: только цифры (`3`), один `/` (`5/4`) или один `-` (`3-6`).
 - `training_days_count` в `Program` / `ProgramDetail`: число дней с ≥1 блоком или упражнением (пустые дни не считаются); в списке — из SQL, в `GET /programs/{id}` — из загруженных недель.
 - Published: in-place edit + `has_unpublished_changes`; publish-update — новая версия.
 - Trainer видит свои; admin — все.

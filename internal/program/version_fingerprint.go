@@ -38,11 +38,11 @@ type blockFingerprint struct {
 }
 
 type exerciseFingerprint struct {
-	ExerciseID  string `json:"exercise_id"`
-	SortOrder   int    `json:"sort_order"`
-	Sets        *int   `json:"sets,omitempty"`
-	Reps        *int   `json:"reps,omitempty"`
-	Instruction string `json:"instruction"`
+	ExerciseID  string  `json:"exercise_id"`
+	SortOrder   int     `json:"sort_order"`
+	Sets        *string `json:"sets,omitempty"`
+	Reps        *string `json:"reps,omitempty"`
+	Instruction string  `json:"instruction"`
 }
 
 func DetailFingerprint(d Detail) (string, error) {

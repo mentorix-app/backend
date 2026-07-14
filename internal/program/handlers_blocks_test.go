@@ -114,7 +114,7 @@ func TestHandlers_AddBlockExercise_nullSetsReps(t *testing.T) {
 func TestHandlers_AddBlockExercise_zeroSets(t *testing.T) {
 	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
 	exerciseID := uuid.New()
-	body := `{"exercise_id":"` + exerciseID.String() + `","sets":0}`
+	body := `{"exercise_id":"` + exerciseID.String() + `","sets":"3/"}`
 	e := echo.New()
 	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises", body, userID, map[string]string{
 		"id":       programID.String(),
@@ -127,7 +127,7 @@ func TestHandlers_AddBlockExercise_zeroSets(t *testing.T) {
 func TestHandlers_AddBlockExercise_negativeSets(t *testing.T) {
 	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
 	exerciseID := uuid.New()
-	body := `{"exercise_id":"` + exerciseID.String() + `","sets":-1}`
+	body := `{"exercise_id":"` + exerciseID.String() + `","sets":"abc"}`
 	e := echo.New()
 	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises", body, userID, map[string]string{
 		"id":       programID.String(),
@@ -140,7 +140,7 @@ func TestHandlers_AddBlockExercise_negativeSets(t *testing.T) {
 func TestHandlers_AddBlockExercise(t *testing.T) {
 	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
 	exerciseID := uuid.New()
-	body := `{"exercise_id":"` + exerciseID.String() + `","sets":3,"reps":10}`
+	body := `{"exercise_id":"` + exerciseID.String() + `","sets":"3","reps":"10"}`
 	e := echo.New()
 	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises", body, userID, map[string]string{
 		"id":       programID.String(),
@@ -330,7 +330,7 @@ func TestHandlers_blockEndpoints_invalidID(t *testing.T) {
 			return h.MoveDayBlock(c)
 		}},
 		{"AddBlockExercise invalid exercise", func() error {
-			c, _ := programContext(e, http.MethodPost, "/", `{"exercise_id":"bad","sets":3,"reps":10}`, userID, map[string]string{
+			c, _ := programContext(e, http.MethodPost, "/", `{"exercise_id":"bad","sets":"3","reps":"10"}`, userID, map[string]string{
 				"id": uuid.New().String(), "week_id": weekID.String(), "block_id": blockID.String(),
 			})
 			return h.AddBlockExercise(c)
@@ -386,7 +386,7 @@ func TestHandlers_UpdateBlockExercise_invalidJSON(t *testing.T) {
 func TestHandlers_UpdateBlockExercise_unauthorized(t *testing.T) {
 	h := programHandler(&fakeProgramStore{})
 	e := echo.New()
-	c := e.NewContext(httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"sets":3}`)), httptest.NewRecorder())
+	c := e.NewContext(httptest.NewRequest(http.MethodPut, "/", strings.NewReader(`{"sets":"3"}`)), httptest.NewRecorder())
 	c.SetParamNames("id", "week_id", "block_id", "item_id")
 	c.SetParamValues(uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String())
 	assertHTTPError(t, h.UpdateBlockExercise(c), http.StatusUnauthorized)
@@ -511,7 +511,7 @@ func TestHandlers_blockEndpoints_notFound(t *testing.T) {
 			return h.MoveDayBlock(c)
 		}},
 		{"AddBlockExercise", func() error {
-			c, _ := programContext(e, http.MethodPost, "/", `{"exercise_id":"`+uuid.New().String()+`","sets":3,"reps":10}`, userID, map[string]string{
+			c, _ := programContext(e, http.MethodPost, "/", `{"exercise_id":"`+uuid.New().String()+`","sets":"3","reps":"10"}`, userID, map[string]string{
 				"id": programID.String(), "week_id": weekID.String(), "block_id": blockID.String(),
 			})
 			return h.AddBlockExercise(c)

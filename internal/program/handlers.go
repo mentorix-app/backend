@@ -92,8 +92,8 @@ func (b patchBody) toInput() UpdateInput {
 
 type dayExerciseBody struct {
 	ExerciseID  string  `json:"exercise_id"`
-	Sets        *int    `json:"sets"`
-	Reps        *int    `json:"reps"`
+	Sets        *string `json:"sets"`
+	Reps        *string `json:"reps"`
 	Instruction *string `json:"instruction"`
 }
 
@@ -102,12 +102,14 @@ func (b dayExerciseBody) toInput() (DayExerciseInput, error) {
 	if err != nil {
 		return DayExerciseInput{}, err
 	}
-	return DayExerciseInput{
+	in := DayExerciseInput{
 		ExerciseID:  exerciseID,
 		Sets:        b.Sets,
 		Reps:        b.Reps,
 		Instruction: b.Instruction,
-	}, nil
+	}
+	in.NormalizeVolume()
+	return in, nil
 }
 
 type createDayBlockBody struct {
