@@ -114,19 +114,21 @@ func mapTrainerClientRows(rows []sqlc.ListTrainerClientsRow) []clientListRow {
 	out := make([]clientListRow, len(rows))
 	for i, row := range rows {
 		out[i] = clientListRow{
-			clientUserID:   row.ClientUserID,
-			trainerUserID:  row.TrainerUserID,
-			status:         row.Status,
-			linkedAt:       row.CreatedAt,
-			displayName:    row.DisplayName,
-			avatarFilePath: row.AvatarFilePath,
-			assignmentID:   row.AssignmentID,
-			programID:      row.ProgramID,
-			programVersion: row.ProgramVersionID,
-			assignedAt:     row.AssignedAt,
-			programName:    stringFromPtr(row.ProgramName),
-			programNameRu:  stringFromPtr(row.ProgramNameRu),
-			isBehindLatest: row.IsBehindLatest,
+			clientUserID:       row.ClientUserID,
+			trainerUserID:      row.TrainerUserID,
+			trainerDisplayName: row.TrainerDisplayName,
+			status:             row.Status,
+			linkedAt:           row.CreatedAt,
+			lastActiveAt:       timePtrFromAny(row.LastActiveAt),
+			displayName:        row.DisplayName,
+			avatarFilePath:     row.AvatarFilePath,
+			assignmentID:       row.AssignmentID,
+			programID:          row.ProgramID,
+			programVersion:     row.ProgramVersionID,
+			assignedAt:         row.AssignedAt,
+			programName:        stringFromPtr(row.ProgramName),
+			programNameRu:      stringFromPtr(row.ProgramNameRu),
+			isBehindLatest:     row.IsBehindLatest,
 		}
 	}
 	return out
@@ -136,50 +138,56 @@ func mapAllTrainerClientRows(rows []sqlc.ListAllTrainerClientsRow) []clientListR
 	out := make([]clientListRow, len(rows))
 	for i, row := range rows {
 		out[i] = clientListRow{
-			clientUserID:   row.ClientUserID,
-			trainerUserID:  row.TrainerUserID,
-			status:         row.Status,
-			linkedAt:       row.CreatedAt,
-			displayName:    row.DisplayName,
-			avatarFilePath: row.AvatarFilePath,
-			assignmentID:   row.AssignmentID,
-			programID:      row.ProgramID,
-			programVersion: row.ProgramVersionID,
-			assignedAt:     row.AssignedAt,
-			programName:    stringFromPtr(row.ProgramName),
-			programNameRu:  stringFromPtr(row.ProgramNameRu),
-			isBehindLatest: row.IsBehindLatest,
+			clientUserID:       row.ClientUserID,
+			trainerUserID:      row.TrainerUserID,
+			trainerDisplayName: row.TrainerDisplayName,
+			status:             row.Status,
+			linkedAt:           row.CreatedAt,
+			lastActiveAt:       timePtrFromAny(row.LastActiveAt),
+			displayName:        row.DisplayName,
+			avatarFilePath:     row.AvatarFilePath,
+			assignmentID:       row.AssignmentID,
+			programID:          row.ProgramID,
+			programVersion:     row.ProgramVersionID,
+			assignedAt:         row.AssignedAt,
+			programName:        stringFromPtr(row.ProgramName),
+			programNameRu:      stringFromPtr(row.ProgramNameRu),
+			isBehindLatest:     row.IsBehindLatest,
 		}
 	}
 	return out
 }
 
 type clientListRow struct {
-	clientUserID   pgtype.UUID
-	trainerUserID  pgtype.UUID
-	status         string
-	linkedAt       time.Time
-	displayName    string
-	avatarFilePath string
-	assignmentID   pgtype.UUID
-	programID      pgtype.UUID
-	programVersion pgtype.UUID
-	assignedAt     pgtype.Timestamptz
-	programName    string
-	programNameRu  string
-	isBehindLatest bool
+	clientUserID       pgtype.UUID
+	trainerUserID      pgtype.UUID
+	trainerDisplayName string
+	status             string
+	linkedAt           time.Time
+	lastActiveAt       *time.Time
+	displayName        string
+	avatarFilePath     string
+	assignmentID       pgtype.UUID
+	programID          pgtype.UUID
+	programVersion     pgtype.UUID
+	assignedAt         pgtype.Timestamptz
+	programName        string
+	programNameRu      string
+	isBehindLatest     bool
 }
 
 func clientListResult(rows []clientListRow, params ListParams, total int) ClientListResult {
 	out := make([]Client, 0, len(rows))
 	for _, row := range rows {
 		client := Client{
-			ClientUserID:   pgconv.FromPGUUID(row.clientUserID),
-			TrainerUserID:  pgconv.FromPGUUID(row.trainerUserID),
-			DisplayName:    row.displayName,
-			Status:         row.status,
-			LinkedAt:       row.linkedAt.UTC(),
-			avatarFilePath: row.avatarFilePath,
+			ClientUserID:       pgconv.FromPGUUID(row.clientUserID),
+			TrainerUserID:      pgconv.FromPGUUID(row.trainerUserID),
+			TrainerDisplayName: row.trainerDisplayName,
+			DisplayName:        row.displayName,
+			Status:             row.status,
+			LinkedAt:           row.linkedAt.UTC(),
+			LastActiveAt:       utcTimePtr(row.lastActiveAt),
+			avatarFilePath:     row.avatarFilePath,
 		}
 		if row.assignmentID.Valid {
 			summary := &ClientProgramSummary{
@@ -200,6 +208,35 @@ func clientListResult(rows []clientListRow, params ListParams, total int) Client
 		Items:      out,
 		Pagination: paginationMeta(params.Page, params.Limit, total),
 	}
+}
+
+func timePtrFromAny(v any) *time.Time {
+	switch t := v.(type) {
+	case time.Time:
+		if t.IsZero() {
+			return nil
+		}
+		u := t.UTC()
+		return &u
+	case *time.Time:
+		return utcTimePtr(t)
+	case pgtype.Timestamptz:
+		if !t.Valid {
+			return nil
+		}
+		u := t.Time.UTC()
+		return &u
+	default:
+		return nil
+	}
+}
+
+func utcTimePtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	u := t.UTC()
+	return &u
 }
 
 func (s *Store) UserIDByTelegram(ctx context.Context, telegramUserID string) (uuid.UUID, error) {

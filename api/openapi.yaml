@@ -2662,9 +2662,11 @@ components:
       required:
         - client_user_id
         - trainer_user_id
+        - trainer_display_name
         - display_name
         - status
         - linked_at
+        - last_active_at
         - avatar_url
       properties:
         client_user_id:
@@ -2676,6 +2678,9 @@ components:
           description: >
             User id of the trainer for the client link shown in this item.
             Compare with user_id from GET /auth/me to allow program assignment.
+        trainer_display_name:
+          type: string
+          description: Display name of the trainer for the link shown in this item.
         display_name:
           type: string
         status:
@@ -2684,6 +2689,13 @@ components:
         linked_at:
           type: string
           format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: >
+            Latest `client_workout_completions.completed_at` for this client
+            (any trainer). Null when the client has never completed a workout day.
         avatar_url:
           type: string
           description: >

@@ -33,13 +33,15 @@ type ClientProgramSummary struct {
 }
 
 type Client struct {
-	ClientUserID      uuid.UUID             `json:"client_user_id"`
-	TrainerUserID     uuid.UUID             `json:"trainer_user_id"`
-	DisplayName       string                `json:"display_name"`
-	Status            string                `json:"status"`
-	LinkedAt          time.Time             `json:"linked_at"`
-	AvatarURL         string                `json:"avatar_url"`
-	ProgramAssignment *ClientProgramSummary `json:"program_assignment"`
+	ClientUserID       uuid.UUID             `json:"client_user_id"`
+	TrainerUserID      uuid.UUID             `json:"trainer_user_id"`
+	TrainerDisplayName string                `json:"trainer_display_name"`
+	DisplayName        string                `json:"display_name"`
+	Status             string                `json:"status"`
+	LinkedAt           time.Time             `json:"linked_at"`
+	LastActiveAt       *time.Time            `json:"last_active_at"`
+	AvatarURL          string                `json:"avatar_url"`
+	ProgramAssignment  *ClientProgramSummary `json:"program_assignment"`
 
 	avatarFilePath string `json:"-"`
 }
