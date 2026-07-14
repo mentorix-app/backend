@@ -1941,6 +1941,8 @@ components:
         - squat_rack
         - rowing_machine
         - assault_bike
+        - bike_erg
+        - ski_erg
         - jump_rope
         - plyo_box
         - medicine_ball

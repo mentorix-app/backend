@@ -22,5 +22,5 @@
 | Render dev | [environments.md](environments.md) |
 | Garbage cleanup (assignments one-row, auto version purge, invites, Redis stale, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Миграции: версия 21 (`./scripts/migrate-check.sh`)._
+_Миграции: версия 22 (`./scripts/migrate-check.sh`)._
 

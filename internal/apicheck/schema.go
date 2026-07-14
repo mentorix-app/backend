@@ -201,7 +201,8 @@ func enumBindings() []enumBinding {
 		{name: "Equipment", values: []string{
 			string(exercise.EquipmentBarbell), string(exercise.EquipmentDumbbells), string(exercise.EquipmentKettlebell),
 			string(exercise.EquipmentPullUpBar), string(exercise.EquipmentSquatRack), string(exercise.EquipmentRowingMachine),
-			string(exercise.EquipmentAssaultBike), string(exercise.EquipmentJumpRope), string(exercise.EquipmentPlyoBox),
+			string(exercise.EquipmentAssaultBike), string(exercise.EquipmentBikeErg), string(exercise.EquipmentSkiErg),
+			string(exercise.EquipmentJumpRope), string(exercise.EquipmentPlyoBox),
 			string(exercise.EquipmentMedicineBall), string(exercise.EquipmentWallBall), string(exercise.EquipmentResistanceBands),
 			string(exercise.EquipmentBattleRopes), string(exercise.EquipmentGymnasticRings), string(exercise.EquipmentSandbag),
 			string(exercise.EquipmentSled), string(exercise.EquipmentWeightPlates),
