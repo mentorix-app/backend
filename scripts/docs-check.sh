@@ -110,7 +110,14 @@ PY
 echo ""
 echo "=== Legacy references ==="
 
-legacy_hits="$(rg -n 'AGENTS\.md|mentorix\.mdc' --glob '!scripts/docs-check.sh' . 2>/dev/null | rg -v 'old AGENTS\.md pattern' || true)"
+# Prefer ripgrep; fall back to grep for CI runners without rg.
+if command -v rg >/dev/null 2>&1; then
+  legacy_hits="$(rg -n 'AGENTS\.md|mentorix\.mdc' --glob '!scripts/docs-check.sh' . 2>/dev/null | rg -v 'old AGENTS\.md pattern' || true)"
+else
+  legacy_hits="$(grep -RInE 'AGENTS\.md|mentorix\.mdc' \
+    --exclude-dir=.git --exclude-dir=node_modules --exclude=docs-check.sh . 2>/dev/null \
+    | grep -v 'old AGENTS\.md pattern' || true)"
+fi
 if [[ -n "$legacy_hits" ]]; then
   echo "$legacy_hits" >&2
   fail "stale references to AGENTS.md or mentorix.mdc"

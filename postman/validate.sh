@@ -61,27 +61,7 @@ if [ "${SKIP_SMOKE:-}" = "1" ]; then
   echo "=== Smoke test ==="
   echo "  skipped (SKIP_SMOKE=1)"
 else
-  echo "=== Smoke test (localhost, if API running) ==="
-BASE="http://localhost:8080"
-if curl -sf "$BASE/health" > /dev/null 2>&1; then
-  echo "  GET /health OK"
-  curl -sf "$BASE/health/ready" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('status') in ('ready','not_ready','no_dependencies_configured'); print('  GET /health/ready OK:', d['status'])"
-  if [ -z "${SMOKE_EMAIL:-}" ] || [ -z "${SMOKE_PASSWORD:-}" ]; then
-    echo "  POST /auth/login skipped (set SMOKE_EMAIL and SMOKE_PASSWORD to run smoke auth)"
-  else
-  TOKEN=$(curl -sf -X POST "$BASE/auth/login" -H "Content-Type: application/json" -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\"}" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
-  if [ -n "$TOKEN" ]; then
-    echo "  POST /auth/login OK"
-    curl -sf -H "Authorization: Bearer $TOKEN" "$BASE/auth/me" | python3 -c "import sys,json; d=json.load(sys.stdin); print('  GET /auth/me OK: roles=', d.get('roles'))"
-    curl -sf -H "Authorization: Bearer $TOKEN" "$BASE/exercises?page=1&limit=20&sort_by=name&sort_order=asc" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'items' in d and 'pagination' in d; print('  GET /exercises OK: total=', d['pagination']['total'])"
-    curl -sf -H "Authorization: Bearer $TOKEN" "$BASE/programs?page=1&limit=20&sort_by=created_at&sort_order=desc" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'items' in d and 'pagination' in d; print('  GET /programs OK: total=', d['pagination']['total'])"
-  else
-    echo "  POST /auth/login skipped (login failed — check SMOKE_EMAIL/SMOKE_PASSWORD or register the user first)"
-  fi
-  fi
-else
-  echo "  API not running on $BASE — skip smoke"
-fi
+  ./scripts/smoke.sh
 fi
 
 echo ""

@@ -22,13 +22,13 @@ Import `postman/mentorix-backend.postman_collection.json` + `mentorix-local.post
 
 Validate contract: `make validate`
 
-Local + Render stage (Blueprint): [docs/environments.md](docs/environments.md).
+Local + Render stage/prod (CI/CD): [docs/environments.md](docs/environments.md).
 
 ## QA
 
-- **Pre-commit:** `make install-hooks` (once; included in `make setup`) — hook runs `make check` on every commit. Needs `.env`, Postgres (`TEST_DATABASE_URL` for integration), API on `:8080` for smoke; or `PRE_COMMIT_CHECK_FLAGS=--no-smoke`.
-- **Before commit:** sync docs/rules — see [.cursor/rules/qa-before-push.mdc](.cursor/rules/qa-before-push.mdc) §A; `make docs-check`.
-- **Before push:** `make check` (full) or `make check-ci` (CI parity).
+- **Pre-commit:** `make install-hooks` (once; in `make setup`) — `make check-ci` on every commit. Override: `PRE_COMMIT_CHECK_FLAGS=--no-coverage git commit …`.
+- **Before commit:** sync docs/rules — [.cursor/rules/qa-before-push.mdc](.cursor/rules/qa-before-push.mdc) §A (`docs-check` in check-ci).
+- **Before push:** `make check` (full: migrate-check + smoke).
 
 Details: [docs/README.md#qa](docs/README.md#qa).
 

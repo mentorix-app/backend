@@ -17,7 +17,7 @@ No commit with code/API/DB changes without aligned docs/rules.
 | New naming/process pattern | matching `.cursor/rules/*.mdc` |
 | Docs/rules only | no conflict with code, OpenAPI, `db/schema.sql` |
 
-Run `make docs-check` (links, sizes, migration version in docs).
+Run `make docs-check` (links, sizes, migration version in docs). Included in `make check-ci`.
 
 **Actuality:** docs describe **now** only; delete stale text in the same commit. Canon: code + OpenAPI + schema.
 
@@ -25,25 +25,23 @@ Run `make docs-check` (links, sizes, migration version in docs).
 
 Docs-only commits: still check links, duplicates, contradictions.
 
-**Pre-commit hook:** after `make install-hooks` (included in `make setup`), each `git commit` runs `make check`. Override smoke only: `PRE_COMMIT_CHECK_FLAGS=--no-smoke git commit …`.
+**Pre-commit hook:** after `make install-hooks` (included in `make setup`), each `git commit` runs `make check-ci`. Override: `PRE_COMMIT_CHECK_FLAGS=--no-coverage git commit …`.
 
 ## B. Technical QA — before push
 
-Full run: `make check` or `./scripts/check.sh`. CI parity: `make check-ci`.
+Full run: `make check`. CI / pre-commit: `make check-ci`.
 
-| Step | Command |
-| ---- | ------- |
-| Format | `gofmt` |
-| Vet / lint | `go vet`, golangci-lint |
-| Unit tests | `go test ./...` |
-| Build | `go build ./...` |
-| sqlc drift | `sqlc generate` + clean `git diff internal/db/sqlc/` |
-| go generate | `go generate ./internal/db/...` + diff |
-| Contract | `SKIP_SMOKE=1 ./postman/validate.sh` |
-| Migrate (full local) | `./scripts/migrate-check.sh` |
-| Integration | `go test -tags integration ./internal/db/storetest/...` |
-| Coverage | `./scripts/coverage.sh --min 85` |
-| Smoke (full, API up) | `./postman/validate.sh` |
-| After migrations | `make schema-sync` |
+| Step | In `check-ci` | Full `check` only |
+| ---- | --- | --- |
+| gofmt, vet, unit, build | yes | yes |
+| sqlc drift | yes | yes |
+| golangci-lint | yes | yes |
+| contract (`SKIP_SMOKE=1`) | yes | via validate; smoke separate |
+| docs-check | yes | yes |
+| integration + coverage 85% | yes | yes |
+| migrate-check | no | yes |
+| live smoke (`scripts/smoke.sh`) | no | yes (API up) |
 
-See [scripts/check.sh](../../scripts/check.sh) for flags (`--no-smoke`, etc.).
+After migrations: `make schema-sync`. See [scripts/check.sh](../../scripts/check.sh).
+
+Deploy / Render: [docs/environments.md](../../docs/environments.md).

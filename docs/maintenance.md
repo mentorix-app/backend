@@ -29,11 +29,13 @@
 ## Перед коммитом
 
 1. Сверить diff с docs/rules/status ([qa-before-push.mdc](../.cursor/rules/qa-before-push.mdc) §A).
-2. `./scripts/docs-check.sh` или `make docs-check`.
+2. Pre-commit / вручную: `make check-ci` (включает `docs-check`).
 
 ## Перед push
 
-`make check` (полный) или `make check-ci` (как GitHub CI).
+`make check` (полный: ещё migrate-check + smoke). CI на GitHub = `make check-ci`.
+
+Release / Render: [environments.md](environments.md).
 
 ## status.md
 

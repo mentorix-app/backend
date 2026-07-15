@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
 # Installed by: make install-hooks
-# Runs the full local QA suite before each commit.
+# Runs CI-parity checks before each commit (make check-ci).
 #
-# Prerequisites: Go, .env (DATABASE_URL), Postgres (TEST_DATABASE_URL for integration),
-# API on http://localhost:8080 for Postman smoke (or set PRE_COMMIT_CHECK_FLAGS=--no-smoke).
+# Override: PRE_COMMIT_CHECK_FLAGS='--no-coverage' git commit …
+# Full local suite (migrate-check + smoke): make check
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-echo "=== pre-commit: make check ==="
-if [[ -n "${PRE_COMMIT_CHECK_FLAGS:-}" ]]; then
-  # shellcheck disable=SC2086
-  make check ${PRE_COMMIT_CHECK_FLAGS}
-else
-  make check
-fi
+echo "=== pre-commit: make check-ci ==="
+# shellcheck disable=SC2086
+make check-ci CHECK_FLAGS="${PRE_COMMIT_CHECK_FLAGS:-}"

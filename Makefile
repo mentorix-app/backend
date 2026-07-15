@@ -17,7 +17,7 @@ AIR_VERSION ?= v1.61.7
 	migrate migrate-down migrate-version migrate-check \
 	schema-sync sqlc generate \
 	test test-integration vet fmt lint \
-	validate validate-smoke check check-ci docs-check \
+	validate validate-smoke smoke check check-ci docs-check \
 	coverage coverage-check install-hooks \
 	install-tools install-migrate install-sqlc install-lint install-air
 
@@ -87,20 +87,23 @@ validate: ## Contract validation (Postman + apicheck, no live API smoke)
 validate-smoke: ## Contract validation + smoke on http://localhost:8080
 	$(ROOT)postman/validate.sh
 
+smoke: ## Live API smoke (SMOKE_BASE_URL / SMOKE_EMAIL / SMOKE_PASSWORD)
+	$(SCRIPTS)/smoke.sh
+
 check: ## Full local QA suite (see scripts/check.sh --help for flags)
 	$(SCRIPTS)/check.sh $(CHECK_FLAGS)
 
 check-ci: ## CI parity checks only
-	$(SCRIPTS)/check.sh --ci
+	$(SCRIPTS)/check.sh --ci $(CHECK_FLAGS)
 
 docs-check: ## Validate docs/rules links, sizes, migration version in docs
 	$(SCRIPTS)/docs-check.sh
 
-install-hooks: ## Install git pre-commit hook (runs make check)
+install-hooks: ## Install git pre-commit hook (runs make check-ci)
 	@test -d .git/hooks || (echo "Not a git repository (.git/hooks missing)" >&2 && exit 1)
 	@cp $(SCRIPTS)/git-hooks/pre-commit .git/hooks/pre-commit
 	@chmod +x .git/hooks/pre-commit
-	@echo "Installed .git/hooks/pre-commit → make check"
+	@echo "Installed .git/hooks/pre-commit → make check-ci"
 
 coverage: ## Coverage report (unit + integration merge)
 	$(SCRIPTS)/coverage.sh

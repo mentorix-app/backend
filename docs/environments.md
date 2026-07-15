@@ -1,74 +1,72 @@
 # Окружения
 
-## Фазы
+1. **Local** — Postgres + Redis, `make run` / `make dev`, `.env` из [`.env.example`](../.env.example).
+2. **Stage** — `develop` → CI → Deploy Hook → `mentorix-api-stage`.
+3. **Prod** — `main` → CI → approval (`production`) → Deploy Hook → `mentorix-api`.
 
-1. **Local:** нативный Postgres + Redis, API (`make run` / `make dev`). `.env` из `.env.example`.
-2. **Render stage:** ветка `develop`, инфра через Blueprint [`render.yaml`](../render.yaml) — `mentorix-api-stage` / `mentorix-db-stage` / `mentorix-redis-stage`.
+Секреты не коммитить. Blueprint: [`render.yaml`](../render.yaml).
 
-Секреты не коммитить.
+## Имена
 
-## Имена stage (и prod на будущее)
-
-| | Stage (сейчас) | Prod (позже) |
+| | Stage | Prod |
 | --- | --- | --- |
-| Web | `mentorix-api-stage` → `https://mentorix-api-stage.onrender.com` | `mentorix-api` |
-| Postgres | `mentorix-db-stage` | `mentorix-db` |
-| Redis | `mentorix-redis-stage` | `mentorix-redis` |
+| Web | `mentorix-api-stage` (`https://mentorix-api-stage.onrender.com`) | `mentorix-api` (`https://mentorix-api.onrender.com`) |
+| Postgres / Redis | `mentorix-db-stage` / `mentorix-redis-stage` | `mentorix-db` / `mentorix-redis` |
 
-Plans stage: web **starter**, Postgres **basic-256mb** (PG 16), Redis **starter** (Free недоступен параллельно со старым free Key Value). Region: **frankfurt**.
+Plans: web **starter**, Postgres **basic-256mb** (PG 16), Redis **starter**, region **frankfurt**.
 
-## Env
+## Release flow
 
-| Файл | В git | Назначение |
-| ---- | ----- | ---------- |
-| [`.env.example`](../.env.example) | да | Local + комментарии stage |
-| `.env` | **нет** | Локальная рабочая копия |
-| [`render.yaml`](../render.yaml) | да | Blueprint: `DATABASE_URL`/`REDIS_URL` из linked services; секреты `sync: false` |
+```text
+feature/* → PR → develop → CI → Deploy stage → smoke
+                 └─ PR → main → CI → approval → Deploy prod → health
+```
 
-**Local:** `make setup` создаёт `.env`, если файла нет.
+- Required check: job **`check`** (`make check-ci`).
+- Migrate: [`scripts/render-migrate.sh`](../scripts/render-migrate.sh) в `preDeployCommand` (fail = fail deploy).
+- Local: pre-commit = `make check-ci`; before push = `make check`.
 
-**Render stage:** после Blueprint в Dashboard заполнить `JWT_SECRET`, `CORS_ALLOW_ORIGINS`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, … Зеркало значений можно держать в личном `.env` (не в git).
+## GitHub (один раз)
 
-**Integration tests:** `TEST_DATABASE_URL` → БД `mentorix_test` (см. `.env.example`).
+**Branch protection** (`develop`, `main`): require PR; required status **`check`**; up to date.
 
-## Render stage — новый стенд (Blueprint)
+| Environment | Reviewers | Secrets |
+| --- | --- | --- |
+| `staging` | нет | `RENDER_DEPLOY_HOOK_STAGE`; optional `SMOKE_EMAIL` / `SMOKE_PASSWORD` |
+| `production` | required | `RENDER_DEPLOY_HOOK_PROD` |
 
-1. Закоммить / запушь `render.yaml` в `develop`.
-2. Dashboard → **New → Blueprint** → этот репо → файл `render.yaml` → apply (создаст **новые** сервисы; старые `mentorix-backend` / `mentorix-dev-*` не трогает).
-3. Заполнить `sync: false` секреты на `mentorix-api-stage`.
-4. Дождаться deploy → `GET https://mentorix-api-stage.onrender.com/health`.
+Deploy Hook: Render → service → Settings → Deploy Hook.
 
-### Cutover данных (со старого Postgres)
+## Render Blueprint
 
-Пока старый API (`mentorix-backend.onrender.com`) обслуживает клиентов. Параллельно:
+1. Push [`render.yaml`](../render.yaml) → Dashboard Blueprint sync/apply.
+2. Fill `sync: false` secrets on both APIs; wire Deploy Hooks into GitHub Environments.
+3. Smoke: `GET …/health` (stage URL above).
+
+### Legacy cutover → stage
 
 ```bash
-# External Database URL старого mentorix-dev-db
 pg_dump --no-owner --format=custom -f mentorix_stage.dump "$OLD_DATABASE_URL"
-
-# External Database URL нового mentorix-db-stage
 pg_restore --no-owner --clean --if-exists -d "$NEW_DATABASE_URL" mentorix_stage.dump
 ```
 
-Redis не переносить. Dump-файл не коммитить; удалить после успешного restore.
+Redis не переносить. Затем фронт/CORS → stage URL; bot webhook; удалить legacy `mentorix-backend` / `mentorix-dev-*`.
 
-### Переключение трафика
+### Runbook
 
-1. Фронт: CORS / API base URL → `https://mentorix-api-stage.onrender.com`
-2. `BOT_WEBHOOK_URL` уже в Blueprint; убедиться, что секрет/токен совпадают → redeploy / лог `telegram webhook registered`
-3. Postman: environment **Mentorix Render Stage**
-4. E2E: login → invite → Telegram
-5. Удалить legacy: `mentorix-backend`, `mentorix-dev-db`, `mentorix-dev-redis`
+| Проблема | Действие |
+| --- | --- |
+| migrate dirty | Render logs → fix / осторожный `migrate force` → redeploy |
+| bad stage | fix-forward на `develop` или Rollback в Dashboard |
+| bad prod | Rollback + hotfix → `main` |
+| smoke без auth | задать `SMOKE_*` в Environment `staging` |
 
-Пока оба набора живы — платишь за оба (Starter + Basic-256mb ×2 примерно).
+## Env
 
-## Переменные по критичности (stage)
+| Источник | Назначение |
+| --- | --- |
+| `.env.example` / `.env` | local (`.env` не в git) |
+| `render.yaml` | `DATABASE_URL`/`REDIS_URL` linked; cookie/proxy; `BOT_WEBHOOK_URL` |
+| Dashboard `sync: false` | `JWT_SECRET`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS`, `TRAINER_INVITE_TTL_DAYS` |
 
-| Переменная | Как задаётся |
-| ---------- | ------------ |
-| `DATABASE_URL` / `REDIS_URL` | Blueprint `fromDatabase` / `fromService` |
-| `JWT_SECRET`, `BOT_TOKEN`, `BOT_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS` | Dashboard (`sync: false`) |
-| Cookie / proxy | в `render.yaml` (`none` / `true` / `private`) |
-| `BOT_WEBHOOK_URL` | `https://mentorix-api-stage.onrender.com/telegram/webhook` |
-
-Фронт: access в JSON, refresh в HttpOnly cookie; `credentials: 'include'`; при 401 — `POST /auth/refresh`.
+Integration: `TEST_DATABASE_URL` → `mentorix_test`. Front: access JSON, refresh HttpOnly cookie, `credentials: 'include'`.

@@ -6,7 +6,7 @@
 | -------- | ---------- |
 | [product.md](product.md) | Продукт, роли, единый аккаунт |
 | [architecture.md](architecture.md) | Монолит, стек, layout репозитория |
-| [environments.md](environments.md) | Local + Render stage Blueprint, cutover |
+| [environments.md](environments.md) | Local, stage, prod; CI/CD, Deploy Hooks, runbook |
 | [status.md](status.md) | Реестр реализованного (только факты) |
 | [maintenance.md](maintenance.md) | Как вести docs, rules, status |
 
@@ -30,6 +30,7 @@
 
 ## QA
 
-- **Pre-commit:** `make install-hooks` — hook runs `make check` ([`scripts/git-hooks/pre-commit`](../scripts/git-hooks/pre-commit)); входит в `make setup`.
-- **Перед коммитом:** актуальность docs/rules — [qa-before-push.mdc](../.cursor/rules/qa-before-push.mdc) §A; `make docs-check`.
-- **Перед push:** `make check` или `make check-ci` — тот же файл §B, [`scripts/check.sh`](../scripts/check.sh).
+- **Pre-commit:** `make install-hooks` — `make check-ci` ([`scripts/git-hooks/pre-commit`](../scripts/git-hooks/pre-commit)); входит в `make setup`.
+- **Перед коммитом:** актуальность docs/rules — [qa-before-push.mdc](../.cursor/rules/qa-before-push.mdc) §A (`docs-check` внутри check-ci).
+- **Перед push:** `make check` — [qa-before-push.mdc](../.cursor/rules/qa-before-push.mdc) §B, [`scripts/check.sh`](../scripts/check.sh).
+- **CI/CD:** [environments.md](environments.md).
