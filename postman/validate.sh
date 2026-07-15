@@ -10,7 +10,7 @@ collection="postman/mentorix-backend.postman_collection.json"
 echo "=== JSON syntax ==="
 python3 -m json.tool "$collection" > /dev/null
 python3 -m json.tool postman/mentorix-local.postman_environment.json > /dev/null
-python3 -m json.tool postman/mentorix-render-dev.postman_environment.json > /dev/null
+python3 -m json.tool postman/mentorix-render-stage.postman_environment.json > /dev/null
 echo "OK"
 
 echo ""
@@ -48,7 +48,7 @@ echo ""
 echo "=== Environment base_url ==="
 python3 <<'PY'
 import json
-for f in ["postman/mentorix-local.postman_environment.json", "postman/mentorix-render-dev.postman_environment.json"]:
+for f in ["postman/mentorix-local.postman_environment.json", "postman/mentorix-render-stage.postman_environment.json"]:
     e = json.load(open(f))
     vals = {v["key"]: v["value"] for v in e["values"]}
     base = vals.get("base_url", "")

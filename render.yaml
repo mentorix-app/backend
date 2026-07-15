@@ -1,0 +1,65 @@
+# Mentorix stage Blueprint — web + Postgres + Key Value (Redis-compatible).
+# Apply in Render Dashboard: New → Blueprint → this repo / render.yaml (branch develop).
+# Creates NEW services (names differ from legacy mentorix-backend / mentorix-dev-*).
+# Cutover: docs/environments.md
+
+databases:
+  - name: mentorix-db-stage
+    plan: basic-256mb
+    postgresMajorVersion: "16"
+    region: frankfurt
+    databaseName: mentorix
+    ipAllowList: [] # private network only; use External URL from Dashboard for local pg_dump/pg_restore
+
+services:
+  - type: keyvalue
+    name: mentorix-redis-stage
+    plan: free
+    region: frankfurt
+    maxmemoryPolicy: allkeys-lru
+    persistenceMode: off
+    ipAllowList: [] # private network only
+
+  - type: web
+    name: mentorix-api-stage
+    runtime: go
+    plan: starter
+    region: frankfurt
+    branch: develop
+    autoDeployTrigger: commit
+    buildCommand: go build -o bin/api ./cmd/api
+    startCommand: ./bin/api
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: development
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mentorix-db-stage
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: mentorix-redis-stage
+          property: connectionString
+      - key: TRUSTED_PROXY_CIDRS
+        value: private
+      - key: REFRESH_COOKIE_SAMESITE
+        value: none
+      - key: REFRESH_COOKIE_SECURE
+        value: "true"
+      - key: BOT_WEBHOOK_URL
+        value: https://mentorix-api-stage.onrender.com/telegram/webhook
+      # Dashboard: paste current stage secrets (do not commit values)
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: BOT_WEBHOOK_SECRET
+        sync: false
+      - key: TRAINER_INVITE_TTL_DAYS
+        sync: false

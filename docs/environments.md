@@ -3,57 +3,72 @@
 ## Фазы
 
 1. **Local:** нативный Postgres + Redis, API (`make run` / `make dev`). `.env` из `.env.example`.
-2. **Render stage:** ветка `develop` — ручное E2E (веб + Telegram). Env в Render Dashboard (подсказки в том же `.env.example`).
+2. **Render stage:** ветка `develop`, инфра через Blueprint [`render.yaml`](../render.yaml) — `mentorix-api-stage` / `mentorix-db-stage` / `mentorix-redis-stage`.
 
 Секреты не коммитить.
 
-## Env — один файл
+## Имена stage (и prod на будущее)
 
-Одинаковый набор переменных, canon: `internal/config/config.go`.
+| | Stage (сейчас) | Prod (позже) |
+| --- | --- | --- |
+| Web | `mentorix-api-stage` → `https://mentorix-api-stage.onrender.com` | `mentorix-api` |
+| Postgres | `mentorix-db-stage` | `mentorix-db` |
+| Redis | `mentorix-redis-stage` | `mentorix-redis` |
+
+Plans stage: web **starter**, Postgres **basic-256mb** (PG 16), Redis **free**. Region: **frankfurt**.
+
+## Env
 
 | Файл | В git | Назначение |
 | ---- | ----- | ---------- |
-| [`.env.example`](../.env.example) | да | Шаблон: активные значения = local; комментарии = Render stage → Dashboard |
-| `.env` | **нет** | Рабочая копия → `cp .env.example .env` |
+| [`.env.example`](../.env.example) | да | Local + комментарии stage |
+| `.env` | **нет** | Локальная рабочая копия |
+| [`render.yaml`](../render.yaml) | да | Blueprint: `DATABASE_URL`/`REDIS_URL` из linked services; секреты `sync: false` |
 
-**Local:** `make setup` создаёт `.env`, если файла нет. Postgres/Redis ставятся отдельно (`brew install postgresql@16 redis` или аналог).
+**Local:** `make setup` создаёт `.env`, если файла нет.
 
-**Render stage:** stage-строки из `.env.example` / своего `.env` копируешь в Render Dashboard (и наоборот). Dashboard — источник правды для задеплоенного сервиса.
+**Render stage:** после Blueprint в Dashboard заполнить `JWT_SECRET`, `CORS_ALLOW_ORIGINS`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, … Зеркало значений можно держать в личном `.env` (не в git).
 
-**Integration tests:** отдельная БД `mentorix_test`, переменная `TEST_DATABASE_URL` (см. `.env.example`).
+**Integration tests:** `TEST_DATABASE_URL` → БД `mentorix_test` (см. `.env.example`).
 
-## Переменные по критичности
+## Render stage — новый стенд (Blueprint)
 
-### Критичные (API)
+1. Закоммить / запушь `render.yaml` в `develop`.
+2. Dashboard → **New → Blueprint** → этот репо → файл `render.yaml` → apply (создаст **новые** сервисы; старые `mentorix-backend` / `mentorix-dev-*` не трогает).
+3. Заполнить `sync: false` секреты на `mentorix-api-stage`.
+4. Дождаться deploy → `GET https://mentorix-api-stage.onrender.com/health`.
 
-| Переменная | Local | Render stage |
-| ---------- | ----- | ------------ |
-| `DATABASE_URL` | `localhost`, `sslmode=disable` | External Postgres, `sslmode=require` |
-| `JWT_SECRET` | ≥32 символов | ≥32, свой для stage |
+### Cutover данных (со старого Postgres)
 
-### Критичные для E2E (Telegram + фронт) на stage
+Пока старый API (`mentorix-backend.onrender.com`) обслуживает клиентов. Параллельно:
 
-| Переменная | Примечание |
-| ---------- | ---------- |
-| `REDIS_URL` | External Redis |
-| `CORS_ALLOW_ORIGINS` | URL фронта |
-| `TRUSTED_PROXY_CIDRS` | `private` |
-| `TELEGRAM_BOT_USERNAME` | без `@` |
-| `BOT_TOKEN` | @BotFather |
-| `BOT_WEBHOOK_URL` | `https://<api-host>/telegram/webhook` |
-| `BOT_WEBHOOK_SECRET` | `openssl rand -hex 32` |
+```bash
+# External Database URL старого mentorix-dev-db
+pg_dump --no-owner --format=custom -f mentorix_stage.dump "$OLD_DATABASE_URL"
 
-Cross-site фронт на stage: `REFRESH_COOKIE_SAMESITE=none`, `REFRESH_COOKIE_SECURE=true`.
+# External Database URL нового mentorix-db-stage
+pg_restore --no-owner --clean --if-exists -d "$NEW_DATABASE_URL" mentorix_stage.dump
+```
 
-### Опциональные в коде (в шаблоне заданы явно)
+Redis не переносить. Dump-файл не коммитить; удалить после успешного restore.
 
-`APP_ENV` (`development`), `PORT`, TTL токенов, cookie, rate limit, `TRAINER_INVITE_TTL_DAYS`.
+### Переключение трафика
 
-## Render stage — порядок
+1. Фронт: CORS / API base URL → `https://mentorix-api-stage.onrender.com`
+2. `BOT_WEBHOOK_URL` уже в Blueprint; убедиться, что секрет/токен совпадают → redeploy / лог `telegram webhook registered`
+3. Postman: environment **Mentorix Render Stage**
+4. E2E: login → invite → Telegram
+5. Удалить legacy: `mentorix-backend`, `mentorix-dev-db`, `mentorix-dev-redis`
 
-1. `migrate up` на stage DB
-2. Заполнить Dashboard по stage-комментариям в `.env.example`
-3. Деплой ветки `develop` → лог `telegram webhook registered`
-4. E2E: login → invite → Telegram → assign
+Пока оба набора живы — платишь за оба (Starter + Basic-256mb ×2 примерно).
+
+## Переменные по критичности (stage)
+
+| Переменная | Как задаётся |
+| ---------- | ------------ |
+| `DATABASE_URL` / `REDIS_URL` | Blueprint `fromDatabase` / `fromService` |
+| `JWT_SECRET`, `BOT_TOKEN`, `BOT_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS` | Dashboard (`sync: false`) |
+| Cookie / proxy | в `render.yaml` (`none` / `true` / `private`) |
+| `BOT_WEBHOOK_URL` | `https://mentorix-api-stage.onrender.com/telegram/webhook` |
 
 Фронт: access в JSON, refresh в HttpOnly cookie; `credentials: 'include'`; при 401 — `POST /auth/refresh`.

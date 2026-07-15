@@ -22,7 +22,7 @@ Import `postman/mentorix-backend.postman_collection.json` + `mentorix-local.post
 
 Validate contract: `make validate`
 
-Local + Render stage: [docs/environments.md](docs/environments.md).
+Local + Render stage (Blueprint): [docs/environments.md](docs/environments.md).
 
 ## QA
 

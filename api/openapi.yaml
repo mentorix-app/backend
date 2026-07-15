@@ -9,8 +9,8 @@ info:
 servers:
   - url: http://localhost:8080
     description: Local development
-  - url: https://mentorix-backend.onrender.com
-    description: Render stage
+  - url: https://mentorix-api-stage.onrender.com
+    description: Render stage (Blueprint mentorix-api-stage)
 
 tags:
   - name: health

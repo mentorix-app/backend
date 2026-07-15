@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "e5f6a7b8-c9d0-1234-ef01-567890123456",
     "name": "Mentorix Backend",
-    "description": "Коллекция Mentorix Backend. **Выполняй папки сверху вниз** (кроме Optional и Teardown).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Dev** — `https://mentorix-backend.onrender.com`\n\n## Линейный walkthrough\n1. **Health** (2 запроса)\n2. **Auth** — Login → Me → … → Refresh\n3. **Exercises** — GET подхватит `exercise_id` из сида\n4. **Programs** — полный сценарий до DELETE программы\n5. **Teardown** — logout в самом конце\n\n**Optional** — примеры, destructive DELETE, Trainer (`client_user_id` вручную), Admin.\n\nПеременные окружения заполняются test/collection prerequest скриптами.",
+    "description": "Коллекция Mentorix Backend. **Выполняй папки сверху вниз** (кроме Optional и Teardown).\n\n## Environments\n- **Mentorix Local** — `http://localhost:8080`\n- **Mentorix Render Stage** — `https://mentorix-api-stage.onrender.com`\n\n## Линейный walkthrough\n1. **Health** (2 запроса)\n2. **Auth** — Login → Me → … → Refresh\n3. **Exercises** — GET подхватит `exercise_id` из сида\n4. **Programs** — полный сценарий до DELETE программы\n5. **Teardown** — logout в самом конце\n\n**Optional** — примеры, destructive DELETE, Trainer (`client_user_id` вручную), Admin.\n\nПеременные окружения заполняются test/collection prerequest скриптами.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -12,7 +12,7 @@
         "type": "text/javascript",
         "exec": [
           "if (!pm.environment.name) {",
-          "    throw new Error('Выбери environment: Mentorix Local или Mentorix Render Dev');",
+          "    throw new Error('Выбери environment: Mentorix Local или Mentorix Render Stage');",
           "}",
           "const base = pm.environment.get('base_url');",
           "if (!base) {",

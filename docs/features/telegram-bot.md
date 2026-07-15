@@ -46,6 +46,8 @@
 
 ## Webhook (Render)
 
+Stage URL: `https://mentorix-api-stage.onrender.com/telegram/webhook` ([`render.yaml`](../../render.yaml)).
+
 | Метод | Путь | Назначение |
 | ----- | ---- | ---------- |
 | POST | `/telegram/webhook` | updates от Telegram (`X-Telegram-Bot-Api-Secret-Token`) |

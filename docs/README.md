@@ -6,7 +6,7 @@
 | -------- | ---------- |
 | [product.md](product.md) | Продукт, роли, единый аккаунт |
 | [architecture.md](architecture.md) | Монолит, стек, layout репозитория |
-| [environments.md](environments.md) | Окружения, env, Render |
+| [environments.md](environments.md) | Local + Render stage Blueprint, cutover |
 | [status.md](status.md) | Реестр реализованного (только факты) |
 | [maintenance.md](maintenance.md) | Как вести docs, rules, status |
 
