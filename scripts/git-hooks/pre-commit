@@ -2,7 +2,7 @@
 # Installed by: make install-hooks
 # Runs the full local QA suite before each commit.
 #
-# Prerequisites: Go, .env (DATABASE_URL), Docker (migrate-check + integration),
+# Prerequisites: Go, .env (DATABASE_URL), Postgres (TEST_DATABASE_URL for integration),
 # API on http://localhost:8080 for Postman smoke (or set PRE_COMMIT_CHECK_FLAGS=--no-smoke).
 set -euo pipefail
 

@@ -81,7 +81,7 @@ func Load() (Config, error) {
 	}
 	cookieDomain := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_DOMAIN"))
 
-	secure := appEnv == AppEnvProduction
+	secure := false
 	if v := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_SECURE")); v == "true" {
 		secure = true
 	} else if v == "false" {
@@ -130,8 +130,8 @@ func Load() (Config, error) {
 		BotWebhookSecret:     strings.TrimSpace(os.Getenv("BOT_WEBHOOK_SECRET")),
 	}
 
-	if cfg.AppEnv != AppEnvDevelopment && cfg.AppEnv != AppEnvProduction {
-		return Config{}, fmt.Errorf("config: APP_ENV must be development or production, got %q", cfg.AppEnv)
+	if cfg.AppEnv != AppEnvDevelopment {
+		return Config{}, fmt.Errorf("config: APP_ENV must be development, got %q", cfg.AppEnv)
 	}
 
 	if cfg.JWTSecret == "" {
@@ -151,11 +151,8 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
-func sameSiteFromEnv(raw, appEnv string) (http.SameSite, error) {
+func sameSiteFromEnv(raw, _ string) (http.SameSite, error) {
 	if raw == "" {
-		if appEnv == AppEnvProduction {
-			return http.SameSiteNoneMode, nil
-		}
 		return http.SameSiteLaxMode, nil
 	}
 	switch strings.ToLower(raw) {

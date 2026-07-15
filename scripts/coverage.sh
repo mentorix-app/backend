@@ -58,8 +58,19 @@ go test -count=1 -covermode=atomic -coverprofile="$tmp/unit.out" "${packages[@]}
 
 echo ""
 echo "=== Store integration coverage ==="
-if ! docker info >/dev/null 2>&1; then
-  echo "WARN: Docker not available — skipping integration coverage merge" >&2
+if [[ -z "${TEST_DATABASE_URL:-}" && -z "${DATABASE_URL:-}" && -f .env ]]; then
+  while IFS= read -r line; do
+    case "$line" in
+      TEST_DATABASE_URL=*|DATABASE_URL=*)
+        key="${line%%=*}"
+        val="${line#*=}"
+        export "$key=$val"
+        ;;
+    esac
+  done < <(grep -E '^(TEST_DATABASE_URL|DATABASE_URL)=' .env | tr -d '\r' || true)
+fi
+if [[ -z "${TEST_DATABASE_URL:-}" && -z "${DATABASE_URL:-}" ]]; then
+  echo "WARN: TEST_DATABASE_URL/DATABASE_URL not set — skipping integration coverage merge" >&2
   cp "$tmp/unit.out" "$tmp/merged.out"
 else
   go test -tags integration -count=1 -timeout 5m \

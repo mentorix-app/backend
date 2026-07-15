@@ -5,20 +5,21 @@ package storetest
 import (
 	"context"
 	"fmt"
-	"os/exec"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/joho/godotenv"
 )
+
+var testDBMu sync.Mutex
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -29,36 +30,43 @@ func repoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
 }
 
-// NewPoolWithURL starts ephemeral Postgres, runs db/migrations, and returns a pool and connection URL.
+func resolveTestDatabaseURL(t *testing.T) string {
+	t.Helper()
+	_ = godotenv.Load(filepath.Join(repoRoot(t), ".env"))
+
+	if u := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")); u != "" {
+		return u
+	}
+	u := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if u == "" {
+		t.Skip("TEST_DATABASE_URL (or DATABASE_URL with mentorix_test) is not set")
+	}
+	if !strings.Contains(u, "mentorix_test") {
+		t.Fatalf("refusing DATABASE_URL %q: use a mentorix_test database or set TEST_DATABASE_URL", u)
+	}
+	return u
+}
+
+// NewPoolWithURL resets mentorix schema on the test database, runs migrations, and returns a pool and URL.
 func NewPoolWithURL(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
-	requireDocker(t)
+	testDBMu.Lock()
+	t.Cleanup(testDBMu.Unlock)
 
+	connStr := resolveTestDatabaseURL(t)
 	ctx := context.Background()
 
-	pgContainer, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("mentorix_test"),
-		postgres.WithUsername("mentorix"),
-		postgres.WithPassword("mentorix"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second),
-		),
-	)
+	bootstrap, err := pgxpool.New(ctx, connStr)
 	if err != nil {
-		t.Fatalf("start postgres: %v", err)
+		t.Fatalf("pgxpool bootstrap: %v", err)
 	}
-	t.Cleanup(func() {
-		if termErr := pgContainer.Terminate(context.Background()); termErr != nil {
-			t.Logf("terminate postgres container: %v", termErr)
-		}
-	})
+	defer bootstrap.Close()
 
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("connection string: %v", err)
+	if _, err := bootstrap.Exec(ctx, `DROP SCHEMA IF EXISTS mentorix CASCADE`); err != nil {
+		t.Fatalf("drop schema mentorix: %v", err)
+	}
+	if _, err := bootstrap.Exec(ctx, `DROP TABLE IF EXISTS public.schema_migrations`); err != nil {
+		t.Fatalf("drop schema_migrations: %v", err)
 	}
 
 	migrationsPath := filepath.Join(repoRoot(t), "db", "migrations")
@@ -92,18 +100,9 @@ func NewPoolWithURL(t *testing.T) (*pgxpool.Pool, string) {
 	return pool, connStr
 }
 
-// NewPool starts ephemeral Postgres, runs db/migrations, and returns a pool.
+// NewPool resets the test database, runs migrations, and returns a pool.
 func NewPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	pool, _ := NewPoolWithURL(t)
 	return pool
-}
-
-func requireDocker(t *testing.T) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
-		t.Skipf("docker not available for integration tests: %v", err)
-	}
 }

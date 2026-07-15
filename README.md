@@ -4,11 +4,11 @@ Go REST API (Echo + PostgreSQL + Redis).
 
 ## Quick start
 
-**Prerequisites:** Go 1.25+, Docker Desktop.
+**Prerequisites:** Go 1.25+, Postgres 16, Redis (e.g. `brew install postgresql@16 redis`).
 
 ```bash
 make install-tools   # once
-make setup           # docker, .env, migrations
+make setup           # .env, migrations, pre-commit hook
 make dev             # API with hot reload
 ```
 
@@ -22,11 +22,11 @@ Import `postman/mentorix-backend.postman_collection.json` + `mentorix-local.post
 
 Validate contract: `make validate`
 
-Render dev: [docs/environments.md](docs/environments.md).
+Local + Render stage: [docs/environments.md](docs/environments.md).
 
 ## QA
 
-- **Pre-commit:** `make install-hooks` (once; included in `make setup`) — hook runs `make check` on every commit. Needs Docker, `.env`, API on `:8080` for smoke; or `PRE_COMMIT_CHECK_FLAGS=--no-smoke`.
+- **Pre-commit:** `make install-hooks` (once; included in `make setup`) — hook runs `make check` on every commit. Needs `.env`, Postgres (`TEST_DATABASE_URL` for integration), API on `:8080` for smoke; or `PRE_COMMIT_CHECK_FLAGS=--no-smoke`.
 - **Before commit:** sync docs/rules — see [.cursor/rules/qa-before-push.mdc](.cursor/rules/qa-before-push.mdc) §A; `make docs-check`.
 - **Before push:** `make check` (full) or `make check-ci` (CI parity).
 

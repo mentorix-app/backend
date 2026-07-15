@@ -2,61 +2,58 @@
 
 ## Фазы
 
-1. **Локально:** Docker Postgres/Redis — `.env` из `.env.example`; автотесты (`make test`, `make test-integration`).
-2. **Render dev:** ветка `develop` — ручное E2E (веб + Telegram).
-3. **Render prod:** ветка `main` — после стабильного dev.
+1. **Local:** нативный Postgres + Redis, API (`make run` / `make dev`). `.env` из `.env.example`.
+2. **Render stage:** ветка `develop` — ручное E2E (веб + Telegram). Env в Render Dashboard (подсказки в том же `.env.example`).
 
-Секреты не коммитить. Prod-секреты не копировать из dev.
+Секреты не коммитить.
 
-## Файлы env (единый паттерн)
+## Env — один файл
 
-Одинаковый набор переменных (23), один порядок, canon: `internal/config/config.go`.
+Одинаковый набор переменных, canon: `internal/config/config.go`.
 
 | Файл | В git | Назначение |
 | ---- | ----- | ---------- |
-| [`.env.example`](../.env.example) | да | Шаблон локалки → `cp .env.example .env` |
-| `.env` | **нет** | Локальная разработка |
-| [`.env.dev.example`](../.env.dev.example) | да | Шаблон Render **dev** → `cp .env.dev.example .env.dev` |
-| `.env.dev` | **нет** | Render dev (секреты, зеркало Dashboard) |
-| [`.env.prod.example`](../.env.prod.example) | да | Шаблон Render **prod** → `cp .env.prod.example .env.prod` |
-| `.env.prod` | **нет** | Render prod (секреты, зеркало Dashboard) |
+| [`.env.example`](../.env.example) | да | Шаблон: активные значения = local; комментарии = Render stage → Dashboard |
+| `.env` | **нет** | Рабочая копия → `cp .env.example .env` |
 
-**Локально:** `make setup` создаёт `.env` из `.env.example`, если файла нет.
+**Local:** `make setup` создаёт `.env`, если файла нет. Postgres/Redis ставятся отдельно (`brew install postgresql@16 redis` или аналог).
 
-**Render:** значения из `.env.dev` / `.env.prod` копируешь в Render Dashboard (и наоборот). Файлы только у себя, не в GitHub.
+**Render stage:** stage-строки из `.env.example` / своего `.env` копируешь в Render Dashboard (и наоборот). Dashboard — источник правды для задеплоенного сервиса.
+
+**Integration tests:** отдельная БД `mentorix_test`, переменная `TEST_DATABASE_URL` (см. `.env.example`).
 
 ## Переменные по критичности
 
 ### Критичные (API)
 
-| Переменная | Render dev / prod |
-| ---------- | ----------------- |
-| `DATABASE_URL` | External Postgres, `sslmode=require` |
-| `JWT_SECRET` | ≥32 символов, **разный** на dev и prod |
+| Переменная | Local | Render stage |
+| ---------- | ----- | ------------ |
+| `DATABASE_URL` | `localhost`, `sslmode=disable` | External Postgres, `sslmode=require` |
+| `JWT_SECRET` | ≥32 символов | ≥32, свой для stage |
 
-### Критичные для E2E (Telegram + фронт)
+### Критичные для E2E (Telegram + фронт) на stage
 
 | Переменная | Примечание |
 | ---------- | ---------- |
 | `REDIS_URL` | External Redis |
 | `CORS_ALLOW_ORIGINS` | URL фронта |
 | `TRUSTED_PROXY_CIDRS` | `private` |
-| `TELEGRAM_BOT_USERNAME` | без `@`; dev/prod — разные боты |
+| `TELEGRAM_BOT_USERNAME` | без `@` |
 | `BOT_TOKEN` | @BotFather |
 | `BOT_WEBHOOK_URL` | `https://<api-host>/telegram/webhook` |
 | `BOT_WEBHOOK_SECRET` | `openssl rand -hex 32` |
 
-Cross-site фронт: `REFRESH_COOKIE_SAMESITE=none`, `REFRESH_COOKIE_SECURE=true`; prod — `REFRESH_COOKIE_DOMAIN`.
+Cross-site фронт на stage: `REFRESH_COOKIE_SAMESITE=none`, `REFRESH_COOKIE_SECURE=true`.
 
-### Опциональные в коде (в шаблонах заданы явно)
+### Опциональные в коде (в шаблоне заданы явно)
 
-`APP_ENV`, `PORT`, TTL токенов, cookie, rate limit, `TRAINER_INVITE_TTL_DAYS`.
+`APP_ENV` (`development`), `PORT`, TTL токенов, cookie, rate limit, `TRAINER_INVITE_TTL_DAYS`.
 
-## Render dev — порядок
+## Render stage — порядок
 
-1. `migrate up`
-2. `cp .env.dev.example .env.dev` → заполнить → скопировать в Render Dashboard
-3. Деплой → лог `telegram webhook registered`
+1. `migrate up` на stage DB
+2. Заполнить Dashboard по stage-комментариям в `.env.example`
+3. Деплой ветки `develop` → лог `telegram webhook registered`
 4. E2E: login → invite → Telegram → assign
 
 Фронт: access в JSON, refresh в HttpOnly cookie; `credentials: 'include'`; при 401 — `POST /auth/refresh`.

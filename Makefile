@@ -13,7 +13,7 @@ SQLC_VERSION ?= v1.29.0
 LINT_VERSION ?= v1.62.2
 AIR_VERSION ?= v1.61.7
 
-.PHONY: help dev run build setup docker-up docker-down \
+.PHONY: help dev run build setup \
 	migrate migrate-down migrate-version migrate-check \
 	schema-sync sqlc generate \
 	test test-integration vet fmt lint \
@@ -36,15 +36,9 @@ build: ## Build API binary to bin/api
 	@mkdir -p bin
 	go build -o bin/api ./cmd/api
 
-setup: docker-up install-hooks ## First-time local setup: compose, .env, migrations, pre-commit hook
+setup: install-hooks ## First-time local setup: .env, migrations, pre-commit hook
 	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example")
 	@$(MAKE) migrate
-
-docker-up: ## Start Postgres + Redis (docker compose up -d)
-	docker compose up -d
-
-docker-down: ## Stop docker compose services
-	docker compose down
 
 migrate: ## Apply database migrations (up)
 	$(SCRIPTS)/migrate.sh up
@@ -71,7 +65,7 @@ generate: ## Run go generate ./internal/db/...
 test: ## Run unit tests (no integration tag)
 	go test ./... -count=1
 
-test-integration: ## Run store integration tests (Docker / Testcontainers)
+test-integration: ## Run store integration tests (needs TEST_DATABASE_URL / mentorix_test)
 	go test -tags integration -timeout 5m ./internal/db/storetest/... -count=1
 
 vet: ## Run go vet

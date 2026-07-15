@@ -2,7 +2,6 @@ package config
 
 const (
 	AppEnvDevelopment = "development"
-	AppEnvProduction  = "production"
 )
 
 const (

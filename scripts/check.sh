@@ -11,7 +11,7 @@
 #
 # Prerequisites (full suite):
 #   - Go toolchain, .env with DATABASE_URL (migrate-check)
-#   - Docker (Postgres for migrate-check; Testcontainers for integration)
+#   - Postgres with TEST_DATABASE_URL (or DATABASE_URL containing mentorix_test) for integration
 #   - API on http://localhost:8080 for smoke (or use --no-smoke)
 #   - sqlc and golangci-lint on PATH, or installed automatically via go install / go run
 set -euo pipefail

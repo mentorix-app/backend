@@ -142,16 +142,19 @@ func TestLoad_sameSiteDefaults(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if cfg.RefreshCookie.SameSite != http.SameSiteLaxMode {
-		t.Errorf("dev default SameSite = %v, want Lax", cfg.RefreshCookie.SameSite)
+		t.Errorf("default SameSite = %v, want Lax", cfg.RefreshCookie.SameSite)
 	}
+	if cfg.RefreshCookie.Secure {
+		t.Error("expected Secure=false by default")
+	}
+}
 
+func TestLoad_rejectsProductionAppEnv(t *testing.T) {
+	setMinimalEnv(t)
 	t.Setenv("APP_ENV", "production")
-	cfg, err = Load()
-	if err != nil {
-		t.Fatalf("Load production: %v", err)
-	}
-	if cfg.RefreshCookie.SameSite != http.SameSiteNoneMode {
-		t.Errorf("prod default SameSite = %v, want None", cfg.RefreshCookie.SameSite)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for APP_ENV=production")
 	}
 }
 
