@@ -3,6 +3,7 @@ package program
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -31,6 +32,8 @@ var (
 	ErrMaxDaysPerWeek          = errors.New("week cannot have more than 7 days")
 	ErrInvalidReorder          = errors.New("invalid reorder")
 )
+
+var volumePattern = regexp.MustCompile(`^[0-9]+([/-][0-9]+)?$`)
 
 const DefaultWeekDays = 7
 
@@ -83,8 +86,8 @@ type DayExercise struct {
 	ExerciseName   string    `json:"exercise_name"`
 	ExerciseNameRu string    `json:"exercise_name_ru"`
 	SortOrder      int       `json:"sort_order"`
-	Sets           *int      `json:"sets,omitempty"`
-	Reps           *int      `json:"reps,omitempty"`
+	Sets           *string   `json:"sets,omitempty"`
+	Reps           *string   `json:"reps,omitempty"`
 	Instruction    string    `json:"instruction"`
 	CreatedAt      time.Time `json:"created_at"`
 }
@@ -132,8 +135,8 @@ type UpdateInput struct {
 
 type DayExerciseInput struct {
 	ExerciseID  uuid.UUID
-	Sets        *int
-	Reps        *int
+	Sets        *string
+	Reps        *string
 	Instruction *string
 }
 
@@ -205,13 +208,40 @@ func (in DayExerciseInput) ValidateDraft() error {
 	if in.ExerciseID == uuid.Nil {
 		return fmt.Errorf("%w: exercise_id is required", ErrValidation)
 	}
-	if in.Sets != nil && *in.Sets < 1 {
-		return fmt.Errorf("%w: sets must be >= 1", ErrValidation)
+	if err := validateVolumeField("sets", in.Sets); err != nil {
+		return err
 	}
-	if in.Reps != nil && *in.Reps < 1 {
-		return fmt.Errorf("%w: reps must be >= 1", ErrValidation)
+	if err := validateVolumeField("reps", in.Reps); err != nil {
+		return err
 	}
 	return nil
+}
+
+func validateVolumeField(name string, v *string) error {
+	if v == nil {
+		return nil
+	}
+	if !volumePattern.MatchString(*v) {
+		return fmt.Errorf("%w: invalid %s", ErrValidation, name)
+	}
+	return nil
+}
+
+// NormalizeVolume trims sets/reps and clears empty strings to nil.
+func (in *DayExerciseInput) NormalizeVolume() {
+	in.Sets = normalizeVolumePtr(in.Sets)
+	in.Reps = normalizeVolumePtr(in.Reps)
+}
+
+func normalizeVolumePtr(p *string) *string {
+	if p == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*p)
+	if v == "" {
+		return nil
+	}
+	return &v
 }
 
 func (in BlockPatchInput) Validate() error {

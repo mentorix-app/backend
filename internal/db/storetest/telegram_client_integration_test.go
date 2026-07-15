@@ -70,7 +70,7 @@ func TestTelegramClient_programAndToday(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := createSingleBlock(ctx, progSvc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,

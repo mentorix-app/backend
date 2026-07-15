@@ -767,10 +767,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": 3,\n    \"reps\": 10,\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
+              "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": \"3\",\n    \"reps\": \"10\",\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks",
-            "description": "Создать single-блок с упражнением. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — целое >= 1."
+            "description": "Создать single-блок с упражнением. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — строка: цифры / один `/` / один `-`."
           },
           "response": []
         },
@@ -830,10 +830,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": 3,\n    \"reps\": 10,\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
+              "raw": "{\n  \"block_type\": \"single\",\n  \"exercise\": {\n    \"exercise_id\": \"{{exercise_id}}\",\n    \"sets\": \"3\",\n    \"reps\": \"10\",\n    \"instruction\": \"Контролируй негативную фазу\"\n  }\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/days/{{program_week_day_id}}/blocks",
-            "description": "Второй single-блок в том же дне (для merge). Сохраняет program_week_day_block_id_2. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — целое >= 1."
+            "description": "Второй single-блок в том же дне (для merge). Сохраняет program_week_day_block_id_2. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — строка: цифры / один `/` / один `-`."
           },
           "response": []
         },
@@ -884,10 +884,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 4,\n  \"reps\": 8,\n  \"instruction\": \"Обновлённая инструкция\"\n}"
+              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": \"4\",\n  \"reps\": \"8\",\n  \"instruction\": \"Обновлённая инструкция\"\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises/{{program_week_day_block_exercise_id}}",
-            "description": "Обновить упражнение в блоке. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — целое >= 1."
+            "description": "Обновить упражнение в блоке. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — строка: цифры / один `/` / один `-`."
           },
           "response": []
         },
@@ -1111,10 +1111,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": 3,\n  \"reps\": 10\n}"
+              "raw": "{\n  \"exercise_id\": \"{{exercise_id}}\",\n  \"sets\": \"3\",\n  \"reps\": \"10\"\n}"
             },
             "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/exercises",
-            "description": "Добавить упражнение в групповой блок. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — целое >= 1."
+            "description": "Добавить упражнение в групповой блок. `sets`/`reps` опциональны (можно не передавать или `null`); при значении — строка: цифры / один `/` / один `-`."
           },
           "response": []
         },
@@ -1385,7 +1385,7 @@
             "method": "POST",
             "header": [],
             "url": "{{base_url}}/programs/{{program_id}}/publish",
-            "description": "Publish — валидирует обязательные поля и упражнения. `sets`/`reps` в упражнениях опциональны; при значении — целое >= 1."
+            "description": "Publish — валидирует обязательные поля и упражнения. `sets`/`reps` в упражнениях опциональны; при значении — строка: цифры / один `/` / один `-`."
           },
           "response": []
         },
@@ -1896,7 +1896,7 @@
             "method": "GET",
             "header": [],
             "url": "{{base_url}}/trainer/clients?page=1&limit=20&sort_by=name&sort_order=asc&q=",
-            "description": "Paginated linked clients. Trainer: own clients only. Admin: all (deduplicated; prefers admin's own trainer link). Each item includes trainer_user_id — compare with user_id from GET /auth/me before program assign. Query: page, limit, q, sort_by=name|linked_at, sort_order=asc|desc"
+            "description": "Paginated linked clients. Trainer: own clients only. Admin: all (deduplicated; prefers admin's own trainer link). Each item includes trainer_user_id + trainer_display_name, and last_active_at (latest workout completion, or null). Compare trainer_user_id with user_id from GET /auth/me before program assign. Query: page, limit, q, sort_by=name|linked_at, sort_order=asc|desc"
           },
           "response": []
         },

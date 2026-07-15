@@ -30,7 +30,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | `modified_at` | timestamptz | |
 | `modified_by` | uuid FK → `users` | nullable |
 
-`block_type`: `single`, `emom`, `amrap`, `for_time`, `intervals`, `chipper`, `ladder`, `death_by`, `superset`, `complex`.
+`block_type`: `single`, `emom`, `amrap`, `for_time`, `intervals`, `chipper`, `ladder`, `death_by`, `superset`, `complex`, `skill_work`, `strength`, `conditioning`, `gymnastics`, `weightlifting`.
 
 ### `program_week_day_block_exercises`
 
@@ -62,7 +62,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 
 ## Publish
 
-- `single`: ровно 1 упражнение; `sets`/`reps` опциональны (можно не передавать или `null`), при значении — ≥ 1.
+- `single`: ровно 1 упражнение; `sets`/`reps` опциональны (`null`/omit); при значении — строка: только цифры (`3`), один `/` (`5/4`) или один `-` (`3-6`).
 - группа (`block_type` ≠ `single`): ≥ 1 упражнение; пустая группа — ошибка; для каждого упражнения те же правила `sets`/`reps`.
 - `instruction` группы может быть `""`.
 

@@ -82,7 +82,7 @@ func TestProgramStore_CreateDraftAndPublish(t *testing.T) {
 
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	withExercise, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
@@ -201,7 +201,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	dayIdx := program.DefaultWeekDays - 1
 	dayID := draft.Weeks[0].Days[dayIdx].ID
 
-	sets, reps := 4, 8
+	sets, reps := "4", "8"
 	withExercise, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
@@ -229,7 +229,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 		t.Fatal("expected exercise and block on day")
 	}
 
-	newSets := 5
+	newSets := "5"
 	updatedExercise, err := progStore.UpdateBlockExercise(ctx, trainerID, draft.ID, weekID, blockID, itemID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &newSets,
@@ -238,7 +238,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateDayExercise: %v", err)
 	}
-	var updatedSets int
+	var updatedSets string
 	for _, day := range updatedExercise.Weeks[0].Days {
 		if day.ID == dayID {
 			ex, ok := firstDayExercise(day)
@@ -249,7 +249,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 		}
 	}
 	if updatedSets != newSets {
-		t.Fatalf("sets = %d, want %d", updatedSets, newSets)
+		t.Fatalf("sets = %q, want %q", updatedSets, newSets)
 	}
 
 	withoutExercise, err := progStore.DeleteBlockExercise(ctx, draft.ID, weekID, blockID, itemID)
@@ -382,7 +382,7 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 		t.Fatalf("ReorderDays duplicate ids error = %v, want ErrInvalidReorder", err)
 	}
 
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	dayA := reorderedDays.Weeks[0].Days[0].ID
 	dayB := reorderedDays.Weeks[0].Days[1].ID
 	withExA, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, week2ID, dayA, program.DayExerciseInput{
@@ -877,7 +877,7 @@ func TestProgramStore_blockValidationErrors(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	withBlock, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
@@ -1025,7 +1025,7 @@ func TestProgramStore_groupBlockExerciseCRUD(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 
 	withA, err := createSingleBlockStore(ctx, progStore, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: ex1.ID, Sets: &sets, Reps: &reps,
@@ -1181,7 +1181,7 @@ func TestProgramStore_twoGroupsMoveAndMergeInstructions(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 
 	detail := draft
 	for _, ex := range exercises {

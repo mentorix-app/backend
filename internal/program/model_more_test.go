@@ -24,20 +24,20 @@ func TestValidatePublishDetail_noWeeks(t *testing.T) {
 func TestValidatePublishDetail_invalidSetsReps(t *testing.T) {
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	negative := -1
+	bad := "3/"
 	d := Detail{
 		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
 		Weeks: []Week{{
 			WeekNumber: 1,
 			Days: []Day{singleBlockDay(DayExercise{
 				ExerciseID: uuid.New(),
-				Sets:       &negative,
-				Reps:       &negative,
+				Sets:       &bad,
+				Reps:       &bad,
 			})},
 		}},
 	}
 	if err := validatePublishDetail(d); err == nil {
-		t.Fatal("expected validation error for negative sets/reps")
+		t.Fatal("expected validation error for invalid sets/reps")
 	}
 }
 
@@ -58,28 +58,28 @@ func TestValidatePublishDetail_optionalSetsReps(t *testing.T) {
 	}
 }
 
-func TestValidatePublishDetail_zeroSetsReps(t *testing.T) {
+func TestValidatePublishDetail_rangeSetsReps(t *testing.T) {
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	zero := 0
+	sets, reps := "3-6", "5/4"
 	d := Detail{
 		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
 		Weeks: []Week{{
 			WeekNumber: 1,
 			Days: []Day{singleBlockDay(DayExercise{
 				ExerciseID: uuid.New(),
-				Sets:       &zero,
-				Reps:       &zero,
+				Sets:       &sets,
+				Reps:       &reps,
 			})},
 		}},
 	}
-	if err := validatePublishDetail(d); err == nil {
-		t.Fatal("expected validation error for zero sets/reps")
+	if err := validatePublishDetail(d); err != nil {
+		t.Fatalf("validatePublishDetail() error = %v, want nil", err)
 	}
 }
 
 func TestDayExerciseInput_ValidatePublish(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if err := (DayExerciseInput{
 		ExerciseID: uuid.New(),
 		Sets:       &sets,
@@ -90,7 +90,7 @@ func TestDayExerciseInput_ValidatePublish(t *testing.T) {
 }
 
 func TestDayExerciseInput_ValidatePublish_optionalSetsReps(t *testing.T) {
-	reps := 10
+	reps := "10"
 	if err := (DayExerciseInput{
 		ExerciseID: uuid.New(),
 		Reps:       &reps,
@@ -98,7 +98,7 @@ func TestDayExerciseInput_ValidatePublish_optionalSetsReps(t *testing.T) {
 		t.Fatalf("ValidatePublish() error = %v", err)
 	}
 
-	sets := 3
+	sets := "3"
 	if err := (DayExerciseInput{
 		ExerciseID: uuid.New(),
 		Sets:       &sets,
@@ -137,31 +137,31 @@ func TestDayExerciseInput_ValidateDraft_errors(t *testing.T) {
 			in:   DayExerciseInput{},
 		},
 		{
-			name: "negative sets",
+			name: "trailing slash sets",
 			in: DayExerciseInput{
 				ExerciseID: uuid.New(),
-				Sets:       intPtr(-1),
+				Sets:       strPtr("3/"),
 			},
 		},
 		{
-			name: "negative reps",
+			name: "letters in reps",
 			in: DayExerciseInput{
 				ExerciseID: uuid.New(),
-				Reps:       intPtr(-1),
+				Reps:       strPtr("abc"),
 			},
 		},
 		{
-			name: "zero sets",
+			name: "double hyphen sets",
 			in: DayExerciseInput{
 				ExerciseID: uuid.New(),
-				Sets:       intPtr(0),
+				Sets:       strPtr("3-6-8"),
 			},
 		},
 		{
-			name: "zero reps",
+			name: "mixed separators reps",
 			in: DayExerciseInput{
 				ExerciseID: uuid.New(),
-				Reps:       intPtr(0),
+				Reps:       strPtr("5/4-2"),
 			},
 		},
 	}
@@ -169,6 +169,18 @@ func TestDayExerciseInput_ValidateDraft_errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if err := tt.in.ValidateDraft(); err == nil {
 				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
+func TestDayExerciseInput_ValidateDraft_volumeFormats(t *testing.T) {
+	tests := []string{"3", "5/4", "3-6", "0", "10/10", "1-12"}
+	for _, v := range tests {
+		t.Run(v, func(t *testing.T) {
+			vol := v
+			if err := (DayExerciseInput{ExerciseID: uuid.New(), Sets: &vol, Reps: &vol}).ValidateDraft(); err != nil {
+				t.Fatalf("ValidateDraft() error = %v", err)
 			}
 		})
 	}
@@ -212,7 +224,7 @@ func TestValidatePublishDetail_groupBlockOptionalSetsReps(t *testing.T) {
 func TestValidatePublishDetail_groupBlockInvalidSetsReps(t *testing.T) {
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	negative := -1
+	bad := "5/"
 	d := Detail{
 		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
 		Weeks: []Week{{
@@ -224,21 +236,21 @@ func TestValidatePublishDetail_groupBlockInvalidSetsReps(t *testing.T) {
 					BlockType: BlockTypeEMOM,
 					Exercises: []DayExercise{{
 						ExerciseID: uuid.New(),
-						Sets:       &negative,
+						Sets:       &bad,
 					}},
 				}},
 			}},
 		}},
 	}
 	if err := validatePublishDetail(d); err == nil {
-		t.Fatal("expected validation error for negative sets in group block")
+		t.Fatal("expected validation error for invalid sets in group block")
 	}
 }
 
 func TestValidatePublishDetail_skipsDaysWithoutExercises(t *testing.T) {
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	d := Detail{
 		Program: Program{Name: "Plan", Category: &category, Difficulty: &difficulty},
 		Weeks: []Week{{
@@ -288,7 +300,7 @@ func TestValidatePublishDetail_groupBlockWithoutExercises(t *testing.T) {
 
 func TestValidatePublishDetail_missingDifficulty(t *testing.T) {
 	category := CategoryMuscleGain
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	d := Detail{
 		Program: Program{Name: "Plan", Category: &category},
 		Weeks: []Week{{
@@ -306,7 +318,7 @@ func TestValidatePublishDetail_missingDifficulty(t *testing.T) {
 }
 
 func TestValidatePublishDetail_missingMetadata(t *testing.T) {
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	base := Detail{
 		Weeks: []Week{{
 			WeekNumber: 1,
@@ -377,6 +389,6 @@ func TestStatusAndCategory_valid(t *testing.T) {
 	}
 }
 
-func intPtr(v int) *int {
+func strPtr(v string) *string {
 	return &v
 }

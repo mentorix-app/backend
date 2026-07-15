@@ -866,3 +866,70 @@ CREATE INDEX client_workout_completions_trainer_id_client_user_id_completed_at_i
 
 CREATE INDEX client_workout_completions_completion_cycle_id_idx
   ON mentorix.client_workout_completions (completion_cycle_id);
+
+-- >>> 000021_block_type_sections.up.sql
+-- Add section-style group block types alongside existing formats.
+
+ALTER TABLE mentorix.program_week_day_blocks
+  DROP CONSTRAINT program_week_day_blocks_block_type_check;
+
+ALTER TABLE mentorix.program_week_day_blocks
+  ADD CONSTRAINT program_week_day_blocks_block_type_check CHECK (
+    block_type IN (
+      'single', 'emom', 'amrap', 'for_time', 'intervals',
+      'chipper', 'ladder', 'death_by', 'superset', 'complex',
+      'skill_work', 'strength', 'conditioning', 'gymnastics', 'weightlifting'
+    )
+  );
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  DROP CONSTRAINT program_version_week_day_blocks_block_type_check;
+
+ALTER TABLE mentorix.program_version_week_day_blocks
+  ADD CONSTRAINT program_version_week_day_blocks_block_type_check CHECK (
+    block_type IN (
+      'single', 'emom', 'amrap', 'for_time', 'intervals',
+      'chipper', 'ladder', 'death_by', 'superset', 'complex',
+      'skill_work', 'strength', 'conditioning', 'gymnastics', 'weightlifting'
+    )
+  );
+
+-- >>> 000022_equipment_bike_ski_erg.up.sql
+-- Concept2-style ergometers: BikeErg and SkiErg.
+
+ALTER TABLE mentorix.exercises DROP CONSTRAINT exercises_equipment_check;
+
+ALTER TABLE mentorix.exercises ADD CONSTRAINT exercises_equipment_check CHECK (
+  equipment IS NULL OR equipment IN (
+    'barbell', 'dumbbells', 'kettlebell', 'pull_up_bar', 'squat_rack', 'rowing_machine',
+    'assault_bike', 'bike_erg', 'ski_erg', 'jump_rope', 'plyo_box', 'medicine_ball', 'wall_ball',
+    'resistance_bands', 'battle_ropes', 'gymnastic_rings', 'sandbag', 'sled', 'weight_plates'
+  )
+);
+
+-- >>> 000023_sets_reps_text.up.sql
+-- sets/reps become flexible volume strings: "3", "5/4", "3-6".
+
+ALTER TABLE mentorix.program_week_day_block_exercises
+  ALTER COLUMN sets TYPE text USING sets::text,
+  ALTER COLUMN reps TYPE text USING reps::text;
+
+ALTER TABLE mentorix.program_week_day_block_exercises
+  ADD CONSTRAINT program_week_day_block_exercises_sets_check CHECK (
+    sets IS NULL OR sets ~ '^[0-9]+([/-][0-9]+)?$'
+  ),
+  ADD CONSTRAINT program_week_day_block_exercises_reps_check CHECK (
+    reps IS NULL OR reps ~ '^[0-9]+([/-][0-9]+)?$'
+  );
+
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  ALTER COLUMN sets TYPE text USING sets::text,
+  ALTER COLUMN reps TYPE text USING reps::text;
+
+ALTER TABLE mentorix.program_version_week_day_block_exercises
+  ADD CONSTRAINT program_version_week_day_block_exercises_sets_check CHECK (
+    sets IS NULL OR sets ~ '^[0-9]+([/-][0-9]+)?$'
+  ),
+  ADD CONSTRAINT program_version_week_day_block_exercises_reps_check CHECK (
+    reps IS NULL OR reps ~ '^[0-9]+([/-][0-9]+)?$'
+  );

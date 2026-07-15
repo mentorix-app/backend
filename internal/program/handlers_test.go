@@ -51,7 +51,7 @@ func publishableDetail(userID, programID uuid.UUID) Detail {
 	diff := Difficulty(exercise.DifficultyBeginner)
 	d.Category = &cat
 	d.Difficulty = &diff
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	blockID := uuid.New()
 	d.Weeks[0].Days[0].Blocks = []DayBlock{{
 		ID:        blockID,
@@ -867,7 +867,7 @@ func TestHandlers_CreateDayBlock(t *testing.T) {
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
-	body := `{"block_type":"single","exercise":{"exercise_id":"` + exerciseID.String() + `","sets":3,"reps":10}}`
+	body := `{"block_type":"single","exercise":{"exercise_id":"` + exerciseID.String() + `","sets":"3","reps":"10"}}`
 	e := echo.New()
 	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/days/"+dayID.String()+"/blocks", body, userID, map[string]string{
 		"id":      programID.String(),
@@ -884,7 +884,7 @@ func TestHandlers_CreateDayBlock(t *testing.T) {
 func TestHandlers_CreateDayBlock_invalidExerciseID(t *testing.T) {
 	h := programHandler(&fakeProgramStore{})
 	e := echo.New()
-	body := `{"block_type":"single","exercise":{"exercise_id":"bad","sets":3,"reps":10}}`
+	body := `{"block_type":"single","exercise":{"exercise_id":"bad","sets":"3","reps":"10"}}`
 	c, _ := programContext(e, http.MethodPost, "/programs/"+uuid.New().String()+"/weeks/"+uuid.New().String()+"/days/"+uuid.New().String()+"/blocks", body, uuid.New(), map[string]string{
 		"id":      uuid.New().String(),
 		"week_id": uuid.New().String(),
@@ -906,7 +906,7 @@ func TestHandlers_UpdateBlockExercise(t *testing.T) {
 	store := &fakeProgramStore{program: detail.Program, detail: detail}
 	h := programHandler(store)
 
-	body := `{"exercise_id":"` + exerciseID.String() + `","sets":4,"reps":8}`
+	body := `{"exercise_id":"` + exerciseID.String() + `","sets":"4","reps":"8"}`
 	e := echo.New()
 	c, rec := programContext(e, http.MethodPut, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises/"+itemID.String(), body, userID, map[string]string{
 		"id":       programID.String(),

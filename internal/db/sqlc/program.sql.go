@@ -369,8 +369,8 @@ type InsertBlockExerciseParams struct {
 	ProgramWeekDayBlockID pgtype.UUID `json:"program_week_day_block_id"`
 	ExerciseID            pgtype.UUID `json:"exercise_id"`
 	SortOrder             int32       `json:"sort_order"`
-	Sets                  *int32      `json:"sets"`
-	Reps                  *int32      `json:"reps"`
+	Sets                  *string     `json:"sets"`
+	Reps                  *string     `json:"reps"`
 	Instruction           string      `json:"instruction"`
 	ModifiedAt            time.Time   `json:"modified_at"`
 	ModifiedBy            pgtype.UUID `json:"modified_by"`
@@ -541,8 +541,8 @@ type ListBlockExercisesRow struct {
 	Name        string      `json:"name"`
 	NameRu      string      `json:"name_ru"`
 	SortOrder   int32       `json:"sort_order"`
-	Sets        *int32      `json:"sets"`
-	Reps        *int32      `json:"reps"`
+	Sets        *string     `json:"sets"`
+	Reps        *string     `json:"reps"`
 	Instruction string      `json:"instruction"`
 	CreatedAt   time.Time   `json:"created_at"`
 }
@@ -1112,8 +1112,8 @@ type UpdateBlockExerciseParams struct {
 	ID                    pgtype.UUID `json:"id"`
 	ProgramWeekDayBlockID pgtype.UUID `json:"program_week_day_block_id"`
 	ExerciseID            pgtype.UUID `json:"exercise_id"`
-	Sets                  *int32      `json:"sets"`
-	Reps                  *int32      `json:"reps"`
+	Sets                  *string     `json:"sets"`
+	Reps                  *string     `json:"reps"`
 	Instruction           string      `json:"instruction"`
 	ModifiedAt            time.Time   `json:"modified_at"`
 	ModifiedBy            pgtype.UUID `json:"modified_by"`

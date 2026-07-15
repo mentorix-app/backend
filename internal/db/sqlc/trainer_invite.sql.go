@@ -243,10 +243,16 @@ WITH ranked_link AS (
 SELECT
   rl.client_user_id,
   t.user_id AS trainer_user_id,
+  tu.display_name AS trainer_display_name,
   rl.status,
   rl.created_at,
   u.display_name,
   u.avatar_file_path,
+  (
+    SELECT MAX(cwc.completed_at)
+    FROM mentorix.client_workout_completions cwc
+    WHERE cwc.client_user_id = rl.client_user_id
+  ) AS last_active_at,
   pa.id AS assignment_id,
   pa.program_id,
   pa.program_version_id,
@@ -271,6 +277,7 @@ SELECT
   )::boolean AS is_behind_latest
 FROM ranked_link rl
 INNER JOIN mentorix.trainers t ON t.id = rl.trainer_id
+INNER JOIN mentorix.users tu ON tu.id = t.user_id
 INNER JOIN mentorix.users u ON u.id = rl.client_user_id
 LEFT JOIN mentorix.program_assignments pa
   ON pa.trainer_id = rl.trainer_id
@@ -300,20 +307,22 @@ type ListAllTrainerClientsParams struct {
 }
 
 type ListAllTrainerClientsRow struct {
-	ClientUserID     pgtype.UUID        `json:"client_user_id"`
-	TrainerUserID    pgtype.UUID        `json:"trainer_user_id"`
-	Status           string             `json:"status"`
-	CreatedAt        time.Time          `json:"created_at"`
-	DisplayName      string             `json:"display_name"`
-	AvatarFilePath   string             `json:"avatar_file_path"`
-	AssignmentID     pgtype.UUID        `json:"assignment_id"`
-	ProgramID        pgtype.UUID        `json:"program_id"`
-	ProgramVersionID pgtype.UUID        `json:"program_version_id"`
-	AssignmentStatus *string            `json:"assignment_status"`
-	AssignedAt       pgtype.Timestamptz `json:"assigned_at"`
-	ProgramName      *string            `json:"program_name"`
-	ProgramNameRu    *string            `json:"program_name_ru"`
-	IsBehindLatest   bool               `json:"is_behind_latest"`
+	ClientUserID       pgtype.UUID        `json:"client_user_id"`
+	TrainerUserID      pgtype.UUID        `json:"trainer_user_id"`
+	TrainerDisplayName string             `json:"trainer_display_name"`
+	Status             string             `json:"status"`
+	CreatedAt          time.Time          `json:"created_at"`
+	DisplayName        string             `json:"display_name"`
+	AvatarFilePath     string             `json:"avatar_file_path"`
+	LastActiveAt       interface{}        `json:"last_active_at"`
+	AssignmentID       pgtype.UUID        `json:"assignment_id"`
+	ProgramID          pgtype.UUID        `json:"program_id"`
+	ProgramVersionID   pgtype.UUID        `json:"program_version_id"`
+	AssignmentStatus   *string            `json:"assignment_status"`
+	AssignedAt         pgtype.Timestamptz `json:"assigned_at"`
+	ProgramName        *string            `json:"program_name"`
+	ProgramNameRu      *string            `json:"program_name_ru"`
+	IsBehindLatest     bool               `json:"is_behind_latest"`
 }
 
 func (q *Queries) ListAllTrainerClients(ctx context.Context, arg ListAllTrainerClientsParams) ([]ListAllTrainerClientsRow, error) {
@@ -335,10 +344,12 @@ func (q *Queries) ListAllTrainerClients(ctx context.Context, arg ListAllTrainerC
 		if err := rows.Scan(
 			&i.ClientUserID,
 			&i.TrainerUserID,
+			&i.TrainerDisplayName,
 			&i.Status,
 			&i.CreatedAt,
 			&i.DisplayName,
 			&i.AvatarFilePath,
+			&i.LastActiveAt,
 			&i.AssignmentID,
 			&i.ProgramID,
 			&i.ProgramVersionID,
@@ -362,10 +373,16 @@ const listTrainerClients = `-- name: ListTrainerClients :many
 SELECT
   tc.client_user_id,
   t.user_id AS trainer_user_id,
+  tu.display_name AS trainer_display_name,
   tc.status,
   tc.created_at,
   u.display_name,
   u.avatar_file_path,
+  (
+    SELECT MAX(cwc.completed_at)
+    FROM mentorix.client_workout_completions cwc
+    WHERE cwc.client_user_id = tc.client_user_id
+  ) AS last_active_at,
   pa.id AS assignment_id,
   pa.program_id,
   pa.program_version_id,
@@ -390,6 +407,7 @@ SELECT
   )::boolean AS is_behind_latest
 FROM mentorix.trainer_clients tc
 INNER JOIN mentorix.trainers t ON t.id = tc.trainer_id
+INNER JOIN mentorix.users tu ON tu.id = t.user_id
 INNER JOIN mentorix.users u ON u.id = tc.client_user_id
 LEFT JOIN mentorix.program_assignments pa
   ON pa.trainer_id = tc.trainer_id
@@ -420,20 +438,22 @@ type ListTrainerClientsParams struct {
 }
 
 type ListTrainerClientsRow struct {
-	ClientUserID     pgtype.UUID        `json:"client_user_id"`
-	TrainerUserID    pgtype.UUID        `json:"trainer_user_id"`
-	Status           string             `json:"status"`
-	CreatedAt        time.Time          `json:"created_at"`
-	DisplayName      string             `json:"display_name"`
-	AvatarFilePath   string             `json:"avatar_file_path"`
-	AssignmentID     pgtype.UUID        `json:"assignment_id"`
-	ProgramID        pgtype.UUID        `json:"program_id"`
-	ProgramVersionID pgtype.UUID        `json:"program_version_id"`
-	AssignmentStatus *string            `json:"assignment_status"`
-	AssignedAt       pgtype.Timestamptz `json:"assigned_at"`
-	ProgramName      *string            `json:"program_name"`
-	ProgramNameRu    *string            `json:"program_name_ru"`
-	IsBehindLatest   bool               `json:"is_behind_latest"`
+	ClientUserID       pgtype.UUID        `json:"client_user_id"`
+	TrainerUserID      pgtype.UUID        `json:"trainer_user_id"`
+	TrainerDisplayName string             `json:"trainer_display_name"`
+	Status             string             `json:"status"`
+	CreatedAt          time.Time          `json:"created_at"`
+	DisplayName        string             `json:"display_name"`
+	AvatarFilePath     string             `json:"avatar_file_path"`
+	LastActiveAt       interface{}        `json:"last_active_at"`
+	AssignmentID       pgtype.UUID        `json:"assignment_id"`
+	ProgramID          pgtype.UUID        `json:"program_id"`
+	ProgramVersionID   pgtype.UUID        `json:"program_version_id"`
+	AssignmentStatus   *string            `json:"assignment_status"`
+	AssignedAt         pgtype.Timestamptz `json:"assigned_at"`
+	ProgramName        *string            `json:"program_name"`
+	ProgramNameRu      *string            `json:"program_name_ru"`
+	IsBehindLatest     bool               `json:"is_behind_latest"`
 }
 
 func (q *Queries) ListTrainerClients(ctx context.Context, arg ListTrainerClientsParams) ([]ListTrainerClientsRow, error) {
@@ -455,10 +475,12 @@ func (q *Queries) ListTrainerClients(ctx context.Context, arg ListTrainerClients
 		if err := rows.Scan(
 			&i.ClientUserID,
 			&i.TrainerUserID,
+			&i.TrainerDisplayName,
 			&i.Status,
 			&i.CreatedAt,
 			&i.DisplayName,
 			&i.AvatarFilePath,
+			&i.LastActiveAt,
 			&i.AssignmentID,
 			&i.ProgramID,
 			&i.ProgramVersionID,

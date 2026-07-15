@@ -81,6 +81,12 @@ func TestTrainerInvite_acceptAndListClients(t *testing.T) {
 	if list.Items[0].DisplayName != "Ivan Client" {
 		t.Fatalf("display_name = %q", list.Items[0].DisplayName)
 	}
+	if list.Items[0].TrainerDisplayName != "Trainer Anna" {
+		t.Fatalf("trainer_display_name = %q", list.Items[0].TrainerDisplayName)
+	}
+	if list.Items[0].LastActiveAt != nil {
+		t.Fatalf("last_active_at = %v, want nil", list.Items[0].LastActiveAt)
+	}
 
 	repeat, err := svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
 		Token:          token,
@@ -971,7 +977,7 @@ func TestTrainerClient_listIncludesProgramAssignmentNames(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := createSingleBlock(ctx, progSvc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,

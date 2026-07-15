@@ -7,11 +7,11 @@ import (
 )
 
 type snapshotExercise struct {
-	Name        string `json:"name"`
-	NameRu      string `json:"name_ru"`
-	Sets        *int   `json:"sets,omitempty"`
-	Reps        *int   `json:"reps,omitempty"`
-	Instruction string `json:"instruction,omitempty"`
+	Name        string  `json:"name"`
+	NameRu      string  `json:"name_ru"`
+	Sets        *string `json:"sets,omitempty"`
+	Reps        *string `json:"reps,omitempty"`
+	Instruction string  `json:"instruction,omitempty"`
 }
 
 type snapshotBlock struct {

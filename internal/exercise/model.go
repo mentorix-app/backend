@@ -47,6 +47,8 @@ const (
 	EquipmentSquatRack       Equipment = "squat_rack"
 	EquipmentRowingMachine   Equipment = "rowing_machine"
 	EquipmentAssaultBike     Equipment = "assault_bike"
+	EquipmentBikeErg         Equipment = "bike_erg"
+	EquipmentSkiErg          Equipment = "ski_erg"
 	EquipmentJumpRope        Equipment = "jump_rope"
 	EquipmentPlyoBox         Equipment = "plyo_box"
 	EquipmentMedicineBall    Equipment = "medicine_ball"
@@ -145,9 +147,10 @@ func (t ExerciseType) valid() bool {
 func (e Equipment) valid() bool {
 	switch e {
 	case EquipmentBarbell, EquipmentDumbbells, EquipmentKettlebell, EquipmentPullUpBar,
-		EquipmentSquatRack, EquipmentRowingMachine, EquipmentAssaultBike, EquipmentJumpRope,
-		EquipmentPlyoBox, EquipmentMedicineBall, EquipmentWallBall, EquipmentResistanceBands,
-		EquipmentBattleRopes, EquipmentGymnasticRings, EquipmentSandbag, EquipmentSled, EquipmentWeightPlates:
+		EquipmentSquatRack, EquipmentRowingMachine, EquipmentAssaultBike, EquipmentBikeErg,
+		EquipmentSkiErg, EquipmentJumpRope, EquipmentPlyoBox, EquipmentMedicineBall, EquipmentWallBall,
+		EquipmentResistanceBands, EquipmentBattleRopes, EquipmentGymnasticRings, EquipmentSandbag,
+		EquipmentSled, EquipmentWeightPlates:
 		return true
 	default:
 		return false

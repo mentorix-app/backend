@@ -76,8 +76,8 @@ func schemaBindings() []schemaBinding {
 			SortOrder int               `json:"sort_order"`
 			Exercise  *struct {
 				ExerciseID  string  `json:"exercise_id"`
-				Sets        *int    `json:"sets"`
-				Reps        *int    `json:"reps"`
+				Sets        *string `json:"sets"`
+				Reps        *string `json:"reps"`
 				Instruction *string `json:"instruction"`
 			} `json:"exercise"`
 		}{})},
@@ -106,8 +106,8 @@ func schemaBindings() []schemaBinding {
 		}{})},
 		{name: "ProgramDayExerciseUpsert", typ: reflect.TypeOf(struct {
 			ExerciseID  string  `json:"exercise_id"`
-			Sets        *int    `json:"sets"`
-			Reps        *int    `json:"reps"`
+			Sets        *string `json:"sets"`
+			Reps        *string `json:"reps"`
 			Instruction *string `json:"instruction"`
 		}{})},
 		{name: "ProgramAssignment", typ: reflect.TypeOf(program.Assignment{})},
@@ -201,7 +201,8 @@ func enumBindings() []enumBinding {
 		{name: "Equipment", values: []string{
 			string(exercise.EquipmentBarbell), string(exercise.EquipmentDumbbells), string(exercise.EquipmentKettlebell),
 			string(exercise.EquipmentPullUpBar), string(exercise.EquipmentSquatRack), string(exercise.EquipmentRowingMachine),
-			string(exercise.EquipmentAssaultBike), string(exercise.EquipmentJumpRope), string(exercise.EquipmentPlyoBox),
+			string(exercise.EquipmentAssaultBike), string(exercise.EquipmentBikeErg), string(exercise.EquipmentSkiErg),
+			string(exercise.EquipmentJumpRope), string(exercise.EquipmentPlyoBox),
 			string(exercise.EquipmentMedicineBall), string(exercise.EquipmentWallBall), string(exercise.EquipmentResistanceBands),
 			string(exercise.EquipmentBattleRopes), string(exercise.EquipmentGymnasticRings), string(exercise.EquipmentSandbag),
 			string(exercise.EquipmentSled), string(exercise.EquipmentWeightPlates),
@@ -224,7 +225,8 @@ func enumBindings() []enumBinding {
 			string(program.BlockTypeSingle), string(program.BlockTypeEMOM), string(program.BlockTypeAMRAP),
 			string(program.BlockTypeForTime), string(program.BlockTypeIntervals), string(program.BlockTypeChipper),
 			string(program.BlockTypeLadder), string(program.BlockTypeDeathBy), string(program.BlockTypeSuperset),
-			string(program.BlockTypeComplex),
+			string(program.BlockTypeComplex), string(program.BlockTypeSkillWork), string(program.BlockTypeStrength),
+			string(program.BlockTypeConditioning), string(program.BlockTypeGymnastics), string(program.BlockTypeWeightlifting),
 		}},
 	}
 }

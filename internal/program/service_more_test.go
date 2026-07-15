@@ -185,8 +185,8 @@ func TestService_Publish_setStatusNotFound(t *testing.T) {
 	programID := uuid.New()
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 	svc := testService(&setStatusErrStore{
 		fakeProgramStore: fakeProgramStore{
 			program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
@@ -228,8 +228,8 @@ func TestService_Publish_fromArchived(t *testing.T) {
 	programID := uuid.New()
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
 		detail: Detail{
@@ -274,8 +274,8 @@ func TestService_Publish_success(t *testing.T) {
 	programID := uuid.New()
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail: Detail{
@@ -350,8 +350,8 @@ func TestService_PublishUpdate_success(t *testing.T) {
 	programID := uuid.New()
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 	versionID := uuid.New()
 	svc := testService(&assignmentVersionStore{
 		fakeProgramStore: fakeProgramStore{
@@ -599,7 +599,7 @@ func TestService_dayExerciseOperations(t *testing.T) {
 	dayID := uuid.New()
 	blockID := uuid.New()
 	itemID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	detail := Detail{Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft}}
 	store := &fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
@@ -637,7 +637,7 @@ func TestService_CreateDayBlock_validationError(t *testing.T) {
 func TestService_CreateDayBlock_rejectsGroupType(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 	}, nil)
@@ -663,7 +663,7 @@ func TestService_CreateDayBlock_rejectsGroupType(t *testing.T) {
 func TestService_CreateDayBlock_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	want := Detail{Program: Program{ID: programID, Status: StatusDraft}}
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
@@ -685,7 +685,7 @@ func TestService_CreateDayBlock_success(t *testing.T) {
 func TestService_UpdateBlockExercise_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	sets, reps := 4, 12
+	sets, reps := "4", "12"
 	want := Detail{Program: Program{ID: programID, Status: StatusDraft}}
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
@@ -864,7 +864,7 @@ func TestService_blockMutations_success(t *testing.T) {
 	itemID := uuid.New()
 	targetBlockID := uuid.New()
 	exerciseID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	emom := BlockTypeEMOM
 	instr := "work"
 	want := Detail{Program: Program{ID: programID, Status: StatusDraft}}
@@ -948,7 +948,7 @@ func TestService_blockMutations_notFound(t *testing.T) {
 	itemID := uuid.New()
 	targetBlockID := uuid.New()
 	exerciseID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	emom := BlockTypeEMOM
 	instr := "work"
 	svc := testService(&fakeProgramStore{
@@ -1065,7 +1065,7 @@ func TestService_blockMutations_readOnly(t *testing.T) {
 	itemID := uuid.New()
 	targetBlockID := uuid.New()
 	exerciseID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	emom := BlockTypeEMOM
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
@@ -1236,14 +1236,14 @@ func TestService_blockMutations_forbidden(t *testing.T) {
 			return err
 		}},
 		{"UpdateBlockExercise", func() error {
-			sets, reps := 3, 10
+			sets, reps := "3", "10"
 			_, err := svc.UpdateBlockExercise(ctx, otherID, programID, weekID, blockID, itemID, DayExerciseInput{
 				ExerciseID: uuid.New(), Sets: &sets, Reps: &reps,
 			})
 			return err
 		}},
 		{"AddBlockExercise", func() error {
-			sets, reps := 3, 10
+			sets, reps := "3", "10"
 			_, err := svc.AddBlockExercise(ctx, otherID, programID, weekID, blockID, DayExerciseInput{
 				ExerciseID: uuid.New(), Sets: &sets, Reps: &reps,
 			})
@@ -1302,7 +1302,7 @@ func TestService_UpdateBlockExercise_validation(t *testing.T) {
 func TestService_UpdateBlockExercise_readOnly(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
 	}, nil)
@@ -1317,7 +1317,7 @@ func TestService_UpdateBlockExercise_readOnly(t *testing.T) {
 func TestService_UpdateBlockExercise_storeError(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	want := errors.New("store failed")
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
@@ -1365,7 +1365,7 @@ func TestService_blockMutations_storeError(t *testing.T) {
 	itemID := uuid.New()
 	targetBlockID := uuid.New()
 	exerciseID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	emom := BlockTypeEMOM
 	instr := "work"
 	want := errors.New("store failed")
@@ -1879,8 +1879,8 @@ func TestService_Publish_archivedRepublication(t *testing.T) {
 	programID := uuid.New()
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 	svc := testService(&publishStore{fakeProgramStore: fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
 		detail: Detail{
@@ -1994,7 +1994,7 @@ func TestService_CleanupVersions_storeError(t *testing.T) {
 func TestService_CreateDayBlock_notFound(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		err:     pgx.ErrNoRows,
@@ -2012,7 +2012,7 @@ func TestService_CreateDayBlock_notFound(t *testing.T) {
 func TestService_UpdateBlockExercise_notFound(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		err:     pgx.ErrNoRows,
@@ -2116,8 +2116,8 @@ func TestService_PublishUpdate_freezeStoreError(t *testing.T) {
 	programID := uuid.New()
 	category := CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
-	sets := 3
-	reps := 10
+	sets := "3"
+	reps := "10"
 	want := errors.New("freeze failed")
 	svc := testService(&freezeErrStore{
 		fakeProgramStore: fakeProgramStore{

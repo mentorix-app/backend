@@ -49,7 +49,7 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 12
+	sets, reps := "3", "12"
 	instruction := "controlled"
 	withExercise, err := createSingleBlock(ctx, svc, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID:  catalogExercise.ID,
@@ -70,7 +70,7 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	}
 	itemID := ex.ID
 
-	newSets := 4
+	newSets := "4"
 	updated, err := svc.UpdateBlockExercise(ctx, trainerID, draft.ID, weekID, block.ID, itemID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &newSets,
@@ -84,7 +84,7 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 		t.Fatal("expected exercise after update")
 	}
 	if *updatedEx.Sets != newSets {
-		t.Fatalf("sets = %d, want %d", *updatedEx.Sets, newSets)
+		t.Fatalf("sets = %q, want %q", *updatedEx.Sets, newSets)
 	}
 
 	without, err := svc.DeleteBlockExercise(ctx, trainerID, draft.ID, weekID, block.ID, itemID)
@@ -196,7 +196,7 @@ func TestProgramService_trainingDaysCount(t *testing.T) {
 	weekID := draft.Weeks[0].ID
 	day1 := draft.Weeks[0].Days[0].ID
 	day2 := draft.Weeks[0].Days[1].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := createSingleBlock(ctx, svc, trainerID, draft.ID, weekID, day1, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
@@ -292,7 +292,7 @@ func TestProgramService_ListAndArchive(t *testing.T) {
 	}
 	weekID := detail.Weeks[0].ID
 	dayID := detail.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := svc.Update(ctx, trainerID, draftID, program.UpdateInput{
 		Name:       &name,
 		Category:   &category,
@@ -481,7 +481,7 @@ func TestProgramService_publishWithTwoWeeks(t *testing.T) {
 		t.Fatalf("Update() error = %v", err)
 	}
 
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	week1ID := withWeek2.Weeks[0].ID
 	week2ID := withWeek2.Weeks[1].ID
 	day1ID := withWeek2.Weeks[0].Days[0].ID
@@ -560,7 +560,7 @@ func TestProgramService_ClientProgramAssignment(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := createSingleBlock(ctx, svc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
@@ -674,7 +674,7 @@ func TestProgramService_BulkSetClientProgramAssignment(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 8
+	sets, reps := "3", "8"
 	if _, err := createSingleBlock(ctx, svc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
@@ -771,7 +771,7 @@ func TestProgramService_AssignmentSyncAndVersionCleanup(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := createSingleBlock(ctx, svc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
@@ -961,7 +961,7 @@ func TestProgramService_CleanupVersions_skipsAssignedVersion(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := createSingleBlock(ctx, svc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,
@@ -1211,7 +1211,7 @@ func TestProgramService_SetClientAssignment_wrongOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create exercise: %v", err)
 	}
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := ownerSvc.CreateDayBlock(ctx, ownerUserID, draft.ID, weekID, dayID, program.CreateDayBlockInput{
 		BlockType: program.BlockTypeSingle,
 		Exercise: &program.DayExerciseInput{
@@ -1325,7 +1325,7 @@ func TestProgramService_adminCannotSyncOtherUsersProgram(t *testing.T) {
 	}
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
-	sets, reps := 3, 10
+	sets, reps := "3", "10"
 	if _, err := createSingleBlock(ctx, svc, ownerID, draft.ID, weekID, dayID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
 		Sets:       &sets,

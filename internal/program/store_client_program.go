@@ -67,23 +67,14 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 	exercisesByBlock := make(map[uuid.UUID][]DayExercise, len(exerciseRows))
 	for _, exRow := range exerciseRows {
 		blockID := pgconv.FromPGUUID(exRow.ProgramVersionWeekDayBlockID)
-		var sets, reps *int
-		if exRow.Sets != nil {
-			v := int(*exRow.Sets)
-			sets = &v
-		}
-		if exRow.Reps != nil {
-			v := int(*exRow.Reps)
-			reps = &v
-		}
 		exercisesByBlock[blockID] = append(exercisesByBlock[blockID], DayExercise{
 			ID:             pgconv.FromPGUUID(exRow.ID),
 			ExerciseID:     pgconv.FromPGUUID(exRow.ExerciseID),
 			ExerciseName:   exRow.ExerciseName,
 			ExerciseNameRu: exRow.ExerciseNameRu,
 			SortOrder:      int(exRow.SortOrder),
-			Sets:           sets,
-			Reps:           reps,
+			Sets:           exRow.Sets,
+			Reps:           exRow.Reps,
 			Instruction:    exRow.Instruction,
 			CreatedAt:      exRow.CreatedAt.UTC(),
 		})
