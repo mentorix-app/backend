@@ -14,7 +14,7 @@ databases:
 services:
   - type: keyvalue
     name: mentorix-redis-stage
-    plan: free
+    plan: starter
     region: frankfurt
     maxmemoryPolicy: allkeys-lru
     persistenceMode: off

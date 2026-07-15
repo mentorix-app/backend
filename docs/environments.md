@@ -15,7 +15,7 @@
 | Postgres | `mentorix-db-stage` | `mentorix-db` |
 | Redis | `mentorix-redis-stage` | `mentorix-redis` |
 
-Plans stage: web **starter**, Postgres **basic-256mb** (PG 16), Redis **free**. Region: **frankfurt**.
+Plans stage: web **starter**, Postgres **basic-256mb** (PG 16), Redis **starter** (Free недоступен параллельно со старым free Key Value). Region: **frankfurt**.
 
 ## Env
 
