@@ -11,8 +11,6 @@ servers:
     description: Local development
   - url: https://mentorix-api-stage.onrender.com
     description: Render stage (mentorix-api-stage)
-  - url: https://mentorix-api.onrender.com
-    description: Render prod (mentorix-api)
 
 tags:
   - name: health

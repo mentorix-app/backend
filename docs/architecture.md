@@ -13,7 +13,7 @@
 | БД | PostgreSQL, схема `mentorix`, pgx + sqlc, golang-migrate |
 | Кэш/лимиты | Redis |
 | Auth | JWT + opaque refresh (cookie), argon2id |
-| Деплой | Render Blueprint ([`render.yaml`](../render.yaml)): stage `develop` + prod `main`; CI-gated Deploy Hooks |
+| Деплой | Render Blueprint ([`render.yaml`](../render.yaml)): stage `develop`; CI-gated Deploy Hook |
 | Логи | `log/slog`, request ID |
 
 Миграции: версия **23**, проверка `./scripts/migrate-check.sh`.
