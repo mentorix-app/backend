@@ -127,7 +127,7 @@ fi
 
 if (( ! skip_docs_check )); then
   step "docs-check"
-  if ./scripts/docs-check.sh; then ok; else fail "docs-check"; fi
+  if bash scripts/docs-check.sh; then ok; else fail "docs-check"; fi
 fi
 
 if (( ! skip_migrate_check )); then
