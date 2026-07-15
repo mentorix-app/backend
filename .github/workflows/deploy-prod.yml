@@ -1,10 +1,9 @@
 name: Deploy prod
 
-# After CI succeeds on main; Environment 'production' should require reviewers.
+# Manual only until prod Render services exist (stage Blueprint has no prod yet).
+# When ready: add prod to render.yaml, create GitHub Environment "production"
+# with RENDER_DEPLOY_HOOK_PROD, then re-enable workflow_run on main if desired.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
   workflow_dispatch:
 
 concurrency:
@@ -13,11 +12,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -27,6 +21,7 @@ jobs:
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK" ]; then
             echo "Missing secret RENDER_DEPLOY_HOOK_PROD in GitHub Environment 'production'" >&2
+            echo "Prod is not wired yet — see docs/environments.md" >&2
             exit 1
           fi
           curl -fsS -X POST "$RENDER_DEPLOY_HOOK"
@@ -37,8 +32,6 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Post-deploy health
         env:
           SMOKE_BASE_URL: https://mentorix-api.onrender.com

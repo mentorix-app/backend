@@ -17,7 +17,7 @@ No commit with code/API/DB changes without aligned docs/rules.
 | New naming/process pattern | matching `.cursor/rules/*.mdc` |
 | Docs/rules only | no conflict with code, OpenAPI, `db/schema.sql` |
 
-Run `make docs-check` (links, sizes, migration version in docs). Included in `make check-ci`.
+Docs gate: `./scripts/docs-check.sh` (included in `make check-ci`).
 
 **Actuality:** docs describe **now** only; delete stale text in the same commit. Canon: code + OpenAPI + schema.
 

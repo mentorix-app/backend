@@ -29,7 +29,7 @@
 ## Перед коммитом
 
 1. Сверить diff с docs/rules/status ([qa-before-push.mdc](../.cursor/rules/qa-before-push.mdc) §A).
-2. Pre-commit / вручную: `make check-ci` (включает `docs-check`).
+2. Pre-commit / вручную: `make check-ci` (включает docs-check).
 
 ## Перед push
 

@@ -20,9 +20,9 @@ make dev             # API with hot reload
 
 Import `postman/mentorix-backend.postman_collection.json` + `mentorix-local.postman_environment.json`.
 
-Validate contract: `make validate`
+Validate contract: `SKIP_SMOKE=1 ./postman/validate.sh` (also inside `make check-ci`)
 
-Local + Render stage/prod (CI/CD): [docs/environments.md](docs/environments.md).
+Local + Render stage (CI/CD): [docs/environments.md](docs/environments.md). Prod later.
 
 ## QA
 

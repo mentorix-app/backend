@@ -24,7 +24,7 @@ feature/* → PR → develop → CI → Deploy stage → smoke
 - Required check: job **`check`** (`make check-ci`).
 - Migrate: [`scripts/render-migrate.sh`](../scripts/render-migrate.sh) в `preDeployCommand`.
 - Local: pre-commit = `make check-ci`; before push = `make check`.
-- Workflow [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) есть на будущее; без prod-сервисов не использовать.
+- Workflow [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) — только руками (`workflow_dispatch`), пока нет prod на Render.
 
 ## GitHub (один раз)
 

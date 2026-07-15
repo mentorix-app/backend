@@ -58,4 +58,4 @@ Rule ~80–120 lines; feature doc ~150; `index.mdc` ~40. Split or trim when exce
 ## On every commit
 
 1. Sync docs/rules/status with the diff — see [qa-before-push.mdc](qa-before-push.mdc) §A.
-2. Run `./scripts/docs-check.sh` (or `make docs-check`).
+2. Run `./scripts/docs-check.sh` (or `make check-ci`).
