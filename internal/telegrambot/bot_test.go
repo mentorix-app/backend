@@ -473,6 +473,38 @@ func TestBot_handleProgram_error(t *testing.T) {
 	}
 }
 
+func TestBot_handleProgram_activeTrainerNotSet(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{programErr: trainerclient.ErrActiveTrainerNotSet})
+	bot.handleProgram(context.Background(), 1, "42")
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "Тренеры") {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+}
+
+func TestBot_handleTrainers_withoutActiveStillShowsPicker(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{
+		trainers: trainerclient.TelegramTrainerList{
+			Items: []trainerclient.TelegramTrainer{
+				{TrainerID: uuid.New(), DisplayName: "Anna"},
+				{TrainerID: uuid.New(), DisplayName: "Ivan"},
+			},
+		},
+	})
+	bot.handleTrainers(context.Background(), 1, "42")
+	if len(api.sent) != 1 {
+		t.Fatalf("sent = %d", len(api.sent))
+	}
+	if !strings.Contains(api.sent[0].Text, "Anna") || !strings.Contains(api.sent[0].Text, "Ivan") {
+		t.Fatalf("text = %q", api.sent[0].Text)
+	}
+	markup, ok := api.sent[0].ReplyMarkup.(tgbotapi.InlineKeyboardMarkup)
+	if !ok || len(markup.InlineKeyboard) != 2 {
+		t.Fatalf("inline = %+v", api.sent[0].ReplyMarkup)
+	}
+}
+
 func TestBot_handleTrainers_error(t *testing.T) {
 	api := &fakeTelegramAPI{}
 	bot := New(api, &fakeTrainerClient{trainersErr: http.ErrServerClosed})

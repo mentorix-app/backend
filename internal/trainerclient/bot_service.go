@@ -25,7 +25,11 @@ func (s *Service) ListTelegramTrainers(ctx context.Context, telegramUserID strin
 
 	activeID, err := s.resolveActiveTrainerID(ctx, telegramUserID, trainers)
 	if err != nil {
-		return TelegramTrainerList{}, err
+		// Still return the list so the client can pick an active trainer in the bot.
+		if !errors.Is(err, ErrActiveTrainerNotSet) {
+			return TelegramTrainerList{}, err
+		}
+		activeID = nil
 	}
 
 	for i := range trainers {

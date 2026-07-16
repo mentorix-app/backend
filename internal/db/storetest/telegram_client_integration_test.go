@@ -221,6 +221,29 @@ func TestTelegramClient_setActiveTrainerTwoTrainers(t *testing.T) {
 	if got.TrainerID != trainerBID {
 		t.Fatalf("got = %+v", got)
 	}
+
+	if err := activeStore.Delete(ctx, "555001"); err != nil {
+		t.Fatalf("Delete active: %v", err)
+	}
+	listNoActive, err := svc.ListTelegramTrainers(ctx, "555001")
+	if err != nil {
+		t.Fatalf("ListTelegramTrainers without active: %v", err)
+	}
+	if len(listNoActive.Items) != 2 {
+		t.Fatalf("items = %+v", listNoActive.Items)
+	}
+	if listNoActive.ActiveTrainerID != nil {
+		t.Fatalf("active_trainer_id = %v, want nil", listNoActive.ActiveTrainerID)
+	}
+	for _, item := range listNoActive.Items {
+		if item.IsActive {
+			t.Fatalf("no trainer should be active: %+v", item)
+		}
+	}
+	_, err = svc.GetTelegramProgram(ctx, "555001", nil)
+	if !errors.Is(err, trainerclient.ErrActiveTrainerNotSet) {
+		t.Fatalf("GetTelegramProgram err = %v, want ErrActiveTrainerNotSet", err)
+	}
 }
 
 func inviteTokenFromURL(inviteURL string) string {
