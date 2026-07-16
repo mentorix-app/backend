@@ -340,6 +340,24 @@ func TestFormatBlocks_withInstruction(t *testing.T) {
 	}
 }
 
+func TestBlockTypeHeading_newTypes(t *testing.T) {
+	tests := []struct {
+		t    program.BlockType
+		want string
+	}{
+		{program.BlockTypeSkillWork, "🎯 Skill Work"},
+		{program.BlockTypeStrength, "🏋 Сила"},
+		{program.BlockTypeConditioning, "🏃 Кондишн"},
+		{program.BlockTypeGymnastics, "🤸 Гимнастика"},
+		{program.BlockTypeWeightlifting, "🏅 Тяжёлая атлетика"},
+	}
+	for _, tt := range tests {
+		if got := blockTypeHeading(tt.t); got != tt.want {
+			t.Fatalf("%s: got %q, want %q", tt.t, got, tt.want)
+		}
+	}
+}
+
 func TestFormatBlocks_exerciseInstruction(t *testing.T) {
 	sets, reps := "3", "10"
 	text := formatBlocks([]program.DayBlock{{

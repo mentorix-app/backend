@@ -241,6 +241,16 @@ func blockTypeIcon(t program.BlockType) string {
 		return "📈"
 	case program.BlockTypeDeathBy:
 		return "💀"
+	case program.BlockTypeSkillWork:
+		return "🎯"
+	case program.BlockTypeStrength:
+		return "🏋"
+	case program.BlockTypeConditioning:
+		return "🏃"
+	case program.BlockTypeGymnastics:
+		return "🤸"
+	case program.BlockTypeWeightlifting:
+		return "🏅"
 	default:
 		return ""
 	}
@@ -266,6 +276,16 @@ func blockTypeLabel(t program.BlockType) string {
 		return "Лестница"
 	case program.BlockTypeDeathBy:
 		return "Death By"
+	case program.BlockTypeSkillWork:
+		return "Skill Work"
+	case program.BlockTypeStrength:
+		return "Сила"
+	case program.BlockTypeConditioning:
+		return "Кондишн"
+	case program.BlockTypeGymnastics:
+		return "Гимнастика"
+	case program.BlockTypeWeightlifting:
+		return "Тяжёлая атлетика"
 	default:
 		return "Блок"
 	}
