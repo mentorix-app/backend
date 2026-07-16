@@ -244,7 +244,7 @@ func blockTypeIcon(t program.BlockType) string {
 	case program.BlockTypeSkillWork:
 		return "🎯"
 	case program.BlockTypeStrength:
-		return "🏋"
+		return "🦾"
 	case program.BlockTypeConditioning:
 		return "🏃"
 	case program.BlockTypeGymnastics:

@@ -346,7 +346,7 @@ func TestBlockTypeHeading_newTypes(t *testing.T) {
 		want string
 	}{
 		{program.BlockTypeSkillWork, "🎯 Skill Work"},
-		{program.BlockTypeStrength, "🏋 Сила"},
+		{program.BlockTypeStrength, "🦾 Сила"},
 		{program.BlockTypeConditioning, "🏃 Кондишн"},
 		{program.BlockTypeGymnastics, "🤸 Гимнастика"},
 		{program.BlockTypeWeightlifting, "🏅 Тяжёлая атлетика"},
@@ -355,6 +355,30 @@ func TestBlockTypeHeading_newTypes(t *testing.T) {
 		if got := blockTypeHeading(tt.t); got != tt.want {
 			t.Fatalf("%s: got %q, want %q", tt.t, got, tt.want)
 		}
+	}
+}
+
+func TestBlockTypeIcon_uniqueAmongGroupTypes(t *testing.T) {
+	groupTypes := []program.BlockType{
+		program.BlockTypeEMOM, program.BlockTypeAMRAP, program.BlockTypeForTime,
+		program.BlockTypeIntervals, program.BlockTypeChipper, program.BlockTypeLadder,
+		program.BlockTypeDeathBy, program.BlockTypeSuperset, program.BlockTypeComplex,
+		program.BlockTypeSkillWork, program.BlockTypeStrength, program.BlockTypeConditioning,
+		program.BlockTypeGymnastics, program.BlockTypeWeightlifting,
+	}
+	seen := make(map[string]program.BlockType, len(groupTypes))
+	for _, bt := range groupTypes {
+		icon := blockTypeIcon(bt)
+		if icon == "" {
+			t.Fatalf("%s: empty icon", bt)
+		}
+		if icon == "🏋" {
+			t.Fatalf("%s: icon %q collides with standalone exercise bullet", bt, icon)
+		}
+		if prev, ok := seen[icon]; ok {
+			t.Fatalf("icon %q used by both %s and %s", icon, prev, bt)
+		}
+		seen[icon] = bt
 	}
 }
 
