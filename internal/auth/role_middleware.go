@@ -34,6 +34,11 @@ func roleMiddleware(q *sqlc.Queries, forbiddenMsg string, roles ...string) echo.
 }
 
 func TrainerMiddleware(pool *pgxpool.Pool) echo.MiddlewareFunc {
+	return roleMiddleware(sqlc.New(pool), httpx.MsgTrainerRoleRequired, RoleTrainer)
+}
+
+// TrainerOrAdminMiddleware guards read endpoints where admins have view-only access.
+func TrainerOrAdminMiddleware(pool *pgxpool.Pool) echo.MiddlewareFunc {
 	return roleMiddleware(sqlc.New(pool), httpx.MsgTrainerRoleRequired, RoleTrainer, RoleAdmin)
 }
 

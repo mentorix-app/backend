@@ -13,6 +13,7 @@ import (
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/subscription"
 	"mentorix-backend/internal/trainerclient"
 )
 
@@ -32,6 +33,8 @@ func MountRoutes(e *echo.Echo, pool *pgxpool.Pool) {
 	limiter := auth.NewRateLimiter(nil, 0, 0, 0, 0)
 	accessTTL := 15 * time.Minute
 	refreshTTL := 30 * 24 * time.Hour
+
+	subscription.NewHandlers(auth.JWTMiddleware(contractJWTSecret)).Mount(e)
 
 	authSvc := auth.NewService(pool, contractJWTSecret, accessTTL, refreshTTL)
 	auth.NewHandlers(authSvc, contractJWTSecret, cookie, refreshTTL, limiter).Mount(e)

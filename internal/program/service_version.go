@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+
+	"mentorix-backend/internal/subscription"
 )
 
 func (s *Service) ListAssignments(ctx context.Context, userID, programID uuid.UUID) (AssignmentListResult, error) {
@@ -15,6 +17,10 @@ func (s *Service) ListAssignments(ctx context.Context, userID, programID uuid.UU
 
 func (s *Service) SyncAssignments(ctx context.Context, userID, programID uuid.UUID, req AssignmentSyncRequest) (AssignmentSyncResult, error) {
 	if err := s.ensureOwner(ctx, userID, programID); err != nil {
+		return AssignmentSyncResult{}, err
+	}
+	// Client management is read-only while active clients exceed the plan limit.
+	if err := s.checkQuota(ctx, userID, subscription.ResourceClients, subscription.OpMutate); err != nil {
 		return AssignmentSyncResult{}, err
 	}
 	if err := validateAssignmentSyncRequest(req); err != nil {
@@ -48,14 +54,14 @@ func (s *Service) ListVersions(ctx context.Context, userID, programID uuid.UUID)
 }
 
 func (s *Service) DeleteVersion(ctx context.Context, userID, programID, versionID uuid.UUID) error {
-	if err := s.ensureAccess(ctx, userID, programID); err != nil {
+	if err := s.ensureOwner(ctx, userID, programID); err != nil {
 		return err
 	}
 	return s.store.DeleteProgramVersion(ctx, programID, versionID)
 }
 
 func (s *Service) CleanupVersions(ctx context.Context, userID, programID uuid.UUID) (VersionCleanupResult, error) {
-	if err := s.ensureAccess(ctx, userID, programID); err != nil {
+	if err := s.ensureOwner(ctx, userID, programID); err != nil {
 		return VersionCleanupResult{}, err
 	}
 	return s.store.CleanupProgramVersions(ctx, programID)

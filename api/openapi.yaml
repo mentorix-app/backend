@@ -198,11 +198,62 @@ paths:
         "404":
           description: User not found
 
-  /admin/users/{user_id}/roles/admin:
-    post:
+  /plans:
+    get:
+      tags: [subscription]
+      summary: Plan catalog (authenticated)
+      operationId: listPlans
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All subscription tiers with their limits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanCatalogResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /admin/trainers/{user_id}/plan:
+    put:
       tags: [admin]
-      summary: Grant admin role (trainer or admin)
-      operationId: grantAdminRole
+      summary: Grant a perpetual plan to a trainer (admin only)
+      operationId: grantTrainerPlan
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantPlanRequest"
+      responses:
+        "200":
+          description: Updated effective subscription of the trainer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainerPlanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Admin role required
+        "404":
+          description: Trainer not found
+    delete:
+      tags: [admin]
+      summary: Revoke the admin-issued plan of a trainer (admin only)
+      operationId: revokeTrainerPlan
       security:
         - bearerAuth: []
       parameters:
@@ -214,19 +265,19 @@ paths:
             format: uuid
       responses:
         "200":
-          description: User profile with updated roles
+          description: Updated effective subscription of the trainer
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/MeResponse"
+                $ref: "#/components/schemas/TrainerPlanResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Trainer or admin role required
+          description: Admin role required
         "404":
-          description: User not found
+          description: Trainer not found
 
   /exercises:
     get:
@@ -265,6 +316,12 @@ paths:
               - type: string
                 enum: [none]
           description: Filter by equipment; use `none` for exercises without equipment
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [global, private]
+          description: Filter by ownership; trainers see global plus their own private exercises
       responses:
         "200":
           description: Paginated exercise list
@@ -279,10 +336,10 @@ paths:
 
     post:
       tags: [exercises]
-      summary: Create exercise (admin only)
+      summary: Create exercise (trainer or admin)
       description: >
-        Shared catalog write. Any user with the `admin` role may create exercises.
-        `created_by` records the acting admin; other admins may update or delete the entry later.
+        Admins create global exercises shared with everyone. Trainers create
+        private exercises subject to the plan quota.
       operationId: createExercise
       security:
         - bearerAuth: []
@@ -304,7 +361,9 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Admin role required
+          description: Trainer or admin role required
+        "409":
+          $ref: "#/components/responses/QuotaExceeded"
 
     delete:
       tags: [exercises]
@@ -388,9 +447,11 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Admin role required
+          description: Trainer or admin role required
         "404":
           description: Exercise not found
+        "409":
+          $ref: "#/components/responses/QuotaExceeded"
 
   /programs:
     get:
@@ -480,6 +541,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           description: Trainer or admin role required
+        "409":
+          $ref: "#/components/responses/QuotaExceeded"
 
   /programs/{id}:
     parameters:
@@ -581,7 +644,7 @@ paths:
         "404":
           description: Program not found
         "409":
-          description: Invalid status transition
+          description: Invalid status transition or plan quota exceeded
 
   /programs/{id}/archive:
     parameters:
@@ -792,6 +855,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           description: Trainer role required
+        "409":
+          $ref: "#/components/responses/QuotaExceeded"
         "503":
           description: Telegram invite not configured
 
@@ -802,8 +867,8 @@ paths:
       description: >
         Clients linked via accepted invites, with optional active program assignment.
         Trainer: only clients linked to the caller. Admin: all clients linked to any trainer
-        (deduplicated by client_user_id; if the admin is also linked as a trainer, that link is
-        preferred; otherwise the most recent link). Program assignment follows the chosen link.
+        (deduplicated by client_user_id; picks the most recent link). Program assignment follows
+        the chosen link. Admin role is exclusive with trainer, so there is no "own link" preference.
         Search matches client display_name (ILIKE). Default sort: linked_at desc.
       operationId: listTrainerClients
       security:
@@ -1681,6 +1746,12 @@ components:
       description: Missing or invalid access token
     TooManyRequests:
       description: Rate limit exceeded
+    QuotaExceeded:
+      description: Plan quota exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/QuotaExceededError"
 
   schemas:
     HealthStatus:
@@ -1778,6 +1849,140 @@ components:
           items:
             type: string
             enum: [admin, trainer, client]
+        subscription:
+          $ref: "#/components/schemas/Subscription"
+
+    Subscription:
+      type: object
+      nullable: true
+      description: Effective plan of the trainer profile; null for users without one.
+      required: [plan, source, valid_until, limits, usage, permissions]
+      properties:
+        plan:
+          $ref: "#/components/schemas/PlanCode"
+        source:
+          type: string
+          nullable: true
+          enum: [admin, app_store, google_play, null]
+          description: Who issued the active entitlement; null on the free tier.
+        valid_until:
+          type: string
+          format: date-time
+          nullable: true
+          description: Expiry of the active entitlement; null means perpetual.
+        limits:
+          $ref: "#/components/schemas/PlanLimits"
+        usage:
+          $ref: "#/components/schemas/PlanUsage"
+        permissions:
+          $ref: "#/components/schemas/PlanPermissions"
+
+    PlanCode:
+      type: string
+      enum: [free, advance, elite]
+
+    PlanLimits:
+      type: object
+      required: [exercises, active_programs, active_clients]
+      properties:
+        exercises:
+          type: integer
+          nullable: true
+          description: Null means unlimited.
+        active_programs:
+          type: integer
+          nullable: true
+          description: Null means unlimited.
+        active_clients:
+          type: integer
+          nullable: true
+          description: Null means unlimited.
+
+    PlanUsage:
+      type: object
+      required: [exercises, active_programs, active_clients]
+      properties:
+        exercises:
+          type: integer
+        active_programs:
+          type: integer
+        active_clients:
+          type: integer
+
+    PlanPermissions:
+      type: object
+      required:
+        - can_create_exercise
+        - can_edit_exercises
+        - can_create_program
+        - can_edit_programs
+        - can_create_invite
+        - can_manage_clients
+      properties:
+        can_create_exercise:
+          type: boolean
+        can_edit_exercises:
+          type: boolean
+        can_create_program:
+          type: boolean
+        can_edit_programs:
+          type: boolean
+        can_create_invite:
+          type: boolean
+        can_manage_clients:
+          type: boolean
+
+    PlanCatalogResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanCatalogItem"
+
+    PlanCatalogItem:
+      type: object
+      required: [code, limits]
+      properties:
+        code:
+          $ref: "#/components/schemas/PlanCode"
+        limits:
+          $ref: "#/components/schemas/PlanLimits"
+
+    GrantPlanRequest:
+      type: object
+      required: [plan]
+      properties:
+        plan:
+          $ref: "#/components/schemas/PlanCode"
+
+    TrainerPlanResponse:
+      type: object
+      required: [user_id, subscription]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        subscription:
+          $ref: "#/components/schemas/Subscription"
+
+    QuotaExceededError:
+      type: object
+      required: [error, resource, plan, limit, usage]
+      properties:
+        error:
+          type: string
+          enum: [quota_exceeded]
+        resource:
+          type: string
+          enum: [exercises, programs, clients]
+        plan:
+          $ref: "#/components/schemas/PlanCode"
+        limit:
+          type: integer
+        usage:
+          type: integer
 
     ExerciseListResponse:
       type: object
@@ -1880,6 +2085,15 @@ components:
           description: Optional YouTube video URL (HTTPS). Empty string when not set.
         preview_image_url:
           type: string
+        scope:
+          type: string
+          enum: [global, private]
+          description: Global exercises are admin-owned and visible to everyone; private ones belong to a trainer.
+        owner_user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: User id of the owning trainer; null for global exercises.
 
     ExerciseUpsert:
       type: object

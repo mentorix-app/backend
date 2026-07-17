@@ -13,6 +13,7 @@ import (
 
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
+	"mentorix-backend/internal/subscription"
 )
 
 type Store struct {
@@ -25,6 +26,14 @@ func NewStore(pool *pgxpool.Pool) *Store {
 }
 
 func (s *Store) CreateDraft(ctx context.Context, userID uuid.UUID) (Detail, error) {
+	trainerID, err := s.TrainerIDForUser(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrForbidden
+		}
+		return Detail{}, err
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -32,6 +41,15 @@ func (s *Store) CreateDraft(ctx context.Context, userID uuid.UUID) (Detail, erro
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+
+	// Serialize with other quota-increasing operations of the same trainer.
+	if err := subscription.LockTrainer(ctx, qtx, trainerID); err != nil {
+		return Detail{}, err
+	}
+	if err := subscription.CheckQuota(ctx, qtx, trainerID, subscription.ResourcePrograms, subscription.OpCreate); err != nil {
+		return Detail{}, err
+	}
+
 	now := time.Now().UTC()
 	userPG := pgconv.ToPGUUID(userID)
 
@@ -299,6 +317,48 @@ func (s *Store) SetStatus(ctx context.Context, id, userID uuid.UUID, status Stat
 	return s.GetDetail(ctx, id)
 }
 
+// Republish reactivates an archived program under the active-programs quota.
+func (s *Store) Republish(ctx context.Context, id, userID uuid.UUID) (Detail, error) {
+	trainerID, err := s.TrainerIDForUser(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrForbidden
+		}
+		return Detail{}, err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	if err := subscription.LockTrainer(ctx, qtx, trainerID); err != nil {
+		return Detail{}, err
+	}
+	if err := subscription.CheckQuota(ctx, qtx, trainerID, subscription.ResourcePrograms, subscription.OpCreate); err != nil {
+		return Detail{}, err
+	}
+
+	rows, err := qtx.SetProgramStatus(ctx, sqlc.SetProgramStatusParams{
+		ID:         pgconv.ToPGUUID(id),
+		Status:     string(StatusPublished),
+		ModifiedBy: pgconv.ToPGUUID(userID),
+		ModifiedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return Detail{}, fmt.Errorf("set program status: %w", err)
+	}
+	if rows == 0 {
+		return Detail{}, pgx.ErrNoRows
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
+	}
+	return s.GetDetail(ctx, id)
+}
+
 func (s *Store) SoftDelete(ctx context.Context, id, userID uuid.UUID) error {
 	now := time.Now().UTC()
 	rows, err := s.q.SoftDeleteProgram(ctx, sqlc.SoftDeleteProgramParams{
@@ -460,12 +520,33 @@ func (s *Store) DayBelongsToWeek(ctx context.Context, programID, weekID, dayID u
 	return ok, nil
 }
 
-func (s *Store) ExerciseExists(ctx context.Context, exerciseID uuid.UUID) (bool, error) {
-	ok, err := s.q.ExerciseExists(ctx, pgconv.ToPGUUID(exerciseID))
+// ensureExerciseUsable validates a new exercise reference in a program:
+// global exercises are always allowed; private ones must belong to the acting
+// trainer, and referencing own exercises is blocked while the exercise quota
+// is exceeded (read-only after downgrade). Existing references are grandfathered
+// because this check only runs for newly added or replaced exercise ids.
+func (s *Store) ensureExerciseUsable(ctx context.Context, userID, exerciseID uuid.UUID) error {
+	row, err := s.q.GetExerciseOwnership(ctx, pgconv.ToPGUUID(exerciseID))
 	if err != nil {
-		return false, fmt.Errorf("check exercise: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: exercise not found", ErrValidation)
+		}
+		return fmt.Errorf("get exercise ownership: %w", err)
 	}
-	return ok, nil
+	if !row.OwnerTrainerID.Valid {
+		return nil
+	}
+	trainerID, err := s.TrainerIDForUser(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("%w: exercise not accessible", ErrValidation)
+		}
+		return err
+	}
+	if pgconv.FromPGUUID(row.OwnerTrainerID) != trainerID {
+		return fmt.Errorf("%w: exercise not accessible", ErrValidation)
+	}
+	return subscription.CheckQuota(ctx, s.q, trainerID, subscription.ResourceExercises, subscription.OpMutate)
 }
 
 func (s *Store) CreateDayBlock(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, in CreateDayBlockInput) (Detail, error) {
@@ -482,12 +563,8 @@ func (s *Store) CreateDayBlock(ctx context.Context, userID, programID, weekID, d
 		return Detail{}, fmt.Errorf("%w: only single blocks can be created directly; use merge for groups", ErrValidation)
 	}
 	if in.Exercise != nil {
-		exists, err := s.ExerciseExists(ctx, in.Exercise.ExerciseID)
-		if err != nil {
+		if err := s.ensureExerciseUsable(ctx, userID, in.Exercise.ExerciseID); err != nil {
 			return Detail{}, err
-		}
-		if !exists {
-			return Detail{}, fmt.Errorf("%w: exercise not found", ErrValidation)
 		}
 	}
 
@@ -530,20 +607,23 @@ func (s *Store) UpdateBlockExercise(ctx context.Context, userID, programID, week
 		return Detail{}, pgx.ErrNoRows
 	}
 
-	exists, err := s.ExerciseExists(ctx, in.ExerciseID)
+	meta, err := s.q.GetBlockExerciseMeta(ctx, pgconv.ToPGUUID(itemID))
 	if err != nil {
-		return Detail{}, err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, pgx.ErrNoRows
+		}
+		return Detail{}, fmt.Errorf("get exercise meta: %w", err)
 	}
-	if !exists {
-		return Detail{}, fmt.Errorf("%w: exercise not found", ErrValidation)
+	if pgconv.FromPGUUID(meta.ProgramWeekDayBlockID) != blockID {
+		return Detail{}, pgx.ErrNoRows
 	}
 
-	itemBlockID, err := s.exerciseBlockID(ctx, itemID)
-	if err != nil {
-		return Detail{}, err
-	}
-	if itemBlockID != blockID {
-		return Detail{}, pgx.ErrNoRows
+	// Only a replacement is validated: keeping the current exercise id stays
+	// allowed even for grandfathered references (sets/reps tuning).
+	if pgconv.FromPGUUID(meta.ExerciseID) != in.ExerciseID {
+		if err := s.ensureExerciseUsable(ctx, userID, in.ExerciseID); err != nil {
+			return Detail{}, err
+		}
 	}
 
 	now := time.Now().UTC()

@@ -14,6 +14,7 @@ import (
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/subscription"
 )
 
 type ClientProgramService interface {
@@ -37,6 +38,7 @@ type Service struct {
 	invites       InviteSettings
 	activeTrainer ActiveTrainerStore
 	notifier      ProgramNotifier
+	quota         *subscription.Checker
 	jwtSecret     string
 	botToken      string
 	photos        ProfilePhotoFetcher
@@ -64,6 +66,7 @@ func NewService(pool *pgxpool.Pool, programs ClientProgramService, invites Invit
 		invites:       invites,
 		activeTrainer: activeTrainer,
 		notifier:      notifier,
+		quota:         subscription.NewChecker(pool),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -81,6 +84,12 @@ func (s *Service) CreateInvite(ctx context.Context, trainerUserID uuid.UUID) (In
 			return Invite{}, program.ErrForbidden
 		}
 		return Invite{}, err
+	}
+	// No new invites while the client quota is full; accept re-checks under lock.
+	if s.quota != nil {
+		if err := s.quota.CheckQuota(ctx, trainerUserID, subscription.ResourceClients, subscription.OpCreate); err != nil {
+			return Invite{}, err
+		}
 	}
 	row, token, err := s.store.CreateInvite(ctx, trainerID, s.invites.InviteTTL)
 	if err != nil {

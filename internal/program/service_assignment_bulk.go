@@ -6,6 +6,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"mentorix-backend/internal/subscription"
 )
 
 func (s *Service) BulkSetClientProgramAssignment(ctx context.Context, trainerUserID uuid.UUID, req BulkSetClientProgramAssignmentRequest) (BulkAssignmentResult, error) {
@@ -23,6 +25,11 @@ func (s *Service) BulkSetClientProgramAssignment(ctx context.Context, trainerUse
 
 	clientUserIDs := uniqueUUIDs(req.ClientUserIDs)
 	if req.ProgramID != nil {
+		// Assigning/reassigning is blocked while active clients exceed the plan
+		// limit; clearing an assignment (nil program) is always allowed.
+		if err := s.checkQuota(ctx, trainerUserID, subscription.ResourceClients, subscription.OpMutate); err != nil {
+			return BulkAssignmentResult{}, err
+		}
 		if err := s.store.validateProgramForAssignment(ctx, trainerUserID, *req.ProgramID); err != nil {
 			return BulkAssignmentResult{}, err
 		}

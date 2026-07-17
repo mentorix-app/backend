@@ -13,7 +13,7 @@ type deleteManyStore struct {
 	err   error
 }
 
-func (s *deleteManyStore) List(context.Context, ListParams) (ListResult, error) {
+func (s *deleteManyStore) List(context.Context, Viewer, ListParams) (ListResult, error) {
 	panic("not implemented")
 }
 
@@ -21,24 +21,28 @@ func (s *deleteManyStore) GetByID(context.Context, uuid.UUID) (Exercise, error) 
 	panic("not implemented")
 }
 
-func (s *deleteManyStore) Create(context.Context, uuid.UUID, UpsertInput) (Exercise, error) {
+func (s *deleteManyStore) Create(context.Context, uuid.UUID, *uuid.UUID, UpsertInput) (Exercise, error) {
 	panic("not implemented")
 }
 
-func (s *deleteManyStore) Update(context.Context, uuid.UUID, uuid.UUID, UpsertInput) (Exercise, error) {
+func (s *deleteManyStore) Update(context.Context, uuid.UUID, uuid.UUID, *uuid.UUID, UpsertInput) (Exercise, error) {
 	panic("not implemented")
 }
 
-func (s *deleteManyStore) DeleteMany(context.Context, uuid.UUID, []uuid.UUID) (int64, error) {
+func (s *deleteManyStore) DeleteMany(context.Context, uuid.UUID, *uuid.UUID, []uuid.UUID) (int64, error) {
 	if s.err != nil {
 		return 0, s.err
 	}
 	return s.count, nil
 }
 
+func (s *deleteManyStore) TrainerIDForUser(context.Context, uuid.UUID) (uuid.UUID, error) {
+	return uuid.New(), nil
+}
+
 func TestService_DeleteMany(t *testing.T) {
 	t.Run("returns count", func(t *testing.T) {
-		svc := &Service{store: &deleteManyStore{count: 5}}
+		svc := trainerService(&deleteManyStore{count: 5})
 		count, err := svc.DeleteMany(context.Background(), uuid.New(), []uuid.UUID{uuid.New()})
 		if err != nil {
 			t.Fatalf("DeleteMany: %v", err)
@@ -50,7 +54,7 @@ func TestService_DeleteMany(t *testing.T) {
 
 	t.Run("propagates error", func(t *testing.T) {
 		want := errors.New("delete failed")
-		svc := &Service{store: &deleteManyStore{err: want}}
+		svc := trainerService(&deleteManyStore{err: want})
 		_, err := svc.DeleteMany(context.Background(), uuid.New(), []uuid.UUID{uuid.New()})
 		if !errors.Is(err, want) {
 			t.Fatalf("err = %v, want %v", err, want)

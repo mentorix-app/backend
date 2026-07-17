@@ -126,7 +126,7 @@ func TestService_Get_adminAccess(t *testing.T) {
 	}
 }
 
-func TestService_Update_adminCanUpdateOtherUsersProgram(t *testing.T) {
+func TestService_Update_adminCannotUpdateOtherUsersProgram(t *testing.T) {
 	ownerID := uuid.New()
 	adminID := uuid.New()
 	programID := uuid.New()
@@ -135,24 +135,22 @@ func TestService_Update_adminCanUpdateOtherUsersProgram(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: ownerID, Status: StatusDraft},
 		detail:  Detail{Program: Program{ID: programID, CreatedBy: ownerID, Name: name}},
 	}, &fakeRoleQuerier{isAdmin: true})
-	got, err := svc.Update(context.Background(), adminID, programID, UpdateInput{Name: &name})
-	if err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-	if got.Name != name {
-		t.Errorf("name = %q", got.Name)
+	_, err := svc.Update(context.Background(), adminID, programID, UpdateInput{Name: &name})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Update() error = %v, want ErrForbidden (admins are read-only)", err)
 	}
 }
 
-func TestService_Delete_adminCanDeleteOtherUsersProgram(t *testing.T) {
+func TestService_Delete_adminCannotDeleteOtherUsersProgram(t *testing.T) {
 	ownerID := uuid.New()
 	adminID := uuid.New()
 	programID := uuid.New()
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: ownerID, Status: StatusDraft},
 	}, &fakeRoleQuerier{isAdmin: true})
-	if err := svc.Delete(context.Background(), adminID, programID); err != nil {
-		t.Fatalf("Delete() error = %v", err)
+	err := svc.Delete(context.Background(), adminID, programID)
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("Delete() error = %v, want ErrForbidden (admins are read-only)", err)
 	}
 }
 
@@ -1162,15 +1160,15 @@ func (g *getProgramRowFailStore) GetProgramRow(ctx context.Context, id uuid.UUID
 	return g.fakeProgramStore.GetProgramRow(ctx, id)
 }
 
-func TestService_Archive_readOnly(t *testing.T) {
+func TestService_Archive_alreadyArchived(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	svc := testService(&fakeProgramStore{
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
 	}, nil)
 	_, err := svc.Archive(context.Background(), userID, programID)
-	if !errors.Is(err, ErrReadOnly) {
-		t.Fatalf("Archive() error = %v, want ErrReadOnly", err)
+	if !errors.Is(err, ErrInvalidStatusTransition) {
+		t.Fatalf("Archive() error = %v, want ErrInvalidStatusTransition", err)
 	}
 }
 
@@ -1181,7 +1179,7 @@ func TestService_Archive_getProgramRowNotFound(t *testing.T) {
 		fakeProgramStore: fakeProgramStore{
 			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
 		},
-		failAfter: 1,
+		failAfter: 0,
 	}, nil)
 	_, err := svc.Archive(context.Background(), userID, programID)
 	if !errors.Is(err, ErrNotFound) {
@@ -2170,30 +2168,20 @@ func TestService_Archive_getProgramRowStoreError(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()
 	want := errors.New("db down")
-	svc := testService(&getProgramRowAfterMutableStore{
-		fakeProgramStore: fakeProgramStore{
-			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
-		},
-		secondGetErr: want,
-	}, nil)
+	svc := testService(&getProgramRowErrStore{err: want}, nil)
 	_, err := svc.Archive(context.Background(), userID, programID)
 	if !errors.Is(err, want) {
 		t.Fatalf("Archive() error = %v, want %v", err, want)
 	}
 }
 
-type getProgramRowAfterMutableStore struct {
+type getProgramRowErrStore struct {
 	fakeProgramStore
-	secondGetErr error
-	calls        int
+	err error
 }
 
-func (g *getProgramRowAfterMutableStore) GetProgramRow(context.Context, uuid.UUID) (Program, error) {
-	g.calls++
-	if g.calls == 1 {
-		return g.program, nil
-	}
-	return Program{}, g.secondGetErr
+func (g *getProgramRowErrStore) GetProgramRow(context.Context, uuid.UUID) (Program, error) {
+	return Program{}, g.err
 }
 
 func TestService_Archive_setStatusNotFound(t *testing.T) {

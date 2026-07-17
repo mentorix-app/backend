@@ -1960,24 +1960,8 @@
           "response": []
         },
         {
-          "name": "POST /admin/users/:user_id/roles/admin",
+          "name": "GET /plans",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (!pm.environment.get('access_token')) {",
-                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
-                  "}",
-                  "const target = pm.environment.get('target_user_id') || pm.environment.get('user_id');",
-                  "if (!target) {",
-                  "    throw new Error('target_user_id или user_id пустой — выполни Register/Login или задай target_user_id');",
-                  "}",
-                  "pm.variables.set('grant_admin_user_id', target);"
-                ]
-              }
-            },
             {
               "listen": "test",
               "script": {
@@ -1986,7 +1970,7 @@
                   "pm.test('status 200', () => pm.response.to.have.status(200));",
                   "if (pm.response.code === 200) {",
                   "    const b = pm.response.json();",
-                  "    pm.test('roles include admin', () => pm.expect(b.roles).to.include('admin'));",
+                  "    pm.test('has 3 plans', () => pm.expect(b.items).to.have.length(3));",
                   "}"
                 ]
               }
@@ -2003,10 +1987,117 @@
                 }
               ]
             },
-            "method": "POST",
+            "method": "GET",
             "header": [],
-            "url": "{{base_url}}/admin/users/{{grant_admin_user_id}}/roles/admin",
-            "description": "Source: `internal/admin/handlers.go` → GrantAdmin\n\nBearer + role trainer|admin\n200: user_id, email, created_at, roles\n400: invalid user_id\n403: trainer role required\n404: user not found"
+            "url": "{{base_url}}/plans",
+            "description": "Source: `internal/subscription/handlers.go` → ListPlans\n\nBearer\n200: items[{code, limits}] — free/advance/elite"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /admin/trainers/:user_id/plan",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}",
+                  "const target = pm.environment.get('target_user_id') || pm.environment.get('user_id');",
+                  "if (!target) {",
+                  "    throw new Error('target_user_id или user_id пустой — выполни Register/Login или задай target_user_id');",
+                  "}",
+                  "pm.variables.set('plan_trainer_user_id', target);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "    const b = pm.response.json();",
+                  "    pm.test('subscription plan set', () => pm.expect(b.subscription.plan).to.be.oneOf(['advance', 'elite']));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"elite\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/admin/trainers/{{plan_trainer_user_id}}/plan",
+            "description": "Source: `internal/admin/handlers.go` → GrantPlan\n\nBearer + role admin\n200: user_id, subscription\n400: invalid plan\n403: admin role required\n404: trainer not found"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /admin/trainers/:user_id/plan",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.environment.get('access_token')) {",
+                  "    throw new Error('access_token пустой — выполни POST /auth/login');",
+                  "}",
+                  "const target = pm.environment.get('target_user_id') || pm.environment.get('user_id');",
+                  "if (!target) {",
+                  "    throw new Error('target_user_id или user_id пустой — выполни Register/Login или задай target_user_id');",
+                  "}",
+                  "pm.variables.set('plan_trainer_user_id', target);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/admin/trainers/{{plan_trainer_user_id}}/plan",
+            "description": "Source: `internal/admin/handlers.go` → RevokePlan\n\nBearer + role admin\n200: user_id, subscription (эффективный после отзыва)\n403: admin role required\n404: trainer not found"
           },
           "response": []
         },

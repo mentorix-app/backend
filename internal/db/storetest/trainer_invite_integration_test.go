@@ -108,6 +108,14 @@ func TestTrainerInvite_acceptAndListClients(t *testing.T) {
 	if !contains(roles, auth.RoleClient) {
 		t.Fatalf("roles = %v, want client", roles)
 	}
+
+	gotUID, err := svc.ClientUserIDByTelegram(ctx, "42424242")
+	if err != nil {
+		t.Fatalf("ClientUserIDByTelegram: %v", err)
+	}
+	if gotUID != result.UserID {
+		t.Fatalf("ClientUserIDByTelegram = %v, want %v", gotUID, result.UserID)
+	}
 }
 
 func TestTrainerInvite_notFound(t *testing.T) {
@@ -269,13 +277,7 @@ func TestTrainerInvite_adminListsAllClients(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register admin: %v", err)
 	}
-	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
-		t.Fatalf("grant admin: %v", err)
-	}
-	_, err = pool.Exec(ctx, `DELETE FROM mentorix.trainers WHERE user_id = $1`, adminID)
-	if err != nil {
-		t.Fatalf("delete admin trainer row: %v", err)
-	}
+	promoteToAdminOnly(t, pool, adminID)
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -332,7 +334,7 @@ func TestTrainerInvite_adminListsAllClients(t *testing.T) {
 	}
 }
 
-func TestTrainerInvite_adminPrefersOwnTrainerLink(t *testing.T) {
+func TestTrainerInvite_adminSeesMostRecentLink(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
@@ -349,13 +351,11 @@ func TestTrainerInvite_adminPrefersOwnTrainerLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register trainer B: %v", err)
 	}
-	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-prefer-admin@test.com", pwHash, "Admin Trainer")
+	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-prefer-admin@test.com", pwHash, "Admin")
 	if err != nil {
 		t.Fatalf("register admin: %v", err)
 	}
-	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
-		t.Fatalf("grant admin: %v", err)
-	}
+	promoteToAdminOnly(t, pool, adminID)
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -382,18 +382,17 @@ func TestTrainerInvite_adminPrefersOwnTrainerLink(t *testing.T) {
 	}
 
 	acceptClient(trainerA, "881001", "Shared Client")
-	acceptClient(adminID, "881001", "Shared Client")
 	sharedClientID := acceptClient(trainerB, "881001", "Shared Client")
 	acceptClient(trainerA, "881002", "Other Client")
 
-	var adminLinkedAt, trainerBLinkedAt time.Time
+	var trainerALinkedAt, trainerBLinkedAt time.Time
 	err = pool.QueryRow(ctx, `
 SELECT tc.created_at
 FROM mentorix.trainer_clients tc
 INNER JOIN mentorix.trainers t ON t.id = tc.trainer_id
-WHERE t.user_id = $1 AND tc.client_user_id = $2`, adminID, sharedClientID).Scan(&adminLinkedAt)
+WHERE t.user_id = $1 AND tc.client_user_id = $2`, trainerA, sharedClientID).Scan(&trainerALinkedAt)
 	if err != nil {
-		t.Fatalf("admin link: %v", err)
+		t.Fatalf("trainer A link: %v", err)
 	}
 	err = pool.QueryRow(ctx, `
 SELECT tc.created_at
@@ -403,8 +402,8 @@ WHERE t.user_id = $1 AND tc.client_user_id = $2`, trainerB, sharedClientID).Scan
 	if err != nil {
 		t.Fatalf("trainer B link: %v", err)
 	}
-	if !trainerBLinkedAt.After(adminLinkedAt) {
-		t.Fatal("expected trainer B link to be later than admin link")
+	if !trainerBLinkedAt.After(trainerALinkedAt) {
+		t.Fatal("expected trainer B link to be later than trainer A link")
 	}
 
 	allList, err := svc.ListClients(ctx, adminID, trainerclient.DefaultListParams())
@@ -425,14 +424,11 @@ WHERE t.user_id = $1 AND tc.client_user_id = $2`, trainerB, sharedClientID).Scan
 	if shared == nil {
 		t.Fatal("shared client missing from admin list")
 	}
-	if !shared.LinkedAt.Equal(adminLinkedAt.UTC()) {
-		t.Fatalf("admin list linked_at = %v, want admin link %v", shared.LinkedAt, adminLinkedAt.UTC())
+	if shared.TrainerUserID != trainerB {
+		t.Fatalf("trainer_user_id = %v, want most recent trainer B %v", shared.TrainerUserID, trainerB)
 	}
-	if shared.LinkedAt.Equal(trainerBLinkedAt.UTC()) {
-		t.Fatal("expected admin-prefer link, got trainer B latest link")
-	}
-	if shared.TrainerUserID != adminID {
-		t.Fatalf("trainer_user_id = %v, want admin %v", shared.TrainerUserID, adminID)
+	if !shared.LinkedAt.Equal(trainerBLinkedAt.UTC()) {
+		t.Fatalf("admin list linked_at = %v, want trainer B link %v", shared.LinkedAt, trainerBLinkedAt.UTC())
 	}
 }
 
@@ -960,7 +956,7 @@ func TestTrainerClient_listIncludesProgramAssignmentNames(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerUserID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
 		Name:        "Squat",
 		NameRu:      "Присед",
 		Type:        exercise.ExerciseTypeStrength,

@@ -13,6 +13,7 @@ import (
 
 	"mentorix-backend/internal/config"
 	httpx "mentorix-backend/internal/http"
+	"mentorix-backend/internal/subscription"
 )
 
 type credentialService interface {
@@ -25,22 +26,39 @@ type credentialService interface {
 	UpdateProfileName(ctx context.Context, userID uuid.UUID, name string) (UserProfile, error)
 }
 
+// SubscriptionProvider resolves the trainer subscription block for /auth/me.
+type SubscriptionProvider interface {
+	ForUser(ctx context.Context, userID uuid.UUID) (*subscription.Subscription, error)
+}
+
 type Handlers struct {
 	svc        credentialService
 	jwtSecret  string
 	cookie     config.RefreshCookieSettings
 	refreshTTL time.Duration
 	limiter    *RateLimiter
+	subs       SubscriptionProvider
 }
 
-func NewHandlers(svc *Service, jwtSecret string, cookie config.RefreshCookieSettings, refreshTTL time.Duration, limiter *RateLimiter) *Handlers {
-	return &Handlers{
+type HandlersOption func(*Handlers)
+
+// WithSubscriptions enables the subscription block in /auth/me responses.
+func WithSubscriptions(p SubscriptionProvider) HandlersOption {
+	return func(h *Handlers) { h.subs = p }
+}
+
+func NewHandlers(svc *Service, jwtSecret string, cookie config.RefreshCookieSettings, refreshTTL time.Duration, limiter *RateLimiter, opts ...HandlersOption) *Handlers {
+	h := &Handlers{
 		svc:        svc,
 		jwtSecret:  jwtSecret,
 		cookie:     cookie,
 		refreshTTL: refreshTTL,
 		limiter:    limiter,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
@@ -216,7 +234,7 @@ func (h *Handlers) Me(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
-	return c.JSON(http.StatusOK, meResponse(uid, profile))
+	return h.writeMeJSON(c, uid, profile)
 }
 
 func (h *Handlers) UpdateMe(c echo.Context) error {
@@ -235,7 +253,19 @@ func (h *Handlers) UpdateMe(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
-	return c.JSON(http.StatusOK, meResponse(uid, profile))
+	return h.writeMeJSON(c, uid, profile)
+}
+
+func (h *Handlers) writeMeJSON(c echo.Context, uid uuid.UUID, profile UserProfile) error {
+	resp := meResponse(uid, profile)
+	if h.subs != nil {
+		sub, err := h.subs.ForUser(c.Request().Context(), uid)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+		}
+		resp.Subscription = sub
+	}
+	return c.JSON(http.StatusOK, resp)
 }
 
 func meResponse(uid uuid.UUID, profile UserProfile) MeResponse {

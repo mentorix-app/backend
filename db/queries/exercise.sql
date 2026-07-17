@@ -2,26 +2,28 @@
 SELECT
   e.id, e.name, e.name_ru, e.created_by, e.modified_by, e.modified_at, e.created_at,
   e.equipment, e.exercise_type, e.muscle_group, e.description, e.description_ru,
-  e.difficulty, e.video_url, e.preview_image_url,
+  e.difficulty, e.video_url, e.preview_image_url, e.owner_trainer_id,
+  t.user_id AS owner_user_id,
   COALESCE(u.display_name, '') AS created_by_name
 FROM mentorix.exercises e
 JOIN mentorix.users u ON u.id = e.created_by
+LEFT JOIN mentorix.trainers t ON t.id = e.owner_trainer_id
 WHERE e.id = $1 AND e.deleted_at IS NULL;
 
 -- name: CreateExercise :one
 INSERT INTO mentorix.exercises (
   name, name_ru, created_by, modified_by, modified_at,
   equipment, exercise_type, muscle_group, description, description_ru,
-  difficulty, video_url, preview_image_url
+  difficulty, video_url, preview_image_url, owner_trainer_id
 ) VALUES (
   $1, $2, $3, $4, $5,
   $6, $7, $8, $9, $10,
-  $11, $12, $13
+  $11, $12, $13, $14
 )
 RETURNING
   id, name, name_ru, created_by, modified_by, modified_at, created_at,
   equipment, exercise_type, muscle_group, description, description_ru,
-  difficulty, video_url, preview_image_url;
+  difficulty, video_url, preview_image_url, owner_trainer_id;
 
 -- name: UpdateExercise :execrows
 UPDATE mentorix.exercises SET
@@ -37,19 +39,38 @@ UPDATE mentorix.exercises SET
   difficulty = $11,
   video_url = $12,
   preview_image_url = $13
-WHERE id = $1 AND deleted_at IS NULL;
+WHERE id = $1
+  AND deleted_at IS NULL
+  AND owner_trainer_id IS NOT DISTINCT FROM sqlc.narg('owner_trainer_id')::uuid;
 
 -- name: SoftDeleteExercises :execrows
 UPDATE mentorix.exercises SET
   deleted_at = $2,
   modified_at = $2,
   modified_by = $3
-WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL;
+WHERE id = ANY($1::uuid[])
+  AND deleted_at IS NULL
+  AND owner_trainer_id IS NOT DISTINCT FROM sqlc.narg('owner_trainer_id')::uuid;
+
+-- name: GetExerciseOwnership :one
+SELECT e.id, e.owner_trainer_id
+FROM mentorix.exercises e
+WHERE e.id = $1 AND e.deleted_at IS NULL;
 
 -- name: CountExercises :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.exercises
 WHERE deleted_at IS NULL
+  AND (
+    sqlc.narg('include_all')::boolean IS TRUE
+    OR owner_trainer_id IS NULL
+    OR owner_trainer_id = sqlc.narg('viewer_trainer_id')::uuid
+  )
+  AND (
+    sqlc.narg('filter_scope')::text IS NULL
+    OR (sqlc.narg('filter_scope') = 'global' AND owner_trainer_id IS NULL)
+    OR (sqlc.narg('filter_scope') = 'private' AND owner_trainer_id IS NOT NULL)
+  )
   AND (sqlc.narg('q_pattern')::text IS NULL OR (
     name ILIKE sqlc.narg('q_pattern') ESCAPE '\'
     OR name_ru ILIKE sqlc.narg('q_pattern') ESCAPE '\'
@@ -70,11 +91,23 @@ WHERE deleted_at IS NULL
 SELECT
   e.id, e.name, e.name_ru, e.created_by, e.modified_by, e.modified_at, e.created_at,
   e.equipment, e.exercise_type, e.muscle_group, e.description, e.description_ru,
-  e.difficulty, e.video_url, e.preview_image_url,
+  e.difficulty, e.video_url, e.preview_image_url, e.owner_trainer_id,
+  t.user_id AS owner_user_id,
   COALESCE(u.display_name, '') AS created_by_name
 FROM mentorix.exercises e
 JOIN mentorix.users u ON u.id = e.created_by
+LEFT JOIN mentorix.trainers t ON t.id = e.owner_trainer_id
 WHERE e.deleted_at IS NULL
+  AND (
+    sqlc.narg('include_all')::boolean IS TRUE
+    OR e.owner_trainer_id IS NULL
+    OR e.owner_trainer_id = sqlc.narg('viewer_trainer_id')::uuid
+  )
+  AND (
+    sqlc.narg('filter_scope')::text IS NULL
+    OR (sqlc.narg('filter_scope') = 'global' AND e.owner_trainer_id IS NULL)
+    OR (sqlc.narg('filter_scope') = 'private' AND e.owner_trainer_id IS NOT NULL)
+  )
   AND (sqlc.narg('q_pattern')::text IS NULL OR (
     e.name ILIKE sqlc.narg('q_pattern') ESCAPE '\'
     OR e.name_ru ILIKE sqlc.narg('q_pattern') ESCAPE '\'

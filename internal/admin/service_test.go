@@ -2,90 +2,79 @@ package admin
 
 import (
 	"context"
-	"errors"
-	"slices"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
-	"mentorix-backend/internal/auth"
+	"mentorix-backend/internal/subscription"
 )
 
-type fakeRoleStore struct {
-	profiles map[uuid.UUID]auth.UserProfile
-	roles    map[uuid.UUID][]string
+type fakePlanService struct {
+	grants map[uuid.UUID]subscription.Plan
+	err    error
 }
 
-func (f *fakeRoleStore) UserProfile(_ context.Context, userID uuid.UUID) (auth.UserProfile, error) {
-	profile, ok := f.profiles[userID]
-	if !ok {
-		return auth.UserProfile{}, pgx.ErrNoRows
+func (f *fakePlanService) GrantAdminPlan(_ context.Context, trainerUserID uuid.UUID, plan subscription.Plan) (*subscription.Subscription, error) {
+	if f.err != nil {
+		return nil, f.err
 	}
-	roles := append([]string(nil), f.roles[userID]...)
-	slices.Sort(roles)
-	profile.Roles = roles
-	return profile, nil
+	if plan == subscription.PlanFree {
+		delete(f.grants, trainerUserID)
+	} else {
+		f.grants[trainerUserID] = plan
+	}
+	effective := f.grants[trainerUserID]
+	if effective == "" {
+		effective = subscription.PlanFree
+	}
+	src := subscription.SourceAdmin
+	sub := subscription.Subscription{Plan: effective, Source: &src}
+	return &sub, nil
 }
 
-func (f *fakeRoleStore) GrantRole(_ context.Context, userID uuid.UUID, role string) error {
-	for _, r := range f.roles[userID] {
-		if r == role {
-			return nil
-		}
+func (f *fakePlanService) RevokeAdminPlan(_ context.Context, trainerUserID uuid.UUID) (*subscription.Subscription, error) {
+	if f.err != nil {
+		return nil, f.err
 	}
-	f.roles[userID] = append(f.roles[userID], role)
-	return nil
+	delete(f.grants, trainerUserID)
+	sub := subscription.Subscription{Plan: subscription.PlanFree, Source: nil}
+	return &sub, nil
 }
 
 func TestNewService_constructs(t *testing.T) {
 	svc := NewService(nil)
-	if svc == nil || svc.store == nil {
-		t.Fatal("expected service with store")
+	if svc == nil || svc.plans == nil {
+		t.Fatal("expected service with plan service")
 	}
 }
 
-func TestService_GrantAdmin(t *testing.T) {
+func TestService_GrantAndRevokePlan(t *testing.T) {
 	userID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	createdAt := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
-	store := &fakeRoleStore{
-		profiles: map[uuid.UUID]auth.UserProfile{
-			userID: {Email: "trainer@test.com", CreatedAt: createdAt},
-		},
-		roles: map[uuid.UUID][]string{
-			userID: {auth.RoleTrainer},
-		},
+	plans := &fakePlanService{grants: map[uuid.UUID]subscription.Plan{}}
+	svc := &Service{plans: plans}
+
+	sub, err := svc.GrantPlan(context.Background(), userID, subscription.PlanElite)
+	if err != nil {
+		t.Fatalf("GrantPlan: %v", err)
 	}
-	svc := &Service{store: store}
+	if sub.Plan != subscription.PlanElite {
+		t.Fatalf("plan = %s, want elite", sub.Plan)
+	}
 
-	t.Run("user not found", func(t *testing.T) {
-		_, err := svc.GrantAdmin(context.Background(), uuid.New())
-		if !errors.Is(err, pgx.ErrNoRows) {
-			t.Fatalf("err = %v, want pgx.ErrNoRows", err)
-		}
-	})
+	sub, err = svc.GrantPlan(context.Background(), userID, subscription.PlanFree)
+	if err != nil {
+		t.Fatalf("GrantPlan free: %v", err)
+	}
+	if sub.Plan != subscription.PlanFree {
+		t.Fatalf("plan = %s, want free after free grant", sub.Plan)
+	}
 
-	t.Run("grant success", func(t *testing.T) {
-		profile, err := svc.GrantAdmin(context.Background(), userID)
-		if err != nil {
-			t.Fatalf("GrantAdmin: %v", err)
-		}
-		if len(profile.Roles) != 2 {
-			t.Fatalf("roles = %v, want 2 entries", profile.Roles)
-		}
-		if profile.Roles[0] != auth.RoleAdmin || profile.Roles[1] != auth.RoleTrainer {
-			t.Fatalf("roles = %v, want [admin trainer]", profile.Roles)
-		}
-	})
-
-	t.Run("idempotent grant", func(t *testing.T) {
-		profile, err := svc.GrantAdmin(context.Background(), userID)
-		if err != nil {
-			t.Fatalf("GrantAdmin: %v", err)
-		}
-		if len(profile.Roles) != 2 {
-			t.Fatalf("roles = %v, want 2 entries after repeat grant", profile.Roles)
-		}
-	})
+	_, _ = svc.GrantPlan(context.Background(), userID, subscription.PlanAdvance)
+	sub, err = svc.RevokePlan(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("RevokePlan: %v", err)
+	}
+	if sub.Plan != subscription.PlanFree {
+		t.Fatalf("plan = %s, want free after revoke", sub.Plan)
+	}
 }

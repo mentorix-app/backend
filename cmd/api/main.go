@@ -20,6 +20,7 @@ import (
 	"mentorix-backend/internal/health"
 	apphttp "mentorix-backend/internal/http"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/subscription"
 	"mentorix-backend/internal/telegram"
 	"mentorix-backend/internal/telegrambot"
 	"mentorix-backend/internal/telegramnotify"
@@ -103,8 +104,13 @@ func main() {
 			cfg.AuthRegisterRateMax,
 			cfg.AuthRegisterRateWin,
 		)
+		subsSvc := subscription.NewService(pool)
+		subscription.NewHandlers(auth.JWTMiddleware(cfg.JWTSecret)).Mount(e)
+
 		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL())
-		auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter).Mount(e)
+		auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter,
+			auth.WithSubscriptions(subsSvc),
+		).Mount(e)
 
 		adminSvc := admin.NewService(pool)
 		admin.NewHandlers(adminSvc, pool, cfg.JWTSecret).Mount(e)

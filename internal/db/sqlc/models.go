@@ -65,6 +65,7 @@ type MentorixExercise struct {
 	PreviewImageUrl string             `json:"preview_image_url"`
 	CreatedAt       time.Time          `json:"created_at"`
 	DeletedAt       pgtype.Timestamptz `json:"deleted_at"`
+	OwnerTrainerID  pgtype.UUID        `json:"owner_trainer_id"`
 }
 
 type MentorixProgram struct {
@@ -222,6 +223,18 @@ type MentorixTrainerInvite struct {
 	ConsumedBy pgtype.UUID        `json:"consumed_by"`
 	CreatedAt  time.Time          `json:"created_at"`
 	TrainerID  pgtype.UUID        `json:"trainer_id"`
+}
+
+type MentorixTrainerPlanEntitlement struct {
+	ID         pgtype.UUID        `json:"id"`
+	TrainerID  pgtype.UUID        `json:"trainer_id"`
+	PlanCode   string             `json:"plan_code"`
+	Source     string             `json:"source"`
+	Status     string             `json:"status"`
+	ValidFrom  time.Time          `json:"valid_from"`
+	ValidUntil pgtype.Timestamptz `json:"valid_until"`
+	CreatedAt  time.Time          `json:"created_at"`
+	ModifiedAt time.Time          `json:"modified_at"`
 }
 
 type MentorixUser struct {

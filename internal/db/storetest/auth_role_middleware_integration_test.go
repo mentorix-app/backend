@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/auth"
@@ -75,5 +76,52 @@ func TestAdminMiddleware_deniesTrainerWithoutAdmin(t *testing.T) {
 	he, ok := err.(*echo.HTTPError)
 	if !ok || he.Code != http.StatusForbidden {
 		t.Fatalf("error = %v, want 403", err)
+	}
+}
+
+func TestTrainerOrAdminMiddleware_allowsTrainerAndAdmin(t *testing.T) {
+	pool := NewPool(t)
+	ctx := t.Context()
+	hash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash: %v", err)
+	}
+	store := auth.NewStore(pool)
+	trainerID, err := store.RegisterTrainerEmailPassword(ctx, "middleware-or-trainer@test.com", hash, "")
+	if err != nil {
+		t.Fatalf("register trainer: %v", err)
+	}
+	adminID, err := store.RegisterTrainerEmailPassword(ctx, "middleware-or-admin@test.com", hash, "")
+	if err != nil {
+		t.Fatalf("register admin: %v", err)
+	}
+	promoteToAdminOnly(t, pool, adminID)
+
+	e := echo.New()
+	mw := auth.TrainerOrAdminMiddleware(pool)
+	for _, tc := range []struct {
+		name string
+		uid  uuid.UUID
+	}{
+		{"trainer", trainerID},
+		{"admin", adminID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			h := mw(func(c echo.Context) error {
+				called = true
+				return c.NoContent(http.StatusNoContent)
+			})
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.Set(auth.ContextUserIDKey, tc.uid)
+			if err := h(c); err != nil {
+				t.Fatalf("middleware: %v", err)
+			}
+			if !called {
+				t.Fatal("handler not called")
+			}
+		})
 	}
 }

@@ -51,11 +51,12 @@ type ListParams struct {
 	Difficulty      *Difficulty
 	Equipment       *Equipment
 	EquipmentIsNull bool
+	Scope           *Scope
 }
 
 func ParseListParams(
 	pageStr, limitStr, sortBy, sortOrder, q,
-	typeStr, muscleGroupStr, difficultyStr, equipmentStr string,
+	typeStr, muscleGroupStr, difficultyStr, equipmentStr, scopeStr string,
 ) (ListParams, error) {
 	params := ListParams{
 		Page:      DefaultPage,
@@ -134,6 +135,14 @@ func ParseListParams(
 			}
 			params.Equipment = &e
 		}
+	}
+
+	if scopeStr != "" {
+		s := Scope(scopeStr)
+		if s != ScopeGlobal && s != ScopePrivate {
+			return ListParams{}, fmt.Errorf("%w: invalid scope", ErrValidation)
+		}
+		params.Scope = &s
 	}
 
 	return params, nil

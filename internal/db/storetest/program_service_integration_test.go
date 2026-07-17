@@ -31,7 +31,7 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name:        "Curl",
 		NameRu:      "Сгибание",
 		Type:        exercise.ExerciseTypeStrength,
@@ -173,7 +173,7 @@ func TestProgramService_trainingDaysCount(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name:        "Squat",
 		NameRu:      "Присед",
 		Type:        exercise.ExerciseTypeStrength,
@@ -275,7 +275,11 @@ func TestProgramService_ListAndArchive(t *testing.T) {
 	category := program.CategoryMuscleGain
 	difficulty := exercise.DifficultyBeginner
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	trainerProfileID, err := exStore.TrainerIDForUser(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("TrainerIDForUser: %v", err)
+	}
+	catalogExercise, err := exStore.Create(ctx, trainerID, &trainerProfileID, exercise.UpsertInput{
 		Name:        "Press",
 		NameRu:      "Жим",
 		Type:        exercise.ExerciseTypeStrength,
@@ -448,7 +452,7 @@ func TestProgramService_publishWithTwoWeeks(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name:        "Squat",
 		NameRu:      "Присед",
 		Type:        exercise.ExerciseTypeStrength,
@@ -542,7 +546,7 @@ func TestProgramService_ClientProgramAssignment(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerUserID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
 		Name:        "Row",
 		NameRu:      "Тяга",
 		Type:        exercise.ExerciseTypeStrength,
@@ -656,7 +660,7 @@ func TestProgramService_BulkSetClientProgramAssignment(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerUserID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
 		Name:        "Press",
 		NameRu:      "Жим",
 		Type:        exercise.ExerciseTypeStrength,
@@ -753,7 +757,7 @@ func TestProgramService_AssignmentSyncAndVersionCleanup(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerUserID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
 		Name:        "Squat",
 		NameRu:      "Присед",
 		Type:        exercise.ExerciseTypeStrength,
@@ -943,7 +947,7 @@ func TestProgramService_CleanupVersions_skipsAssignedVersion(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerUserID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
 		Name:        "Bench",
 		NameRu:      "Жим",
 		Type:        exercise.ExerciseTypeStrength,
@@ -1201,7 +1205,7 @@ func TestProgramService_SetClientAssignment_wrongOwner(t *testing.T) {
 	weekID := draft.Weeks[0].ID
 	dayID := draft.Weeks[0].Days[0].ID
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, ownerUserID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, ownerUserID, nil, exercise.UpsertInput{
 		Name:        "Row",
 		NameRu:      "Тяга",
 		Type:        exercise.ExerciseTypeStrength,
@@ -1302,12 +1306,10 @@ func TestProgramService_adminCannotSyncOtherUsersProgram(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register admin: %v", err)
 	}
-	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
-		t.Fatalf("grant admin: %v", err)
-	}
+	promoteToAdminOnly(t, pool, adminID)
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, ownerID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, ownerID, nil, exercise.UpsertInput{
 		Name:        "Squat",
 		NameRu:      "Присед",
 		Type:        exercise.ExerciseTypeStrength,

@@ -38,13 +38,11 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	)
 	trainer.POST("/invites", h.CreateInvite)
 
-	clients := e.Group("/trainer/clients",
-		auth.JWTMiddleware(h.jwtSecret),
-		auth.TrainerMiddleware(h.pool),
-	)
-	clients.GET("", h.ListClients)
-	clients.PUT("/program-assignment", h.SetProgramAssignment)
-	clients.GET("/:client_user_id/program-assignment", h.GetProgramAssignment)
+	clients := e.Group("/trainer/clients", auth.JWTMiddleware(h.jwtSecret))
+	// Admins have read-only access to the full client list; management stays trainer-only.
+	clients.GET("", h.ListClients, auth.TrainerOrAdminMiddleware(h.pool))
+	clients.PUT("/program-assignment", h.SetProgramAssignment, auth.TrainerMiddleware(h.pool))
+	clients.GET("/:client_user_id/program-assignment", h.GetProgramAssignment, auth.TrainerMiddleware(h.pool))
 
 	e.GET("/trainer/clients/:client_user_id/avatar", h.GetClientAvatar)
 }

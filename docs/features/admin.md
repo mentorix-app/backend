@@ -5,20 +5,26 @@
 
 ## Назначение
 
-Выдача роли `admin` пользователю.
+Роль `admin` отделена от `trainer`/`client`: админ управляет глобальным каталогом упражнений и тарифами тренеров, остальное — только просмотр.
+
+## Права
+
+- Упражнения: CRUD **глобальных**; приватные упражнения тренеров видит, но не редактирует.
+- Программы, клиенты: только просмотр (списки/детали); мутации → `403`.
+- Тарифы: выдача/отзыв бессрочных грантов тренерам.
 
 ## БД
 
-`user_roles`.
+`user_roles` — триггер `user_roles_admin_exclusive_trg` (миграция `000024`): роль `admin` несовместима с `trainer`/`client`.
 
 ## API
 
-Контракт: `api/openapi.yaml` — `POST /admin/users/{user_id}/roles/admin`.
+Контракт: `api/openapi.yaml`.
 
-Неочевидные правила:
-
-- Вызывает trainer (выдаёт `admin` другому пользователю).
+- `PUT /admin/trainers/{user_id}/plan`, `DELETE /admin/trainers/{user_id}/plan` — грант/отзыв тарифа; см. [subscriptions.md](subscriptions.md).
+- Эндпоинта выдачи роли `admin` больше нет (роль назначается только через БД/миграцию).
 
 ## См. также
 
 - [auth.md](auth.md)
+- [subscriptions.md](subscriptions.md)

@@ -20,6 +20,7 @@
 Неочевидные правила:
 
 - `POST /trainer/invites` требует `TELEGRAM_BOT_USERNAME`; ссылка `https://t.me/<bot>?start=inv_<token>`.
+- Инвайт не создаётся при заполненном лимите клиентов тарифа (`409 quota_exceeded`); accept повторно проверяет квоту под локом — при провале инвайт **не** consumed, бот отвечает «нет свободных мест». Тренер не может принять свой же инвайт. См. [subscriptions.md](subscriptions.md).
 - TTL инвайта — `TRAINER_INVITE_TTL_DAYS` (default 7). При создании нового инвайта — inline purge expired/consumed (grace 7d) старых инвайтов тренера.
 - Accept в боте (`/start inv_<token>`) — in-process `trainerclient.Service.AcceptInvite`, не HTTP; при наличии — сохраняется фото профиля Telegram.
 - Accept: создаёт `user` + `auth_identity(telegram)` + роль `client`, если Telegram id новый; иначе линкует существующего user.

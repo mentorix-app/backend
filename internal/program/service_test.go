@@ -30,6 +30,14 @@ func testService(store programStore, roles *fakeRoleQuerier) *Service {
 	return &Service{store: store, roles: roles}
 }
 
+func TestWithQuotaChecker(t *testing.T) {
+	svc := &Service{}
+	WithQuotaChecker(nil)(svc)
+	if svc.quota != nil {
+		t.Fatal("expected nil quota")
+	}
+}
+
 type fakeProgramStore struct {
 	program      Program
 	detail       Detail
@@ -87,6 +95,15 @@ func (f *fakeProgramStore) PublishFromDraft(_ context.Context, _, _ uuid.UUID, d
 	out := d
 	out.Program.Status = StatusPublished
 	out.HasUnpublishedChanges = false
+	return out, nil
+}
+
+func (f *fakeProgramStore) Republish(context.Context, uuid.UUID, uuid.UUID) (Detail, error) {
+	if f.err != nil {
+		return Detail{}, f.err
+	}
+	out := f.detail
+	out.Program.Status = StatusPublished
 	return out, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	httpx "mentorix-backend/internal/http"
+	"mentorix-backend/internal/subscription"
 )
 
 type Handlers struct {
@@ -25,9 +26,10 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
+	// Admins get read-only visibility; the service rejects mutations from non-owners.
 	g := e.Group("/programs",
 		auth.JWTMiddleware(h.jwtSecret),
-		auth.TrainerMiddleware(h.pool),
+		auth.TrainerOrAdminMiddleware(h.pool),
 	)
 	g.GET("", h.List)
 	g.POST("", h.Create)
@@ -708,6 +710,10 @@ func HTTPErrorFrom(err error) *echo.HTTPError {
 }
 
 func mapProgramError(err error) *echo.HTTPError {
+	var qe *subscription.QuotaError
+	if errors.As(err, &qe) {
+		return subscription.QuotaHTTPError(qe)
+	}
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, httpx.MsgProgramNotFound)

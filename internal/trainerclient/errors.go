@@ -7,10 +7,19 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/subscription"
 )
 
 func HTTPErrorFrom(err error) *echo.HTTPError {
+	var qe *subscription.QuotaError
+	if errors.As(err, &qe) {
+		return subscription.QuotaHTTPError(qe)
+	}
 	switch {
+	case errors.Is(err, ErrClientLimitReached):
+		return echo.NewHTTPError(http.StatusConflict, err.Error())
+	case errors.Is(err, ErrSelfInvite):
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, ErrInviteNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrInviteExpired):

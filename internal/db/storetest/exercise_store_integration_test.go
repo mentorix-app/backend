@@ -11,6 +11,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 
@@ -19,22 +20,32 @@ import (
 	"mentorix-backend/internal/health"
 )
 
-func TestExerciseStore_CreateAndList(t *testing.T) {
-	pool := NewPool(t)
+func registerTrainerWithID(t *testing.T, pool *pgxpool.Pool, email, name string) (uuid.UUID, uuid.UUID) {
+	t.Helper()
 	ctx := context.Background()
-
 	authStore := auth.NewStore(pool)
 	pwHash, err := auth.HashPassword("password123")
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-store@test.com", pwHash, "Exercise Admin")
+	userID, err := authStore.RegisterTrainerEmailPassword(ctx, email, pwHash, name)
 	if err != nil {
 		t.Fatalf("register trainer: %v", err)
 	}
+	trainerID, err := exercise.NewStore(pool).TrainerIDForUser(ctx, userID)
+	if err != nil {
+		t.Fatalf("TrainerIDForUser: %v", err)
+	}
+	return userID, trainerID
+}
+
+func TestExerciseStore_CreateAndList(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	userID, trainerID := registerTrainerWithID(t, pool, "exercise-store@test.com", "Exercise Admin")
 
 	store := exercise.NewStore(pool)
-	created, err := store.Create(ctx, userID, exercise.UpsertInput{
+	created, err := store.Create(ctx, userID, &trainerID, exercise.UpsertInput{
 		Name:        "Back Squat",
 		NameRu:      "Присед",
 		Type:        exercise.ExerciseTypeStrength,
@@ -50,12 +61,15 @@ func TestExerciseStore_CreateAndList(t *testing.T) {
 	if created.CreatedByName != "Exercise Admin" {
 		t.Errorf("created_by_name = %q, want Exercise Admin", created.CreatedByName)
 	}
+	if created.Scope != exercise.ScopePrivate {
+		t.Errorf("scope = %s, want private", created.Scope)
+	}
 
-	params, err := exercise.ParseListParams("1", "20", "name", "asc", "squat", "", "", "", "")
+	params, err := exercise.ParseListParams("1", "20", "name", "asc", "squat", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("ParseListParams() error = %v", err)
 	}
-	result, err := store.List(ctx, params)
+	result, err := store.List(ctx, exercise.Viewer{TrainerID: &trainerID}, params)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -77,19 +91,10 @@ func TestExerciseStore_CreateAndList(t *testing.T) {
 func TestExerciseStore_GetUpdateDelete(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
-
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-crud@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID, trainerID := registerTrainerWithID(t, pool, "exercise-crud@test.com", "")
 
 	store := exercise.NewStore(pool)
-	created, err := store.Create(ctx, userID, exercise.UpsertInput{
+	created, err := store.Create(ctx, userID, &trainerID, exercise.UpsertInput{
 		Name:        "Deadlift",
 		NameRu:      "Становая",
 		Type:        exercise.ExerciseTypeStrength,
@@ -109,7 +114,7 @@ func TestExerciseStore_GetUpdateDelete(t *testing.T) {
 	}
 
 	newName := "Romanian Deadlift"
-	updated, err := store.Update(ctx, created.ID, userID, exercise.UpsertInput{
+	updated, err := store.Update(ctx, created.ID, userID, &trainerID, exercise.UpsertInput{
 		Name:        newName,
 		NameRu:      got.NameRu,
 		Type:        got.Type,
@@ -123,7 +128,7 @@ func TestExerciseStore_GetUpdateDelete(t *testing.T) {
 		t.Errorf("updated name = %q", updated.Name)
 	}
 
-	n, err := store.DeleteMany(ctx, userID, []uuid.UUID{created.ID})
+	n, err := store.DeleteMany(ctx, userID, &trainerID, []uuid.UUID{created.ID})
 	if err != nil {
 		t.Fatalf("DeleteMany() error = %v", err)
 	}
@@ -149,7 +154,7 @@ func TestExerciseStore_GetByIDNotFound(t *testing.T) {
 func TestExerciseStore_UpdateNotFound(t *testing.T) {
 	pool := NewPool(t)
 	store := exercise.NewStore(pool)
-	_, err := store.Update(context.Background(), uuid.New(), uuid.New(), exercise.UpsertInput{
+	_, err := store.Update(context.Background(), uuid.New(), uuid.New(), nil, exercise.UpsertInput{
 		Name:        "Ghost",
 		NameRu:      "Призрак",
 		Type:        exercise.ExerciseTypeStrength,
@@ -164,20 +169,11 @@ func TestExerciseStore_UpdateNotFound(t *testing.T) {
 func TestExerciseStore_ListWithFilters(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
-
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-filter@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID, trainerID := registerTrainerWithID(t, pool, "exercise-filter@test.com", "")
 
 	store := exercise.NewStore(pool)
 	equipment := exercise.EquipmentBarbell
-	_, err = store.Create(ctx, userID, exercise.UpsertInput{
+	_, err := store.Create(ctx, userID, &trainerID, exercise.UpsertInput{
 		Name:        "Barbell Row",
 		NameRu:      "Тяга",
 		Type:        exercise.ExerciseTypeStrength,
@@ -189,11 +185,11 @@ func TestExerciseStore_ListWithFilters(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	params, err := exercise.ParseListParams("1", "20", "name", "asc", "row", "strength", "back", "intermediate", "barbell")
+	params, err := exercise.ParseListParams("1", "20", "name", "asc", "row", "strength", "back", "intermediate", "barbell", "")
 	if err != nil {
 		t.Fatalf("ParseListParams() error = %v", err)
 	}
-	result, err := store.List(ctx, params)
+	result, err := store.List(ctx, exercise.Viewer{TrainerID: &trainerID}, params)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -202,7 +198,7 @@ func TestExerciseStore_ListWithFilters(t *testing.T) {
 	}
 }
 
-func TestExerciseService_adminMutatesOtherUsersExercise(t *testing.T) {
+func TestExerciseService_adminMutatesGlobalExercise(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
@@ -219,12 +215,8 @@ func TestExerciseService_adminMutatesOtherUsersExercise(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register admin: %v", err)
 	}
-	if err := authStore.GrantRole(ctx, ownerID, auth.RoleAdmin); err != nil {
-		t.Fatalf("grant admin owner: %v", err)
-	}
-	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
-		t.Fatalf("grant admin: %v", err)
-	}
+	promoteToAdminOnly(t, pool, ownerID)
+	promoteToAdminOnly(t, pool, adminID)
 
 	svc := exercise.NewService(pool)
 	created, err := svc.Create(ctx, ownerID, exercise.UpsertInput{
@@ -236,6 +228,9 @@ func TestExerciseService_adminMutatesOtherUsersExercise(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Scope != exercise.ScopeGlobal {
+		t.Fatalf("scope = %s, want global", created.Scope)
 	}
 
 	updatedName := "Walking Lunge"
