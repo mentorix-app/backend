@@ -2,6 +2,7 @@ package program
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
+	"mentorix-backend/internal/subscription"
 )
 
 type listProgramStore struct {
@@ -178,12 +180,51 @@ func TestHandlers_Create_storeError(t *testing.T) {
 	assertHTTPError(t, err, http.StatusInternalServerError)
 }
 
+func TestHandlers_Create_quotaExceeded(t *testing.T) {
+	h := programHandler(&quotaCreateStore{})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs", "", uuid.New(), nil)
+	err := h.Create(c)
+	assertHTTPError(t, err, http.StatusConflict)
+	he := err.(*echo.HTTPError)
+	b, jsonErr := json.Marshal(he.Message)
+	if jsonErr != nil {
+		t.Fatalf("marshal: %v", jsonErr)
+	}
+	var parsed struct {
+		Error    string `json:"error"`
+		Resource string `json:"resource"`
+		Plan     string `json:"plan"`
+		Limit    int    `json:"limit"`
+		Usage    int    `json:"usage"`
+	}
+	if err := json.Unmarshal(b, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if parsed.Error != "quota_exceeded" || parsed.Resource != "programs" || parsed.Plan != "free" || parsed.Limit != 3 || parsed.Usage != 3 {
+		t.Fatalf("quota body = %+v", parsed)
+	}
+}
+
 type errCreateStore struct {
 	fakeProgramStore
 }
 
 func (errCreateStore) CreateDraft(context.Context, uuid.UUID) (Detail, error) {
 	return Detail{}, errors.New("create failed")
+}
+
+type quotaCreateStore struct {
+	fakeProgramStore
+}
+
+func (quotaCreateStore) CreateDraft(context.Context, uuid.UUID) (Detail, error) {
+	return Detail{}, &subscription.QuotaError{
+		Resource: subscription.ResourcePrograms,
+		Plan:     subscription.PlanFree,
+		Limit:    3,
+		Usage:    3,
+	}
 }
 
 type errUpdateStore struct {
