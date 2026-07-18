@@ -221,7 +221,7 @@ func (h *Handlers) Create(c echo.Context) error {
 	}
 	d, err := h.svc.Create(c.Request().Context(), uid)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "create failed")
+		return mapProgramError(err)
 	}
 	return c.JSON(http.StatusCreated, d)
 }
