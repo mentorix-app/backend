@@ -19,6 +19,7 @@ import (
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/subscription"
 )
 
 const pgUniqueViolationCode = "23505"
@@ -305,6 +306,14 @@ func (s *Store) AcceptInvite(ctx context.Context, token, telegramUserID, display
 		return AcceptInviteResult{}, err
 	}
 
+	trainerUserID, err := qtx.GetTrainerUserID(ctx, invite.TrainerID)
+	if err != nil {
+		return AcceptInviteResult{}, fmt.Errorf("trainer user id: %w", err)
+	}
+	if pgconv.FromPGUUID(trainerUserID) == userID {
+		return AcceptInviteResult{}, ErrSelfInvite
+	}
+
 	if invite.ConsumedAt.Valid {
 		consumedBy := pgconv.FromPGUUID(invite.ConsumedBy)
 		if consumedBy != userID {
@@ -416,6 +425,18 @@ func (s *Store) ensureClientLink(ctx context.Context, q *sqlc.Queries, trainerID
 	}
 
 	if !alreadyLinked {
+		// New active link consumes a client slot: serialize and enforce the quota.
+		// On failure the transaction rolls back, so the invite is not consumed.
+		if err := subscription.LockTrainer(ctx, q, trainerID); err != nil {
+			return AcceptInviteResult{}, err
+		}
+		if err := subscription.CheckQuota(ctx, q, trainerID, subscription.ResourceClients, subscription.OpCreate); err != nil {
+			var qe *subscription.QuotaError
+			if errors.As(err, &qe) {
+				return AcceptInviteResult{}, ErrClientLimitReached
+			}
+			return AcceptInviteResult{}, err
+		}
 		if err := q.InsertTrainerClient(ctx, sqlc.InsertTrainerClientParams{
 			TrainerID:    pgconv.ToPGUUID(trainerID),
 			ClientUserID: pgconv.ToPGUUID(clientUserID),

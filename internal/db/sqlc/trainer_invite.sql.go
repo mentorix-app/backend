@@ -179,6 +179,19 @@ func (q *Queries) GetTrainerUserDisplayName(ctx context.Context, id pgtype.UUID)
 	return display_name, err
 }
 
+const getTrainerUserID = `-- name: GetTrainerUserID :one
+SELECT user_id
+FROM mentorix.trainers
+WHERE id = $1
+`
+
+func (q *Queries) GetTrainerUserID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getTrainerUserID, id)
+	var user_id pgtype.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const insertTrainerClient = `-- name: InsertTrainerClient :exec
 INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id, status)
 VALUES ($1, $2, 'active')

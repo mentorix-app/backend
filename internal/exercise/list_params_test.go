@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseListParams_defaults(t *testing.T) {
-	params, err := ParseListParams("", "", "", "", "", "", "", "", "")
+	params, err := ParseListParams("", "", "", "", "", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestParseListParams_defaults(t *testing.T) {
 }
 
 func TestParseListParams_pagination(t *testing.T) {
-	params, err := ParseListParams("2", "50", "", "", "", "", "", "", "")
+	params, err := ParseListParams("2", "50", "", "", "", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestParseListParams_invalidPagination(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseListParams(tt.page, tt.limit, "", "", "", "", "", "", "")
+			_, err := ParseListParams(tt.page, tt.limit, "", "", "", "", "", "", "", "")
 			if !errors.Is(err, ErrValidation) {
 				t.Fatalf("expected ErrValidation, got %v", err)
 			}
@@ -60,7 +60,7 @@ func TestParseListParams_invalidPagination(t *testing.T) {
 }
 
 func TestParseListParams_sort(t *testing.T) {
-	params, err := ParseListParams("", "", "created_at", "desc", "", "", "", "", "")
+	params, err := ParseListParams("", "", "created_at", "desc", "", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestParseListParams_sort(t *testing.T) {
 		t.Errorf("got sort_by=%q sort_order=%q", params.SortBy, params.SortOrder)
 	}
 
-	params, err = ParseListParams("", "", "equipment", "asc", "", "", "", "", "")
+	params, err = ParseListParams("", "", "equipment", "asc", "", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("equipment sort: unexpected error: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestParseListParams_sort(t *testing.T) {
 		t.Errorf("equipment sort: got sort_by=%q sort_order=%q", params.SortBy, params.SortOrder)
 	}
 
-	params, err = ParseListParams("", "", "equipment", "desc", "", "", "", "", "")
+	params, err = ParseListParams("", "", "equipment", "desc", "", "", "", "", "", "")
 	if err != nil {
 		t.Fatalf("equipment desc sort: unexpected error: %v", err)
 	}
@@ -84,12 +84,12 @@ func TestParseListParams_sort(t *testing.T) {
 		t.Errorf("equipment desc sort: got sort_by=%q sort_order=%q", params.SortBy, params.SortOrder)
 	}
 
-	_, err = ParseListParams("", "", "bad_col", "", "", "", "", "", "")
+	_, err = ParseListParams("", "", "bad_col", "", "", "", "", "", "", "")
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("invalid sort_by: expected ErrValidation, got %v", err)
 	}
 
-	_, err = ParseListParams("", "", "", "sideways", "", "", "", "", "")
+	_, err = ParseListParams("", "", "", "sideways", "", "", "", "", "", "")
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("invalid sort_order: expected ErrValidation, got %v", err)
 	}
@@ -101,6 +101,7 @@ func TestParseListParams_filters(t *testing.T) {
 		string(MuscleGroupLegs),
 		string(DifficultyBeginner),
 		string(EquipmentBarbell),
+		"",
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -122,8 +123,23 @@ func TestParseListParams_filters(t *testing.T) {
 	}
 }
 
+func TestParseListParams_scope(t *testing.T) {
+	params, err := ParseListParams("", "", "", "", "", "", "", "", "", "private")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if params.Scope == nil || *params.Scope != ScopePrivate {
+		t.Fatalf("scope = %v, want private", params.Scope)
+	}
+
+	_, err = ParseListParams("", "", "", "", "", "", "", "", "", "shared")
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("err = %v, want ErrValidation", err)
+	}
+}
+
 func TestParseListParams_equipmentNone(t *testing.T) {
-	params, err := ParseListParams("", "", "", "", "", "", "", "", "none")
+	params, err := ParseListParams("", "", "", "", "", "", "", "", "none", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -150,7 +166,7 @@ func TestParseListParams_invalidFilters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseListParams("", "", "", "", "", tt.typeStr, tt.muscle, tt.diff, tt.equipment)
+			_, err := ParseListParams("", "", "", "", "", tt.typeStr, tt.muscle, tt.diff, tt.equipment, "")
 			if !errors.Is(err, ErrValidation) {
 				t.Fatalf("expected ErrValidation, got %v", err)
 			}

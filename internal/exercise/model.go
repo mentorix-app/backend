@@ -70,6 +70,14 @@ const (
 	DifficultyExpert       Difficulty = "expert"
 )
 
+// Scope tells whether an exercise is shared (admin-owned) or trainer-private.
+type Scope string
+
+const (
+	ScopeGlobal  Scope = "global"
+	ScopePrivate Scope = "private"
+)
+
 type Exercise struct {
 	ID              uuid.UUID    `json:"id"`
 	Name            string       `json:"name"`
@@ -87,7 +95,14 @@ type Exercise struct {
 	Difficulty      Difficulty   `json:"difficulty"`
 	VideoURL        string       `json:"video_url"`
 	PreviewImageURL string       `json:"preview_image_url"`
+	Scope           Scope        `json:"scope"`
+	OwnerUserID     *uuid.UUID   `json:"owner_user_id"`
+
+	ownerTrainerID *uuid.UUID
 }
+
+// OwnerTrainerID returns the internal trainers.id owner (nil for global).
+func (e Exercise) OwnerTrainerID() *uuid.UUID { return e.ownerTrainerID }
 
 type UpsertInput struct {
 	Name            string

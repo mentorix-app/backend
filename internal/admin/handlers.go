@@ -5,12 +5,12 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/auth"
 	httpx "mentorix-backend/internal/http"
+	"mentorix-backend/internal/subscription"
 )
 
 type Handlers struct {
@@ -26,28 +26,56 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 func (h *Handlers) Mount(e *echo.Echo) {
 	g := e.Group("/admin",
 		auth.JWTMiddleware(h.jwtSecret),
-		auth.TrainerMiddleware(h.pool),
+		auth.AdminMiddleware(h.pool),
 	)
-	g.POST("/users/:user_id/roles/admin", h.GrantAdmin)
+	g.PUT("/trainers/:user_id/plan", h.GrantPlan)
+	g.DELETE("/trainers/:user_id/plan", h.RevokePlan)
 }
 
-func (h *Handlers) GrantAdmin(c echo.Context) error {
+type grantPlanBody struct {
+	Plan subscription.Plan `json:"plan"`
+}
+
+type planResponse struct {
+	UserID       string                     `json:"user_id"`
+	Subscription *subscription.Subscription `json:"subscription"`
+}
+
+func (h *Handlers) GrantPlan(c echo.Context) error {
 	targetUserID, err := uuid.Parse(c.Param("user_id"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidUserID)
 	}
-	profile, err := h.svc.GrantAdmin(c.Request().Context(), targetUserID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "grant admin failed")
+	var body grantPlanBody
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
-	return c.JSON(http.StatusOK, auth.MeResponse{
-		UserID:    targetUserID.String(),
-		Email:     profile.Email,
-		Name:      profile.Name,
-		CreatedAt: profile.CreatedAt,
-		Roles:     profile.Roles,
-	})
+	sub, err := h.svc.GrantPlan(c.Request().Context(), targetUserID, body.Plan)
+	if err != nil {
+		return planHTTPError(err)
+	}
+	return c.JSON(http.StatusOK, planResponse{UserID: targetUserID.String(), Subscription: sub})
+}
+
+func (h *Handlers) RevokePlan(c echo.Context) error {
+	targetUserID, err := uuid.Parse(c.Param("user_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidUserID)
+	}
+	sub, err := h.svc.RevokePlan(c.Request().Context(), targetUserID)
+	if err != nil {
+		return planHTTPError(err)
+	}
+	return c.JSON(http.StatusOK, planResponse{UserID: targetUserID.String(), Subscription: sub})
+}
+
+func planHTTPError(err error) *echo.HTTPError {
+	switch {
+	case errors.Is(err, subscription.ErrInvalidPlan):
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	case errors.Is(err, subscription.ErrTrainerNotFound):
+		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	default:
+		return echo.NewHTTPError(http.StatusInternalServerError, "plan operation failed")
+	}
 }

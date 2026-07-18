@@ -1,6 +1,10 @@
 package auth
 
-import "time"
+import (
+	"time"
+
+	"mentorix-backend/internal/subscription"
+)
 
 // AuthCredentials is the JSON body for POST /auth/login.
 type AuthCredentials struct {
@@ -30,10 +34,12 @@ type TokenResponse struct {
 }
 
 // MeResponse is the JSON body for GET /auth/me and PATCH /auth/me.
+// Subscription is set for users with a trainer profile and null otherwise.
 type MeResponse struct {
-	UserID    string    `json:"user_id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	Roles     []string  `json:"roles"`
+	UserID       string                     `json:"user_id"`
+	Email        string                     `json:"email"`
+	Name         string                     `json:"name"`
+	CreatedAt    time.Time                  `json:"created_at"`
+	Roles        []string                   `json:"roles"`
+	Subscription *subscription.Subscription `json:"subscription"`
 }

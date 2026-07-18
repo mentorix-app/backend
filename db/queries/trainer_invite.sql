@@ -202,3 +202,8 @@ SELECT u.display_name
 FROM mentorix.trainers t
 INNER JOIN mentorix.users u ON u.id = t.user_id
 WHERE t.id = $1;
+
+-- name: GetTrainerUserID :one
+SELECT user_id
+FROM mentorix.trainers
+WHERE id = $1;

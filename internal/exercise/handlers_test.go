@@ -16,6 +16,7 @@ import (
 
 	"mentorix-backend/internal/auth"
 	httpx "mentorix-backend/internal/http"
+	"mentorix-backend/internal/subscription"
 )
 
 type fakeExerciseStore struct {
@@ -29,9 +30,10 @@ type fakeExerciseStore struct {
 	updateErr       error
 	deleteManyCount int64
 	deleteManyErr   error
+	trainerID       uuid.UUID
 }
 
-func (f *fakeExerciseStore) List(context.Context, ListParams) (ListResult, error) {
+func (f *fakeExerciseStore) List(context.Context, Viewer, ListParams) (ListResult, error) {
 	return f.listResult, f.listErr
 }
 
@@ -42,25 +44,32 @@ func (f *fakeExerciseStore) GetByID(context.Context, uuid.UUID) (Exercise, error
 	return f.getEx, nil
 }
 
-func (f *fakeExerciseStore) Create(context.Context, uuid.UUID, UpsertInput) (Exercise, error) {
+func (f *fakeExerciseStore) Create(context.Context, uuid.UUID, *uuid.UUID, UpsertInput) (Exercise, error) {
 	if f.createErr != nil {
 		return Exercise{}, f.createErr
 	}
 	return f.createEx, nil
 }
 
-func (f *fakeExerciseStore) Update(context.Context, uuid.UUID, uuid.UUID, UpsertInput) (Exercise, error) {
+func (f *fakeExerciseStore) Update(context.Context, uuid.UUID, uuid.UUID, *uuid.UUID, UpsertInput) (Exercise, error) {
 	if f.updateErr != nil {
 		return Exercise{}, f.updateErr
 	}
 	return f.updateEx, nil
 }
 
-func (f *fakeExerciseStore) DeleteMany(context.Context, uuid.UUID, []uuid.UUID) (int64, error) {
+func (f *fakeExerciseStore) DeleteMany(context.Context, uuid.UUID, *uuid.UUID, []uuid.UUID) (int64, error) {
 	if f.deleteManyErr != nil {
 		return 0, f.deleteManyErr
 	}
 	return f.deleteManyCount, nil
+}
+
+func (f *fakeExerciseStore) TrainerIDForUser(context.Context, uuid.UUID) (uuid.UUID, error) {
+	if f.trainerID == uuid.Nil {
+		f.trainerID = uuid.New()
+	}
+	return f.trainerID, nil
 }
 
 func TestNewService(t *testing.T) {
@@ -78,7 +87,8 @@ func TestNewHandlers(t *testing.T) {
 }
 
 func testExerciseHandlers(store *fakeExerciseStore) *Handlers {
-	return &Handlers{svc: &Service{store: store}}
+	svc := NewServiceWithStore(store, &fakeRoles{admins: map[uuid.UUID]bool{}}, nil)
+	return &Handlers{svc: svc}
 }
 
 func TestHandlers_Mount_registersRoutes(t *testing.T) {
@@ -105,6 +115,7 @@ func sampleExercise() Exercise {
 		Difficulty:  DifficultyIntermediate,
 		CreatedAt:   now,
 		ModifiedAt:  now,
+		Scope:       ScopeGlobal,
 	}
 }
 
@@ -127,12 +138,15 @@ func TestList(t *testing.T) {
 	}
 	e := echo.New()
 	h := testExerciseHandlers(store)
-	e.GET("/exercises", h.List)
 
 	req := httptest.NewRequest(http.MethodGet, "/exercises?page=1&limit=20&sort_by=name&sort_order=asc", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	c := e.NewContext(req, rec)
+	c.Set(auth.ContextUserIDKey, uuid.New())
 
+	if err := h.List(c); err != nil {
+		t.Fatalf("List: %v", err)
+	}
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -141,28 +155,32 @@ func TestList(t *testing.T) {
 func TestList_invalidParams(t *testing.T) {
 	e := echo.New()
 	h := testExerciseHandlers(&fakeExerciseStore{})
-	e.GET("/exercises", h.List)
 
 	req := httptest.NewRequest(http.MethodGet, "/exercises?sort_by=invalid", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	c := e.NewContext(req, rec)
+	c.Set(auth.ContextUserIDKey, uuid.New())
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
+	err := h.List(c)
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("error = %v, want 400", err)
 	}
 }
 
 func TestList_serviceError(t *testing.T) {
 	e := echo.New()
 	h := testExerciseHandlers(&fakeExerciseStore{listErr: errors.New("db down")})
-	e.GET("/exercises", h.List)
 
 	req := httptest.NewRequest(http.MethodGet, "/exercises", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	c := e.NewContext(req, rec)
+	c.Set(auth.ContextUserIDKey, uuid.New())
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rec.Code)
+	err := h.List(c)
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusInternalServerError {
+		t.Fatalf("error = %v, want 500", err)
 	}
 }
 
@@ -177,6 +195,7 @@ func TestGet(t *testing.T) {
 	c := e.NewContext(req, rec)
 	c.SetParamNames("id")
 	c.SetParamValues(ex.ID.String())
+	c.Set(auth.ContextUserIDKey, uuid.New())
 
 	if err := h.Get(c); err != nil {
 		t.Fatalf("Get: %v", err)
@@ -196,6 +215,7 @@ func TestGet_invalidID(t *testing.T) {
 	c := e.NewContext(req, rec)
 	c.SetParamNames("id")
 	c.SetParamValues("not-a-uuid")
+	c.Set(auth.ContextUserIDKey, uuid.New())
 
 	err := h.Get(c)
 	if err == nil {
@@ -218,6 +238,7 @@ func TestGet_notFound(t *testing.T) {
 	c := e.NewContext(req, rec)
 	c.SetParamNames("id")
 	c.SetParamValues(id.String())
+	c.Set(auth.ContextUserIDKey, uuid.New())
 
 	err := h.Get(c)
 	if err == nil {
@@ -281,6 +302,24 @@ func TestCreate_invalidJSON(t *testing.T) {
 	he, ok := err.(*echo.HTTPError)
 	if !ok || he.Code != http.StatusBadRequest {
 		t.Fatalf("error = %v, want 400", err)
+	}
+}
+
+func TestCreate_quotaExceeded(t *testing.T) {
+	qe := &subscription.QuotaError{Resource: subscription.ResourceExercises, Plan: subscription.PlanFree, Limit: 10, Usage: 10}
+	store := &fakeExerciseStore{createErr: qe}
+	e := echo.New()
+	h := testExerciseHandlers(store)
+	req := httptest.NewRequest(http.MethodPost, "/exercises", strings.NewReader(validUpsertJSON()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(auth.ContextUserIDKey, uuid.New())
+
+	err := h.Create(c)
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusConflict {
+		t.Fatalf("error = %v, want 409", err)
 	}
 }
 

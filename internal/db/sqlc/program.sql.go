@@ -253,7 +253,7 @@ func (q *Queries) ExerciseExists(ctx context.Context, id pgtype.UUID) (bool, err
 }
 
 const getBlockExerciseMeta = `-- name: GetBlockExerciseMeta :one
-SELECT pde.id, pde.program_week_day_block_id, pdb.program_week_day_id, pdb.block_type
+SELECT pde.id, pde.program_week_day_block_id, pde.exercise_id, pdb.program_week_day_id, pdb.block_type
 FROM mentorix.program_week_day_block_exercises pde
 JOIN mentorix.program_week_day_blocks pdb ON pdb.id = pde.program_week_day_block_id
 WHERE pde.id = $1
@@ -262,6 +262,7 @@ WHERE pde.id = $1
 type GetBlockExerciseMetaRow struct {
 	ID                    pgtype.UUID `json:"id"`
 	ProgramWeekDayBlockID pgtype.UUID `json:"program_week_day_block_id"`
+	ExerciseID            pgtype.UUID `json:"exercise_id"`
 	ProgramWeekDayID      pgtype.UUID `json:"program_week_day_id"`
 	BlockType             string      `json:"block_type"`
 }
@@ -272,6 +273,7 @@ func (q *Queries) GetBlockExerciseMeta(ctx context.Context, id pgtype.UUID) (Get
 	err := row.Scan(
 		&i.ID,
 		&i.ProgramWeekDayBlockID,
+		&i.ExerciseID,
 		&i.ProgramWeekDayID,
 		&i.BlockType,
 	)

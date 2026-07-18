@@ -5,29 +5,35 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+
+	"mentorix-backend/internal/subscription"
 )
 
 func TestNewService(t *testing.T) {
-	svc := &Service{store: &fakeRoleStore{roles: map[uuid.UUID][]string{}}}
-	if svc.store == nil {
-		t.Fatal("expected store")
+	svc := &Service{plans: &fakePlanService{grants: map[uuid.UUID]subscription.Plan{}}}
+	if svc.plans == nil {
+		t.Fatal("expected plan service")
 	}
 }
 
-func TestHandlers_Mount_registersRoute(t *testing.T) {
-	svc := &Service{store: &fakeRoleStore{roles: map[uuid.UUID][]string{}}}
+func TestHandlers_Mount_registersRoutes(t *testing.T) {
+	svc := &Service{plans: &fakePlanService{grants: map[uuid.UUID]subscription.Plan{}}}
 	h := NewHandlers(svc, nil, "test-jwt-secret-at-least-32-chars")
 	e := echo.New()
 	h.Mount(e)
 
-	found := false
+	var foundPut, foundDelete bool
 	for _, r := range e.Routes() {
-		if r.Method == "POST" && r.Path == "/admin/users/:user_id/roles/admin" {
-			found = true
-			break
+		if r.Path == "/admin/trainers/:user_id/plan" {
+			switch r.Method {
+			case "PUT":
+				foundPut = true
+			case "DELETE":
+				foundDelete = true
+			}
 		}
 	}
-	if !found {
-		t.Fatal("admin grant route not registered")
+	if !foundPut || !foundDelete {
+		t.Fatalf("plan routes not registered: put=%v delete=%v", foundPut, foundDelete)
 	}
 }

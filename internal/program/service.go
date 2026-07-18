@@ -10,6 +10,7 @@ import (
 
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/sqlc"
+	"mentorix-backend/internal/subscription"
 )
 
 type programStore interface {
@@ -20,6 +21,7 @@ type programStore interface {
 	Update(ctx context.Context, id, userID uuid.UUID, in UpdateInput) (Detail, error)
 	SetStatus(ctx context.Context, id, userID uuid.UUID, status Status) (Detail, error)
 	PublishFromDraft(ctx context.Context, id, userID uuid.UUID, d Detail) (Detail, error)
+	Republish(ctx context.Context, id, userID uuid.UUID) (Detail, error)
 	FreezePublishedVersion(ctx context.Context, id, userID uuid.UUID, d Detail) (Detail, error)
 	SoftDelete(ctx context.Context, id, userID uuid.UUID) error
 	DeleteProgramAssignments(ctx context.Context, programID uuid.UUID) error
@@ -54,10 +56,16 @@ type programStore interface {
 	GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Detail, error)
 }
 
+// QuotaChecker verifies plan quotas for a trainer user; nil disables checks (tests).
+type QuotaChecker interface {
+	CheckQuota(ctx context.Context, trainerUserID uuid.UUID, resource subscription.Resource, op subscription.Op) error
+}
+
 type Service struct {
 	store    programStore
 	roles    auth.RoleQuerier
 	notifier ProgramNotifier
+	quota    QuotaChecker
 }
 
 type ProgramNotifier interface {
@@ -70,10 +78,15 @@ func WithProgramNotifier(n ProgramNotifier) ServiceOption {
 	return func(s *Service) { s.notifier = n }
 }
 
+func WithQuotaChecker(q QuotaChecker) ServiceOption {
+	return func(s *Service) { s.quota = q }
+}
+
 func NewService(pool *pgxpool.Pool, opts ...ServiceOption) *Service {
 	s := &Service{
 		store: NewStore(pool),
 		roles: sqlc.New(pool),
+		quota: subscription.NewChecker(pool),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -134,7 +147,7 @@ func (s *Service) Update(ctx context.Context, userID, id uuid.UUID, in UpdateInp
 }
 
 func (s *Service) Publish(ctx context.Context, userID, id uuid.UUID) (Detail, error) {
-	if err := s.ensureAccess(ctx, userID, id); err != nil {
+	if err := s.ensureOwner(ctx, userID, id); err != nil {
 		return Detail{}, err
 	}
 	d, err := s.store.GetDetail(ctx, id)
@@ -158,9 +171,14 @@ func (s *Service) Publish(ctx context.Context, userID, id uuid.UUID) (Detail, er
 	var out Detail
 	switch d.Status {
 	case StatusDraft:
+		// A draft already counts as active: block only when over the limit.
+		if err := s.checkQuota(ctx, userID, subscription.ResourcePrograms, subscription.OpMutate); err != nil {
+			return Detail{}, err
+		}
 		out, err = s.store.PublishFromDraft(ctx, id, userID, d)
 	case StatusArchived:
-		out, err = s.store.SetStatus(ctx, id, userID, StatusPublished)
+		// Reactivation increases the active count; the store enforces the quota under lock.
+		out, err = s.store.Republish(ctx, id, userID)
 	default:
 		return Detail{}, ErrInvalidStatusTransition
 	}
@@ -207,9 +225,7 @@ func (s *Service) PublishUpdate(ctx context.Context, userID, id uuid.UUID) (Deta
 }
 
 func (s *Service) Archive(ctx context.Context, userID, id uuid.UUID) (Detail, error) {
-	if err := s.ensureMutable(ctx, userID, id); err != nil {
-		return Detail{}, err
-	}
+	// Archiving frees quota, so it stays allowed even in read-only mode.
 	d, err := s.store.GetProgramRow(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -219,6 +235,9 @@ func (s *Service) Archive(ctx context.Context, userID, id uuid.UUID) (Detail, er
 	}
 	if d.DeletedAt != nil {
 		return Detail{}, ErrNotFound
+	}
+	if userID != d.CreatedBy {
+		return Detail{}, ErrForbidden
 	}
 	if d.Status != StatusPublished {
 		return Detail{}, ErrInvalidStatusTransition
@@ -241,8 +260,8 @@ func (s *Service) Delete(ctx context.Context, userID, id uuid.UUID) error {
 		}
 		return err
 	}
-	if err := s.ensureOwnerOrAdmin(ctx, userID, p.CreatedBy); err != nil {
-		return err
+	if userID != p.CreatedBy {
+		return ErrForbidden
 	}
 	if p.DeletedAt != nil {
 		return nil
@@ -572,13 +591,21 @@ func (s *Service) ensureMutable(ctx context.Context, userID, programID uuid.UUID
 	if p.DeletedAt != nil {
 		return ErrNotFound
 	}
-	if err := s.ensureOwnerOrAdmin(ctx, userID, p.CreatedBy); err != nil {
-		return err
+	if userID != p.CreatedBy {
+		return ErrForbidden
 	}
 	if p.Status == StatusArchived {
 		return ErrReadOnly
 	}
-	return nil
+	// Read-only mode when the trainer holds more active programs than the plan allows.
+	return s.checkQuota(ctx, userID, subscription.ResourcePrograms, subscription.OpMutate)
+}
+
+func (s *Service) checkQuota(ctx context.Context, userID uuid.UUID, resource subscription.Resource, op subscription.Op) error {
+	if s.quota == nil {
+		return nil
+	}
+	return s.quota.CheckQuota(ctx, userID, resource, op)
 }
 
 func (s *Service) ensureOwnerOrAdmin(ctx context.Context, userID, ownerID uuid.UUID) error {

@@ -11,6 +11,7 @@ import (
 
 	"mentorix-backend/internal/auth"
 	httpx "mentorix-backend/internal/http"
+	"mentorix-backend/internal/subscription"
 )
 
 type Handlers struct {
@@ -24,14 +25,17 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
-	base := e.Group("/exercises", auth.JWTMiddleware(h.jwtSecret))
+	// Trainers manage their own exercises, admins manage global ones;
+	// the service scopes every operation by ownership.
+	base := e.Group("/exercises",
+		auth.JWTMiddleware(h.jwtSecret),
+		auth.TrainerOrAdminMiddleware(h.pool),
+	)
 	base.GET("", h.List)
 	base.GET("/:id", h.Get)
-
-	write := base.Group("", auth.AdminMiddleware(h.pool))
-	write.POST("", h.Create)
-	write.DELETE("", h.DeleteMany)
-	write.PUT("/:id", h.Update)
+	base.POST("", h.Create)
+	base.DELETE("", h.DeleteMany)
+	base.PUT("/:id", h.Update)
 }
 
 type deleteManyResponse struct {
@@ -60,6 +64,10 @@ func (b upsertBody) toInput() UpsertInput {
 }
 
 func (h *Handlers) List(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
 	params, err := ParseListParams(
 		c.QueryParam("page"),
 		c.QueryParam("limit"),
@@ -70,27 +78,38 @@ func (h *Handlers) List(c echo.Context) error {
 		c.QueryParam("muscle_group"),
 		c.QueryParam("difficulty"),
 		c.QueryParam("equipment"),
+		c.QueryParam("scope"),
 	)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	result, err := h.svc.List(c.Request().Context(), params)
+	result, err := h.svc.List(c.Request().Context(), uid, params)
 	if err != nil {
+		if errors.Is(err, ErrForbidden) {
+			return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "list failed")
 	}
 	return c.JSON(http.StatusOK, result)
 }
 
 func (h *Handlers) Get(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	ex, err := h.svc.Get(c.Request().Context(), id)
+	ex, err := h.svc.Get(c.Request().Context(), uid, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgExerciseNotFound)
+		}
+		if errors.Is(err, ErrForbidden) {
+			return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "get failed")
 	}
@@ -110,6 +129,13 @@ func (h *Handlers) Create(c echo.Context) error {
 	if err != nil {
 		if errors.Is(err, ErrValidation) {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		if errors.Is(err, ErrForbidden) {
+			return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
+		}
+		var qe *subscription.QuotaError
+		if errors.As(err, &qe) {
+			return subscription.QuotaHTTPError(qe)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "create failed")
 	}
@@ -136,6 +162,13 @@ func (h *Handlers) Update(c echo.Context) error {
 		}
 		if errors.Is(err, ErrValidation) {
 			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		if errors.Is(err, ErrForbidden) {
+			return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
+		}
+		var qe *subscription.QuotaError
+		if errors.As(err, &qe) {
+			return subscription.QuotaHTTPError(qe)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "update failed")
 	}
@@ -171,6 +204,9 @@ func (h *Handlers) DeleteMany(c echo.Context) error {
 
 	count, err := h.svc.DeleteMany(c.Request().Context(), uid, ids)
 	if err != nil {
+		if errors.Is(err, ErrForbidden) {
+			return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "delete failed")
 	}
 	return c.JSON(http.StatusOK, deleteManyResponse{DeletedCount: count})

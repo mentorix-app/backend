@@ -318,7 +318,7 @@ WHERE pd.week_id = $1
 ORDER BY pd.sort_order ASC, pd.day_number ASC, pdb.sort_order ASC, pdb.created_at ASC;
 
 -- name: GetBlockExerciseMeta :one
-SELECT pde.id, pde.program_week_day_block_id, pdb.program_week_day_id, pdb.block_type
+SELECT pde.id, pde.program_week_day_block_id, pde.exercise_id, pdb.program_week_day_id, pdb.block_type
 FROM mentorix.program_week_day_block_exercises pde
 JOIN mentorix.program_week_day_blocks pdb ON pdb.id = pde.program_week_day_block_id
 WHERE pde.id = $1;

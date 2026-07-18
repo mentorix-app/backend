@@ -396,6 +396,10 @@ func inviteErrorText(err error) string {
 		return "Ссылка уже использована. Попросите новую у тренера."
 	case errors.Is(err, program.ErrClientBlocked):
 		return "Тренер ограничил доступ. Свяжитесь с тренером."
+	case errors.Is(err, trainerclient.ErrClientLimitReached):
+		return "У тренера сейчас нет свободных мест. Сообщите тренеру — он освободит место или расширит тариф."
+	case errors.Is(err, trainerclient.ErrSelfInvite):
+		return "Это ваша собственная ссылка-приглашение: подключиться к самому себе нельзя."
 	case errors.Is(err, trainerclient.ErrInviteNotConfigured):
 		return "Бот временно недоступен. Попробуйте позже."
 	}

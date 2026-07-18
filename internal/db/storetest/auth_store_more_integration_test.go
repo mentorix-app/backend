@@ -55,15 +55,13 @@ func TestAuthStore_RevokeAndGrantRole(t *testing.T) {
 	if err := store.RevokeAllUserRefreshSessions(ctx, userID); err != nil {
 		t.Fatalf("RevokeAllUserRefreshSessions: %v", err)
 	}
-	if err := store.GrantRole(ctx, userID, auth.RoleAdmin); err != nil {
-		t.Fatalf("GrantRole: %v", err)
-	}
+	promoteToAdminOnly(t, pool, userID)
 	roles, err := store.UserRoles(ctx, userID)
 	if err != nil {
 		t.Fatalf("UserRoles: %v", err)
 	}
-	if len(roles) != 2 {
-		t.Fatalf("roles = %v, want trainer+admin", roles)
+	if len(roles) != 1 || roles[0] != auth.RoleAdmin {
+		t.Fatalf("roles = %v, want [admin]", roles)
 	}
 }
 

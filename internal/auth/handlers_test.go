@@ -18,6 +18,7 @@ import (
 
 	"mentorix-backend/internal/config"
 	httpx "mentorix-backend/internal/http"
+	"mentorix-backend/internal/subscription"
 )
 
 type fakeAuthService struct {
@@ -554,6 +555,102 @@ func TestMe_success(t *testing.T) {
 	}
 	if resp.UserID != userID.String() || resp.Email != "trainer@test.com" {
 		t.Fatalf("resp = %+v", resp)
+	}
+}
+
+type fakeSubs struct {
+	sub *subscription.Subscription
+	err error
+}
+
+func (f *fakeSubs) ForUser(context.Context, uuid.UUID) (*subscription.Subscription, error) {
+	return f.sub, f.err
+}
+
+func TestMe_withSubscription(t *testing.T) {
+	userID := uuid.New()
+	src := subscription.SourceAdmin
+	sub := &subscription.Subscription{
+		Plan:   subscription.PlanElite,
+		Source: &src,
+		Limits: subscription.Limits{},
+		Usage:  subscription.Usage{},
+		Permissions: subscription.Permissions{
+			CanCreateExercise: true,
+			CanEditExercises:  true,
+			CanCreateProgram:  true,
+			CanEditPrograms:   true,
+			CanCreateInvite:   true,
+			CanManageClients:  true,
+		},
+	}
+	h := NewHandlers(nil, testJWTSecret, config.RefreshCookieSettings{Name: "refresh", Path: "/auth"}, time.Hour, nil,
+		WithSubscriptions(&fakeSubs{sub: sub}),
+	)
+	h.svc = &fakeAuthService{
+		profile: UserProfile{Email: "trainer@test.com", Roles: []string{RoleTrainer}},
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, userID)
+
+	if err := h.Me(c); err != nil {
+		t.Fatalf("Me: %v", err)
+	}
+	var resp MeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Subscription == nil || resp.Subscription.Plan != subscription.PlanElite {
+		t.Fatalf("subscription = %+v, want elite", resp.Subscription)
+	}
+}
+
+func TestMe_subscriptionError(t *testing.T) {
+	h := NewHandlers(nil, testJWTSecret, config.RefreshCookieSettings{Name: "refresh", Path: "/auth"}, time.Hour, nil,
+		WithSubscriptions(&fakeSubs{err: errors.New("db down")}),
+	)
+	h.svc = &fakeAuthService{
+		profile: UserProfile{Email: "trainer@test.com", Roles: []string{RoleTrainer}},
+	}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, uuid.New())
+
+	err := h.Me(c)
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusInternalServerError {
+		t.Fatalf("error = %v, want 500", err)
+	}
+}
+
+func TestMe_withNilSubscription(t *testing.T) {
+	h := NewHandlers(nil, testJWTSecret, config.RefreshCookieSettings{Name: "refresh", Path: "/auth"}, time.Hour, nil,
+		WithSubscriptions(&fakeSubs{sub: nil}),
+	)
+	h.svc = &fakeAuthService{
+		profile: UserProfile{Email: "admin@test.com", Roles: []string{RoleAdmin}},
+	}
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(ContextUserIDKey, uuid.New())
+
+	if err := h.Me(c); err != nil {
+		t.Fatalf("Me: %v", err)
+	}
+	var resp MeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Subscription != nil {
+		t.Fatalf("subscription = %+v, want null", resp.Subscription)
 	}
 }
 

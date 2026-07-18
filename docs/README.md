@@ -24,6 +24,7 @@
 | [features/telegram-bot.md](features/telegram-bot.md) | Telegram-бот для клиента |
 | [features/workout-completions.md](features/workout-completions.md) | Отметка дней программы / история |
 | [features/garbage-cleanup.md](features/garbage-cleanup.md) | Автоочистка БД и Redis |
+| [features/subscriptions.md](features/subscriptions.md) | Тарифы тренеров и квоты |
 | [features/admin.md](features/admin.md) | Admin API |
 
 Контракт REST: [`api/openapi.yaml`](../api/openapi.yaml).

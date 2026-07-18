@@ -12,6 +12,8 @@ var (
 	ErrInviteExpired       = errors.New("invite expired")
 	ErrInviteConsumed      = errors.New("invite already consumed")
 	ErrInviteNotConfigured = errors.New("telegram invite not configured")
+	ErrClientLimitReached  = errors.New("client limit reached")
+	ErrSelfInvite          = errors.New("trainer cannot accept own invite")
 )
 
 type Invite struct {

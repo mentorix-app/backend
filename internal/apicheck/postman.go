@@ -38,7 +38,7 @@ var postmanVarToEcho = []struct{ old, new string }{
 	{"{{client_user_id}}", ":client_user_id"},
 	{"{{program_id}}", ":id"},
 	{"{{exercise_id}}", ":id"},
-	{"{{grant_admin_user_id}}", ":user_id"},
+	{"{{plan_trainer_user_id}}", ":user_id"},
 }
 
 // LoadPostman reads a Postman collection v2.1 file.

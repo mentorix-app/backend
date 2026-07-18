@@ -15,15 +15,16 @@
 
 Контракт: `api/openapi.yaml` — `GET /trainer/clients/{client_user_id}/program-assignment`, `PUT /trainer/clients/program-assignment`, `GET /trainer/clients` (список).
 
-`GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc). Тренер видит только своих клиентов; **admin** — всех клиентов, привязанных к любому тренеру (уникально по `client_user_id`). Если admin сам привязан к клиенту как тренер — в строке его связь (`linked_at`, `status`, `program_assignment`); иначе — последняя связь по `linked_at`. Поле `trainer_user_id` — чей user id у выбранной связи; `trainer_display_name` — имя этого тренера; фронт сравнивает `trainer_user_id` с `user_id` из `/auth/me`, чтобы разрешить assign только «своим» клиентам. `last_active_at` — последняя `completed_at` в `client_workout_completions` клиента (любой тренер), или `null` если сдач не было. Поле `avatar_url` — подписанный URL прокси фото из Telegram (пустой, если фото нет).
+`GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc). Тренер видит только своих клиентов; **admin** — всех клиентов, привязанных к любому тренеру (уникально по `client_user_id`, выбирается самая свежая связь по `linked_at`). Роль `admin` эксклюзивна и не сочетается с `trainer`. Поле `trainer_user_id` — чей user id у выбранной связи; `trainer_display_name` — имя этого тренера. `last_active_at` — последняя `completed_at` в `client_workout_completions` клиента (любой тренер), или `null` если сдач не было. Поле `avatar_url` — подписанный URL прокси фото из Telegram (пустой, если фото нет).
 
-**Admin:** расширен только список (`GET /trainer/clients`). Назначение программ (`PUT …/program-assignment`, `GET …/program-assignment`) — как у тренера: только клиенты, привязанные к **этому** admin через его инвайт (`trainer_clients`), только **свои** опубликованные программы (`created_by` + `published`). Чужие клиенты в bulk → `skipped: not_linked`; чужая программа → `403`. Sync (`POST /programs/{id}/assignments/sync`) — тоже только владелец программы (`created_by`); admin на чужой программе → `403`.
+**Admin:** только просмотр списка (`GET /trainer/clients`). Назначение программ (`PUT …/program-assignment`, `GET …/program-assignment`) — только роль `trainer` (роли `admin` и `trainer` теперь взаимоисключающие); admin → `403`. Sync (`POST /programs/{id}/assignments/sync`) — только владелец программы (`created_by`).
 
 `GET /trainer/clients/{client_user_id}/avatar` — прокси аватара (`exp`, `sig` из `avatar_url`); для `<img src>`, без Bearer.
 
 Неочевидные правила:
 
 - Одна активная `program_assignments` на `(trainer_id, client_user_id)` — **одна строка** в БД; `reassign` обновляет её (новый `completion_cycle_id` при смене `program_id`), `clear` удаляет.
+- Квота тарифа на активных клиентов: назначение/переназначение блокируется при превышении лимита (`409 quota_exceeded`); `clear` (снятие) всегда разрешён. См. [subscriptions.md](subscriptions.md).
 - Повторный `PUT` с тем же `program_id` — skip `already_assigned` (без UPDATE).
 - Версия — последняя замороженная; снятие — `program_id: null` в PUT.
 - Назначение: `PUT /trainer/clients/program-assignment` — `client_user_ids` (1–100) + `program_id`; ответ `assigned` / `cleared` / `skipped` (как sync). Один клиент — массив из одного id.

@@ -36,12 +36,8 @@ func (s *Store) AddBlockExercise(ctx context.Context, userID, programID, weekID,
 		return Detail{}, fmt.Errorf("%w: cannot add exercise to single block", ErrValidation)
 	}
 
-	exists, err := s.ExerciseExists(ctx, in.ExerciseID)
-	if err != nil {
+	if err := s.ensureExerciseUsable(ctx, userID, in.ExerciseID); err != nil {
 		return Detail{}, err
-	}
-	if !exists {
-		return Detail{}, fmt.Errorf("%w: exercise not found", ErrValidation)
 	}
 
 	tx, err := s.pool.Begin(ctx)

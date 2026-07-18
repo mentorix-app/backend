@@ -16,34 +16,50 @@ const countExercises = `-- name: CountExercises :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.exercises
 WHERE deleted_at IS NULL
-  AND ($1::text IS NULL OR (
-    name ILIKE $1 ESCAPE '\'
-    OR name_ru ILIKE $1 ESCAPE '\'
-  ))
-  AND ($2::text IS NULL OR exercise_type = $2)
-  AND ($3::text IS NULL OR muscle_group = $3)
-  AND ($4::text IS NULL OR difficulty = $4)
   AND (
-    $5::boolean IS NOT TRUE
+    $1::boolean IS TRUE
+    OR owner_trainer_id IS NULL
+    OR owner_trainer_id = $2::uuid
+  )
+  AND (
+    $3::text IS NULL
+    OR ($3 = 'global' AND owner_trainer_id IS NULL)
+    OR ($3 = 'private' AND owner_trainer_id IS NOT NULL)
+  )
+  AND ($4::text IS NULL OR (
+    name ILIKE $4 ESCAPE '\'
+    OR name_ru ILIKE $4 ESCAPE '\'
+  ))
+  AND ($5::text IS NULL OR exercise_type = $5)
+  AND ($6::text IS NULL OR muscle_group = $6)
+  AND ($7::text IS NULL OR difficulty = $7)
+  AND (
+    $8::boolean IS NOT TRUE
     OR equipment IS NULL
   )
   AND (
-    $6::text IS NULL
-    OR equipment = $6
+    $9::text IS NULL
+    OR equipment = $9
   )
 `
 
 type CountExercisesParams struct {
-	QPattern          *string `json:"q_pattern"`
-	FilterType        *string `json:"filter_type"`
-	FilterMuscleGroup *string `json:"filter_muscle_group"`
-	FilterDifficulty  *string `json:"filter_difficulty"`
-	EquipmentIsNull   *bool   `json:"equipment_is_null"`
-	FilterEquipment   *string `json:"filter_equipment"`
+	IncludeAll        *bool       `json:"include_all"`
+	ViewerTrainerID   pgtype.UUID `json:"viewer_trainer_id"`
+	FilterScope       *string     `json:"filter_scope"`
+	QPattern          *string     `json:"q_pattern"`
+	FilterType        *string     `json:"filter_type"`
+	FilterMuscleGroup *string     `json:"filter_muscle_group"`
+	FilterDifficulty  *string     `json:"filter_difficulty"`
+	EquipmentIsNull   *bool       `json:"equipment_is_null"`
+	FilterEquipment   *string     `json:"filter_equipment"`
 }
 
 func (q *Queries) CountExercises(ctx context.Context, arg CountExercisesParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countExercises,
+		arg.IncludeAll,
+		arg.ViewerTrainerID,
+		arg.FilterScope,
 		arg.QPattern,
 		arg.FilterType,
 		arg.FilterMuscleGroup,
@@ -60,16 +76,16 @@ const createExercise = `-- name: CreateExercise :one
 INSERT INTO mentorix.exercises (
   name, name_ru, created_by, modified_by, modified_at,
   equipment, exercise_type, muscle_group, description, description_ru,
-  difficulty, video_url, preview_image_url
+  difficulty, video_url, preview_image_url, owner_trainer_id
 ) VALUES (
   $1, $2, $3, $4, $5,
   $6, $7, $8, $9, $10,
-  $11, $12, $13
+  $11, $12, $13, $14
 )
 RETURNING
   id, name, name_ru, created_by, modified_by, modified_at, created_at,
   equipment, exercise_type, muscle_group, description, description_ru,
-  difficulty, video_url, preview_image_url
+  difficulty, video_url, preview_image_url, owner_trainer_id
 `
 
 type CreateExerciseParams struct {
@@ -86,6 +102,7 @@ type CreateExerciseParams struct {
 	Difficulty      string      `json:"difficulty"`
 	VideoUrl        string      `json:"video_url"`
 	PreviewImageUrl string      `json:"preview_image_url"`
+	OwnerTrainerID  pgtype.UUID `json:"owner_trainer_id"`
 }
 
 type CreateExerciseRow struct {
@@ -104,6 +121,7 @@ type CreateExerciseRow struct {
 	Difficulty      string      `json:"difficulty"`
 	VideoUrl        string      `json:"video_url"`
 	PreviewImageUrl string      `json:"preview_image_url"`
+	OwnerTrainerID  pgtype.UUID `json:"owner_trainer_id"`
 }
 
 func (q *Queries) CreateExercise(ctx context.Context, arg CreateExerciseParams) (CreateExerciseRow, error) {
@@ -121,6 +139,7 @@ func (q *Queries) CreateExercise(ctx context.Context, arg CreateExerciseParams) 
 		arg.Difficulty,
 		arg.VideoUrl,
 		arg.PreviewImageUrl,
+		arg.OwnerTrainerID,
 	)
 	var i CreateExerciseRow
 	err := row.Scan(
@@ -139,6 +158,7 @@ func (q *Queries) CreateExercise(ctx context.Context, arg CreateExerciseParams) 
 		&i.Difficulty,
 		&i.VideoUrl,
 		&i.PreviewImageUrl,
+		&i.OwnerTrainerID,
 	)
 	return i, err
 }
@@ -147,10 +167,12 @@ const getExerciseByID = `-- name: GetExerciseByID :one
 SELECT
   e.id, e.name, e.name_ru, e.created_by, e.modified_by, e.modified_at, e.created_at,
   e.equipment, e.exercise_type, e.muscle_group, e.description, e.description_ru,
-  e.difficulty, e.video_url, e.preview_image_url,
+  e.difficulty, e.video_url, e.preview_image_url, e.owner_trainer_id,
+  t.user_id AS owner_user_id,
   COALESCE(u.display_name, '') AS created_by_name
 FROM mentorix.exercises e
 JOIN mentorix.users u ON u.id = e.created_by
+LEFT JOIN mentorix.trainers t ON t.id = e.owner_trainer_id
 WHERE e.id = $1 AND e.deleted_at IS NULL
 `
 
@@ -170,6 +192,8 @@ type GetExerciseByIDRow struct {
 	Difficulty      string      `json:"difficulty"`
 	VideoUrl        string      `json:"video_url"`
 	PreviewImageUrl string      `json:"preview_image_url"`
+	OwnerTrainerID  pgtype.UUID `json:"owner_trainer_id"`
+	OwnerUserID     pgtype.UUID `json:"owner_user_id"`
 	CreatedByName   string      `json:"created_by_name"`
 }
 
@@ -192,8 +216,28 @@ func (q *Queries) GetExerciseByID(ctx context.Context, id pgtype.UUID) (GetExerc
 		&i.Difficulty,
 		&i.VideoUrl,
 		&i.PreviewImageUrl,
+		&i.OwnerTrainerID,
+		&i.OwnerUserID,
 		&i.CreatedByName,
 	)
+	return i, err
+}
+
+const getExerciseOwnership = `-- name: GetExerciseOwnership :one
+SELECT e.id, e.owner_trainer_id
+FROM mentorix.exercises e
+WHERE e.id = $1 AND e.deleted_at IS NULL
+`
+
+type GetExerciseOwnershipRow struct {
+	ID             pgtype.UUID `json:"id"`
+	OwnerTrainerID pgtype.UUID `json:"owner_trainer_id"`
+}
+
+func (q *Queries) GetExerciseOwnership(ctx context.Context, id pgtype.UUID) (GetExerciseOwnershipRow, error) {
+	row := q.db.QueryRow(ctx, getExerciseOwnership, id)
+	var i GetExerciseOwnershipRow
+	err := row.Scan(&i.ID, &i.OwnerTrainerID)
 	return i, err
 }
 
@@ -201,50 +245,65 @@ const listExercises = `-- name: ListExercises :many
 SELECT
   e.id, e.name, e.name_ru, e.created_by, e.modified_by, e.modified_at, e.created_at,
   e.equipment, e.exercise_type, e.muscle_group, e.description, e.description_ru,
-  e.difficulty, e.video_url, e.preview_image_url,
+  e.difficulty, e.video_url, e.preview_image_url, e.owner_trainer_id,
+  t.user_id AS owner_user_id,
   COALESCE(u.display_name, '') AS created_by_name
 FROM mentorix.exercises e
 JOIN mentorix.users u ON u.id = e.created_by
+LEFT JOIN mentorix.trainers t ON t.id = e.owner_trainer_id
 WHERE e.deleted_at IS NULL
-  AND ($1::text IS NULL OR (
-    e.name ILIKE $1 ESCAPE '\'
-    OR e.name_ru ILIKE $1 ESCAPE '\'
-  ))
-  AND ($2::text IS NULL OR e.exercise_type = $2)
-  AND ($3::text IS NULL OR e.muscle_group = $3)
-  AND ($4::text IS NULL OR e.difficulty = $4)
   AND (
-    $5::boolean IS NOT TRUE
+    $1::boolean IS TRUE
+    OR e.owner_trainer_id IS NULL
+    OR e.owner_trainer_id = $2::uuid
+  )
+  AND (
+    $3::text IS NULL
+    OR ($3 = 'global' AND e.owner_trainer_id IS NULL)
+    OR ($3 = 'private' AND e.owner_trainer_id IS NOT NULL)
+  )
+  AND ($4::text IS NULL OR (
+    e.name ILIKE $4 ESCAPE '\'
+    OR e.name_ru ILIKE $4 ESCAPE '\'
+  ))
+  AND ($5::text IS NULL OR e.exercise_type = $5)
+  AND ($6::text IS NULL OR e.muscle_group = $6)
+  AND ($7::text IS NULL OR e.difficulty = $7)
+  AND (
+    $8::boolean IS NOT TRUE
     OR e.equipment IS NULL
   )
   AND (
-    $6::text IS NULL
-    OR e.equipment = $6
+    $9::text IS NULL
+    OR e.equipment = $9
   )
 ORDER BY
-  CASE WHEN $7 = 'name' AND $8 = 'asc' THEN e.name END ASC,
-  CASE WHEN $7 = 'name' AND $8 = 'desc' THEN e.name END DESC,
-  CASE WHEN $7 = 'name_ru' AND $8 = 'asc' THEN e.name_ru END ASC,
-  CASE WHEN $7 = 'name_ru' AND $8 = 'desc' THEN e.name_ru END DESC,
-  CASE WHEN $7 = 'created_at' AND $8 = 'asc' THEN e.created_at END ASC,
-  CASE WHEN $7 = 'created_at' AND $8 = 'desc' THEN e.created_at END DESC,
-  CASE WHEN $7 = 'modified_at' AND $8 = 'asc' THEN e.modified_at END ASC,
-  CASE WHEN $7 = 'modified_at' AND $8 = 'desc' THEN e.modified_at END DESC,
-  CASE WHEN $7 = 'difficulty' AND $8 = 'asc' THEN e.difficulty END ASC,
-  CASE WHEN $7 = 'difficulty' AND $8 = 'desc' THEN e.difficulty END DESC,
-  CASE WHEN $7 = 'type' AND $8 = 'asc' THEN e.exercise_type END ASC,
-  CASE WHEN $7 = 'type' AND $8 = 'desc' THEN e.exercise_type END DESC,
-  CASE WHEN $7 = 'exercise_type' AND $8 = 'asc' THEN e.exercise_type END ASC,
-  CASE WHEN $7 = 'exercise_type' AND $8 = 'desc' THEN e.exercise_type END DESC,
-  CASE WHEN $7 = 'muscle_group' AND $8 = 'asc' THEN e.muscle_group END ASC,
-  CASE WHEN $7 = 'muscle_group' AND $8 = 'desc' THEN e.muscle_group END DESC,
-  CASE WHEN $7 = 'equipment' AND $8 = 'asc' THEN e.equipment END ASC,
-  CASE WHEN $7 = 'equipment' AND $8 = 'desc' THEN e.equipment END DESC,
+  CASE WHEN $10 = 'name' AND $11 = 'asc' THEN e.name END ASC,
+  CASE WHEN $10 = 'name' AND $11 = 'desc' THEN e.name END DESC,
+  CASE WHEN $10 = 'name_ru' AND $11 = 'asc' THEN e.name_ru END ASC,
+  CASE WHEN $10 = 'name_ru' AND $11 = 'desc' THEN e.name_ru END DESC,
+  CASE WHEN $10 = 'created_at' AND $11 = 'asc' THEN e.created_at END ASC,
+  CASE WHEN $10 = 'created_at' AND $11 = 'desc' THEN e.created_at END DESC,
+  CASE WHEN $10 = 'modified_at' AND $11 = 'asc' THEN e.modified_at END ASC,
+  CASE WHEN $10 = 'modified_at' AND $11 = 'desc' THEN e.modified_at END DESC,
+  CASE WHEN $10 = 'difficulty' AND $11 = 'asc' THEN e.difficulty END ASC,
+  CASE WHEN $10 = 'difficulty' AND $11 = 'desc' THEN e.difficulty END DESC,
+  CASE WHEN $10 = 'type' AND $11 = 'asc' THEN e.exercise_type END ASC,
+  CASE WHEN $10 = 'type' AND $11 = 'desc' THEN e.exercise_type END DESC,
+  CASE WHEN $10 = 'exercise_type' AND $11 = 'asc' THEN e.exercise_type END ASC,
+  CASE WHEN $10 = 'exercise_type' AND $11 = 'desc' THEN e.exercise_type END DESC,
+  CASE WHEN $10 = 'muscle_group' AND $11 = 'asc' THEN e.muscle_group END ASC,
+  CASE WHEN $10 = 'muscle_group' AND $11 = 'desc' THEN e.muscle_group END DESC,
+  CASE WHEN $10 = 'equipment' AND $11 = 'asc' THEN e.equipment END ASC,
+  CASE WHEN $10 = 'equipment' AND $11 = 'desc' THEN e.equipment END DESC,
   e.id ASC
-LIMIT $10 OFFSET $9
+LIMIT $13 OFFSET $12
 `
 
 type ListExercisesParams struct {
+	IncludeAll        *bool       `json:"include_all"`
+	ViewerTrainerID   pgtype.UUID `json:"viewer_trainer_id"`
+	FilterScope       *string     `json:"filter_scope"`
 	QPattern          *string     `json:"q_pattern"`
 	FilterType        *string     `json:"filter_type"`
 	FilterMuscleGroup *string     `json:"filter_muscle_group"`
@@ -273,11 +332,16 @@ type ListExercisesRow struct {
 	Difficulty      string      `json:"difficulty"`
 	VideoUrl        string      `json:"video_url"`
 	PreviewImageUrl string      `json:"preview_image_url"`
+	OwnerTrainerID  pgtype.UUID `json:"owner_trainer_id"`
+	OwnerUserID     pgtype.UUID `json:"owner_user_id"`
 	CreatedByName   string      `json:"created_by_name"`
 }
 
 func (q *Queries) ListExercises(ctx context.Context, arg ListExercisesParams) ([]ListExercisesRow, error) {
 	rows, err := q.db.Query(ctx, listExercises,
+		arg.IncludeAll,
+		arg.ViewerTrainerID,
+		arg.FilterScope,
 		arg.QPattern,
 		arg.FilterType,
 		arg.FilterMuscleGroup,
@@ -312,6 +376,8 @@ func (q *Queries) ListExercises(ctx context.Context, arg ListExercisesParams) ([
 			&i.Difficulty,
 			&i.VideoUrl,
 			&i.PreviewImageUrl,
+			&i.OwnerTrainerID,
+			&i.OwnerUserID,
 			&i.CreatedByName,
 		); err != nil {
 			return nil, err
@@ -329,17 +395,25 @@ UPDATE mentorix.exercises SET
   deleted_at = $2,
   modified_at = $2,
   modified_by = $3
-WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+WHERE id = ANY($1::uuid[])
+  AND deleted_at IS NULL
+  AND owner_trainer_id IS NOT DISTINCT FROM $4::uuid
 `
 
 type SoftDeleteExercisesParams struct {
-	Column1    []pgtype.UUID      `json:"column_1"`
-	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
-	ModifiedBy pgtype.UUID        `json:"modified_by"`
+	Column1        []pgtype.UUID      `json:"column_1"`
+	DeletedAt      pgtype.Timestamptz `json:"deleted_at"`
+	ModifiedBy     pgtype.UUID        `json:"modified_by"`
+	OwnerTrainerID pgtype.UUID        `json:"owner_trainer_id"`
 }
 
 func (q *Queries) SoftDeleteExercises(ctx context.Context, arg SoftDeleteExercisesParams) (int64, error) {
-	result, err := q.db.Exec(ctx, softDeleteExercises, arg.Column1, arg.DeletedAt, arg.ModifiedBy)
+	result, err := q.db.Exec(ctx, softDeleteExercises,
+		arg.Column1,
+		arg.DeletedAt,
+		arg.ModifiedBy,
+		arg.OwnerTrainerID,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -360,7 +434,9 @@ UPDATE mentorix.exercises SET
   difficulty = $11,
   video_url = $12,
   preview_image_url = $13
-WHERE id = $1 AND deleted_at IS NULL
+WHERE id = $1
+  AND deleted_at IS NULL
+  AND owner_trainer_id IS NOT DISTINCT FROM $14::uuid
 `
 
 type UpdateExerciseParams struct {
@@ -377,6 +453,7 @@ type UpdateExerciseParams struct {
 	Difficulty      string      `json:"difficulty"`
 	VideoUrl        string      `json:"video_url"`
 	PreviewImageUrl string      `json:"preview_image_url"`
+	OwnerTrainerID  pgtype.UUID `json:"owner_trainer_id"`
 }
 
 func (q *Queries) UpdateExercise(ctx context.Context, arg UpdateExerciseParams) (int64, error) {
@@ -394,6 +471,7 @@ func (q *Queries) UpdateExercise(ctx context.Context, arg UpdateExerciseParams) 
 		arg.Difficulty,
 		arg.VideoUrl,
 		arg.PreviewImageUrl,
+		arg.OwnerTrainerID,
 	)
 	if err != nil {
 		return 0, err

@@ -2,37 +2,33 @@ package admin
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"mentorix-backend/internal/auth"
+	"mentorix-backend/internal/subscription"
 )
 
-type roleStore interface {
-	UserProfile(ctx context.Context, userID uuid.UUID) (auth.UserProfile, error)
-	GrantRole(ctx context.Context, userID uuid.UUID, role string) error
+type planService interface {
+	GrantAdminPlan(ctx context.Context, trainerUserID uuid.UUID, plan subscription.Plan) (*subscription.Subscription, error)
+	RevokeAdminPlan(ctx context.Context, trainerUserID uuid.UUID) (*subscription.Subscription, error)
 }
 
 type Service struct {
-	store roleStore
+	plans planService
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{store: auth.NewStore(pool)}
+	return &Service{plans: subscription.NewService(pool)}
 }
 
-func (s *Service) GrantAdmin(ctx context.Context, targetUserID uuid.UUID) (auth.UserProfile, error) {
-	if _, err := s.store.UserProfile(ctx, targetUserID); err != nil {
-		return auth.UserProfile{}, err
-	}
-	if err := s.store.GrantRole(ctx, targetUserID, auth.RoleAdmin); err != nil {
-		return auth.UserProfile{}, fmt.Errorf("grant admin: %w", err)
-	}
-	profile, err := s.store.UserProfile(ctx, targetUserID)
-	if err != nil {
-		return auth.UserProfile{}, fmt.Errorf("load profile: %w", err)
-	}
-	return profile, nil
+// GrantPlan issues a perpetual admin grant (advance/elite) to a trainer;
+// "free" removes the grant.
+func (s *Service) GrantPlan(ctx context.Context, trainerUserID uuid.UUID, plan subscription.Plan) (*subscription.Subscription, error) {
+	return s.plans.GrantAdminPlan(ctx, trainerUserID, plan)
+}
+
+// RevokePlan removes the active admin grant of a trainer.
+func (s *Service) RevokePlan(ctx context.Context, trainerUserID uuid.UUID) (*subscription.Subscription, error) {
+	return s.plans.RevokeAdminPlan(ctx, trainerUserID)
 }

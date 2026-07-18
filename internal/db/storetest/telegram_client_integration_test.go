@@ -53,7 +53,7 @@ func TestTelegramClient_programAndToday(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerUserID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
 		Name:        "Squat",
 		NameRu:      "Присед",
 		Type:        exercise.ExerciseTypeStrength,

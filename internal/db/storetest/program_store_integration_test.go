@@ -32,7 +32,7 @@ func TestProgramStore_CreateDraftAndPublish(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name:        "Bench Press",
 		NameRu:      "Жим",
 		Type:        exercise.ExerciseTypeStrength,
@@ -175,7 +175,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name:        "Row",
 		NameRu:      "Тяга",
 		Type:        exercise.ExerciseTypeStrength,
@@ -303,7 +303,7 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name:        "Press",
 		NameRu:      "Жим",
 		Type:        exercise.ExerciseTypeStrength,
@@ -799,16 +799,14 @@ func TestAuthUserIsAdmin_integration(t *testing.T) {
 	if isAdmin {
 		t.Fatal("trainer should not be admin yet")
 	}
-	if err := authStore.GrantRole(ctx, userID, auth.RoleAdmin); err != nil {
-		t.Fatalf("GrantRole: %v", err)
-	}
+	promoteToAdminOnly(t, pool, userID)
 	isAdmin, err = auth.UserIsAdmin(ctx, q, userID)
 	if err != nil || !isAdmin {
 		t.Fatalf("UserIsAdmin() = %v, %v, want true", isAdmin, err)
 	}
 }
 
-func TestProgramService_adminMutatesOtherUsersProgram(t *testing.T) {
+func TestProgramService_adminCannotMutateOtherUsersProgram(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
@@ -825,9 +823,7 @@ func TestProgramService_adminMutatesOtherUsersProgram(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register admin: %v", err)
 	}
-	if err := authStore.GrantRole(ctx, adminID, auth.RoleAdmin); err != nil {
-		t.Fatalf("grant admin: %v", err)
-	}
+	promoteToAdminOnly(t, pool, adminID)
 
 	svc := program.NewService(pool)
 	draft, err := svc.Create(ctx, ownerID)
@@ -836,11 +832,11 @@ func TestProgramService_adminMutatesOtherUsersProgram(t *testing.T) {
 	}
 
 	name := "Edited by admin"
-	if _, err := svc.Update(ctx, adminID, draft.ID, program.UpdateInput{Name: &name}); err != nil {
-		t.Fatalf("Update() by admin error = %v", err)
+	if _, err := svc.Update(ctx, adminID, draft.ID, program.UpdateInput{Name: &name}); !errors.Is(err, program.ErrForbidden) {
+		t.Fatalf("Update() by admin error = %v, want ErrForbidden", err)
 	}
-	if err := svc.Delete(ctx, adminID, draft.ID); err != nil {
-		t.Fatalf("Delete() by admin error = %v", err)
+	if err := svc.Delete(ctx, adminID, draft.ID); !errors.Is(err, program.ErrForbidden) {
+		t.Fatalf("Delete() by admin error = %v, want ErrForbidden", err)
 	}
 }
 
@@ -859,7 +855,7 @@ func TestProgramStore_blockValidationErrors(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	catalogExercise, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name:        "Curl",
 		NameRu:      "Сгибание",
 		Type:        exercise.ExerciseTypeStrength,
@@ -1003,14 +999,14 @@ func TestProgramStore_groupBlockExerciseCRUD(t *testing.T) {
 	}
 
 	exStore := exercise.NewStore(pool)
-	ex1, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	ex1, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name: "A", NameRu: "А", Type: exercise.ExerciseTypeStrength,
 		MuscleGroup: exercise.MuscleGroupChest, Difficulty: exercise.DifficultyBeginner,
 	})
 	if err != nil {
 		t.Fatalf("create ex1: %v", err)
 	}
-	ex2, err := exStore.Create(ctx, trainerID, exercise.UpsertInput{
+	ex2, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 		Name: "B", NameRu: "Б", Type: exercise.ExerciseTypeStrength,
 		MuscleGroup: exercise.MuscleGroupBack, Difficulty: exercise.DifficultyBeginner,
 	})
@@ -1162,7 +1158,7 @@ func TestProgramStore_twoGroupsMoveAndMergeInstructions(t *testing.T) {
 	exStore := exercise.NewStore(pool)
 	exercises := make([]exercise.Exercise, 4)
 	for i := range exercises {
-		exercises[i], err = exStore.Create(ctx, trainerID, exercise.UpsertInput{
+		exercises[i], err = exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 			Name:        "Ex",
 			NameRu:      "Упр",
 			Type:        exercise.ExerciseTypeStrength,
