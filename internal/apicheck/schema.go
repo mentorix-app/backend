@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 
+	"mentorix-backend/internal/analytics"
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
@@ -126,6 +127,22 @@ func schemaBindings() []schemaBinding {
 		{name: "TrainerClientProgramSummary", typ: reflect.TypeOf(trainerclient.ClientProgramSummary{})},
 		{name: "TrainerClient", typ: reflect.TypeOf(trainerclient.Client{})},
 		{name: "TrainerClientListResponse", typ: reflect.TypeOf(trainerclient.ClientListResult{})},
+		{name: "ClientAnalytics", typ: reflect.TypeOf(analytics.ClientAnalytics{})},
+		{name: "AnalyticsClientInfo", typ: reflect.TypeOf(analytics.ClientInfo{})},
+		{name: "AnalyticsAssignment", typ: reflect.TypeOf(analytics.AssignmentAnalytics{})},
+		{name: "AnalyticsProgress", typ: reflect.TypeOf(analytics.Progress{})},
+		{name: "AnalyticsWeekProgress", typ: reflect.TypeOf(analytics.WeekProgress{})},
+		{name: "AnalyticsActivity", typ: reflect.TypeOf(analytics.ActivityStats{})},
+		{name: "AnalyticsProgramActivity", typ: reflect.TypeOf(analytics.ProgramActivity{})},
+		{name: "ClientCompletionsResponse", typ: reflect.TypeOf(analytics.CompletionsResult{})},
+		{name: "ClientCompletionItem", typ: reflect.TypeOf(analytics.CompletionItem{})},
+		{name: "ProgramsAnalyticsResponse", typ: reflect.TypeOf(analytics.ProgramsAnalyticsResult{})},
+		{name: "ProgramAnalyticsItem", typ: reflect.TypeOf(analytics.ProgramAnalyticsItem{})},
+		{name: "ProgramAnalytics", typ: reflect.TypeOf(analytics.ProgramAnalytics{})},
+		{name: "ProgramAnalyticsHeader", typ: reflect.TypeOf(analytics.ProgramHeader{})},
+		{name: "ProgramAnalyticsSummary", typ: reflect.TypeOf(analytics.ProgramSummary{})},
+		{name: "ProgramAnalyticsClient", typ: reflect.TypeOf(analytics.ProgramClient{})},
+		{name: "ProgramAnalyticsWeek", typ: reflect.TypeOf(analytics.ProgramWeekStats{})},
 	}
 }
 

@@ -17,6 +17,7 @@
 | Инвайты тренер → клиент (Telegram deep link) | [features/trainer-invites.md](features/trainer-invites.md) |
 | Telegram-бот: /start, accept, меню, программа, отметка тренировок, push (фазы 1–4) | [features/telegram-bot.md](features/telegram-bot.md), [features/workout-completions.md](features/workout-completions.md) |
 | Отметка дней программы (day_key, cycle, журнал completions) | [features/workout-completions.md](features/workout-completions.md) |
+| Аналитика тренера (клиент: прогресс/активность/лента; программы: агрегаты, drop-off) | [features/trainer-analytics.md](features/trainer-analytics.md) |
 | Контракт OpenAPI + Postman + apicheck | [architecture.md](architecture.md), `api/openapi.yaml` |
 | CI/CD (`make check-ci`, Deploy Hook stage, migrate preDeploy) | [environments.md](environments.md), [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |

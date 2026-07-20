@@ -19,6 +19,7 @@ tags:
   - name: exercises
   - name: programs
   - name: trainer
+  - name: analytics
 
 paths:
   /health:
@@ -1006,6 +1007,142 @@ paths:
         "404":
           description: Client user not found
 
+  /trainer/clients/{client_user_id}/analytics:
+    parameters:
+      - $ref: "#/components/parameters/ClientUserId"
+    get:
+      tags: [analytics]
+      summary: Client analytics summary
+      description: >
+        Per-client analytics for the trainer dashboard: client card, current
+        program progress (completed vs total training days of the assigned
+        frozen version, per-week breakdown; the completion cycle survives
+        version sync) and lifetime activity (totals, 7/30-day counts, week
+        streak, per-program totals across all cycles and versions).
+        Client must be linked to the caller.
+      operationId: getTrainerClientAnalytics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Client analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientAnalytics"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer role required
+        "404":
+          description: Client is not linked to the trainer
+
+  /trainer/clients/{client_user_id}/completions:
+    parameters:
+      - $ref: "#/components/parameters/ClientUserId"
+    get:
+      tags: [analytics]
+      summary: Client workout completion history
+      description: >
+        Paginated feed of completed workout days (newest first) across all
+        programs and cycles. Suitable for a calendar or history list.
+        `from`/`to` filter by completed_at (RFC3339 or YYYY-MM-DD, `to` exclusive).
+      operationId: listTrainerClientCompletions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Only completions at or after this time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Only completions before this time (exclusive)
+      responses:
+        "200":
+          description: Paginated completion feed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientCompletionsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer role required
+        "404":
+          description: Client is not linked to the trainer
+
+  /trainer/programs/analytics:
+    get:
+      tags: [analytics]
+      summary: Programs analytics list
+      description: >
+        All non-deleted programs owned by the trainer with completion
+        aggregates: active clients, lifetime and 30-day completion counts
+        (across all versions), average completion percent of current cycles,
+        last activity. Default sort: last_activity desc.
+      operationId: listTrainerProgramsAnalytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/ProgramAnalyticsSortBy"
+        - $ref: "#/components/parameters/TrainerClientSortOrder"
+      responses:
+        "200":
+          description: Paginated program analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramsAnalyticsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer role required
+
+  /trainer/programs/{program_id}/analytics:
+    parameters:
+      - $ref: "#/components/parameters/AnalyticsProgramId"
+    get:
+      tags: [analytics]
+      summary: Program analytics detail
+      description: >
+        Detail for one owned program: summary aggregates, per-client progress
+        of active assignees (current cycle vs assigned version) and per-week
+        drop-off (current-cycle completions grouped by program week).
+      operationId: getTrainerProgramAnalytics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Program analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramAnalytics"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer role required
+        "404":
+          description: Program not found or not owned by the trainer
+
   /programs/{id}/weeks:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
@@ -1738,6 +1875,22 @@ components:
         type: string
         enum: [asc, desc]
         default: desc
+
+    AnalyticsProgramId:
+      name: program_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    ProgramAnalyticsSortBy:
+      name: sort_by
+      in: query
+      schema:
+        type: string
+        enum: [name, last_activity]
+        default: last_activity
 
   responses:
     BadRequest:
@@ -2929,3 +3082,342 @@ components:
             $ref: "#/components/schemas/TrainerClient"
         pagination:
           $ref: "#/components/schemas/Pagination"
+
+    ClientAnalytics:
+      type: object
+      required: [client, current_assignment, activity]
+      properties:
+        client:
+          $ref: "#/components/schemas/AnalyticsClientInfo"
+        current_assignment:
+          $ref: "#/components/schemas/AnalyticsAssignment"
+          nullable: true
+        activity:
+          $ref: "#/components/schemas/AnalyticsActivity"
+
+    AnalyticsClientInfo:
+      type: object
+      required: [client_user_id, display_name, avatar_url, status, linked_at, last_active_at]
+      properties:
+        client_user_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+          description: Signed avatar proxy URL or empty string
+        status:
+          type: string
+          enum: [active, blocked]
+        linked_at:
+          type: string
+          format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AnalyticsAssignment:
+      type: object
+      required:
+        [program_id, program_version_id, program_name, program_name_ru,
+         assigned_at, is_behind_latest, progress]
+      properties:
+        program_id:
+          type: string
+          format: uuid
+        program_version_id:
+          type: string
+          format: uuid
+        program_name:
+          type: string
+        program_name_ru:
+          type: string
+        assigned_at:
+          type: string
+          format: date-time
+        is_behind_latest:
+          type: boolean
+        progress:
+          $ref: "#/components/schemas/AnalyticsProgress"
+
+    AnalyticsProgress:
+      type: object
+      required: [completed_days, total_training_days, completion_percent, weeks]
+      description: >
+        Current completion cycle vs the assigned frozen version. The cycle
+        survives version sync, so progress spans all versions of one assignment.
+      properties:
+        completed_days:
+          type: integer
+        total_training_days:
+          type: integer
+          description: Days with at least one block in the assigned version
+        completion_percent:
+          type: number
+          format: double
+          description: 0-100, one decimal, clamped at 100
+        weeks:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsWeekProgress"
+
+    AnalyticsWeekProgress:
+      type: object
+      required: [week_number, total_days, completed_days]
+      properties:
+        week_number:
+          type: integer
+        total_days:
+          type: integer
+        completed_days:
+          type: integer
+
+    AnalyticsActivity:
+      type: object
+      required:
+        [total_completions, completions_last_7_days, completions_last_30_days,
+         first_completed_at, last_completed_at, week_streak, by_program]
+      description: Lifetime activity with this trainer, across all cycles and programs.
+      properties:
+        total_completions:
+          type: integer
+        completions_last_7_days:
+          type: integer
+        completions_last_30_days:
+          type: integer
+        first_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        week_streak:
+          type: integer
+          description: >
+            Consecutive calendar weeks (Mon-Sun, UTC) with at least one
+            completion. The streak is alive while the current week is still
+            in progress.
+        by_program:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalyticsProgramActivity"
+
+    AnalyticsProgramActivity:
+      type: object
+      required:
+        [program_id, program_name, program_name_ru, total_completions,
+         first_completed_at, last_completed_at]
+      properties:
+        program_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Null when the program row was deleted (name from journal snapshot)
+        program_name:
+          type: string
+        program_name_ru:
+          type: string
+        total_completions:
+          type: integer
+        first_completed_at:
+          type: string
+          format: date-time
+        last_completed_at:
+          type: string
+          format: date-time
+
+    ClientCompletionsResponse:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientCompletionItem"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    ClientCompletionItem:
+      type: object
+      required:
+        [id, completed_at, program_id, program_name, program_name_ru,
+         week_number, day_number, result_text, is_current_cycle]
+      properties:
+        id:
+          type: string
+          format: uuid
+        completed_at:
+          type: string
+          format: date-time
+        program_id:
+          type: string
+          format: uuid
+          nullable: true
+        program_name:
+          type: string
+        program_name_ru:
+          type: string
+        week_number:
+          type: integer
+        day_number:
+          type: integer
+        result_text:
+          type: string
+          description: Client's free-text workout result from Telegram
+        is_current_cycle:
+          type: boolean
+          description: True when the completion belongs to the client's current assignment cycle
+
+    ProgramsAnalyticsResponse:
+      type: object
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramAnalyticsItem"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    ProgramAnalyticsItem:
+      type: object
+      required:
+        [program_id, name, name_ru, status, training_days_count,
+         active_clients_count, total_completions, completions_last_30_days,
+         avg_completion_percent, last_activity_at]
+      properties:
+        program_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        name_ru:
+          type: string
+        status:
+          type: string
+          enum: [draft, published, archived]
+        training_days_count:
+          type: integer
+          description: Non-empty days in the draft tree
+        active_clients_count:
+          type: integer
+        total_completions:
+          type: integer
+          description: Lifetime completions across all versions and cycles
+        completions_last_30_days:
+          type: integer
+        avg_completion_percent:
+          type: number
+          format: double
+          nullable: true
+          description: >
+            Average current-cycle completion percent of active assignees
+            (0-100, one decimal). Null when there are no active clients.
+        last_activity_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ProgramAnalytics:
+      type: object
+      required: [program, summary, clients, weeks]
+      properties:
+        program:
+          $ref: "#/components/schemas/ProgramAnalyticsHeader"
+        summary:
+          $ref: "#/components/schemas/ProgramAnalyticsSummary"
+        clients:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramAnalyticsClient"
+        weeks:
+          type: array
+          description: Current-cycle completions of active assignees grouped by program week
+          items:
+            $ref: "#/components/schemas/ProgramAnalyticsWeek"
+
+    ProgramAnalyticsHeader:
+      type: object
+      required: [program_id, name, name_ru, status, latest_version_number, training_days_count]
+      properties:
+        program_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        name_ru:
+          type: string
+        status:
+          type: string
+          enum: [draft, published, archived]
+        latest_version_number:
+          type: integer
+          description: 0 when the program has never been published
+        training_days_count:
+          type: integer
+
+    ProgramAnalyticsSummary:
+      type: object
+      required:
+        [active_clients_count, total_completions, completions_last_30_days,
+         avg_completion_percent, last_activity_at]
+      properties:
+        active_clients_count:
+          type: integer
+        total_completions:
+          type: integer
+        completions_last_30_days:
+          type: integer
+        avg_completion_percent:
+          type: number
+          format: double
+          nullable: true
+        last_activity_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ProgramAnalyticsClient:
+      type: object
+      required:
+        [client_user_id, display_name, avatar_url, assigned_at, is_behind_latest,
+         completed_days, total_training_days, completion_percent, last_completed_at]
+      properties:
+        client_user_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+        assigned_at:
+          type: string
+          format: date-time
+        is_behind_latest:
+          type: boolean
+        completed_days:
+          type: integer
+        total_training_days:
+          type: integer
+        completion_percent:
+          type: number
+          format: double
+        last_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ProgramAnalyticsWeek:
+      type: object
+      required: [week_number, completions_count, distinct_clients_count]
+      properties:
+        week_number:
+          type: integer
+        completions_count:
+          type: integer
+        distinct_clients_count:
+          type: integer

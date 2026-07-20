@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 
 	"mentorix-backend/internal/admin"
+	"mentorix-backend/internal/analytics"
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/config"
 	"mentorix-backend/internal/exercise"
@@ -150,6 +151,9 @@ func main() {
 			trainerclient.WithAvatarSupport(cfg.JWTSecret, cfg.BotToken, photoClient),
 		)
 		trainerclient.NewHandlers(trainerClientSvc, pool, cfg.JWTSecret).Mount(e)
+
+		analyticsSvc := analytics.NewService(pool, cfg.JWTSecret)
+		analytics.NewHandlers(analyticsSvc, pool, cfg.JWTSecret).Mount(e)
 
 		workoutSvc := workoutcompletion.NewService(pool)
 		workoutPending := workoutcompletion.NewPendingStore(rdb)

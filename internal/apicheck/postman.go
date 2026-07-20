@@ -30,6 +30,8 @@ type postmanBody struct {
 }
 
 var postmanVarToEcho = []struct{ old, new string }{
+	// Analytics routes use program_id as the param name; must precede the generic program_id rule.
+	{"/trainer/programs/{{program_id}}/analytics", "/trainer/programs/:program_id/analytics"},
 	{"{{program_week_day_block_exercise_id}}", ":item_id"},
 	{"{{program_week_day_block_id}}", ":block_id"},
 	{"{{program_week_day_id}}", ":day_id"},

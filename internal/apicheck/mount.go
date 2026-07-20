@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/admin"
+	"mentorix-backend/internal/analytics"
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/config"
 	"mentorix-backend/internal/exercise"
@@ -53,4 +54,7 @@ func MountRoutes(e *echo.Echo, pool *pgxpool.Pool) {
 		InviteTTL:           7 * 24 * time.Hour,
 	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
 	trainerclient.NewHandlers(trainerClientSvc, pool, contractJWTSecret).Mount(e)
+
+	analyticsSvc := analytics.NewService(pool, contractJWTSecret)
+	analytics.NewHandlers(analyticsSvc, pool, contractJWTSecret).Mount(e)
 }

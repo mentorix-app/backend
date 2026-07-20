@@ -1960,6 +1960,86 @@
           "response": []
         },
         {
+          "name": "GET /trainer/clients/:client_user_id/analytics",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/trainer/clients/{{client_user_id}}/analytics",
+            "description": "Client analytics summary: current program progress + lifetime activity"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /trainer/clients/:client_user_id/completions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/trainer/clients/{{client_user_id}}/completions?page=1&limit=20",
+            "description": "Paginated workout completion feed (from/to filters optional)"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /trainer/programs/analytics",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/trainer/programs/analytics?page=1&limit=20&sort_by=last_activity&sort_order=desc",
+            "description": "Programs analytics list with completion aggregates"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /trainer/programs/:program_id/analytics",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/trainer/programs/{{program_id}}/analytics",
+            "description": "Program analytics detail: summary, per-client progress, per-week drop-off"
+          },
+          "response": []
+        },
+        {
           "name": "GET /plans",
           "event": [
             {

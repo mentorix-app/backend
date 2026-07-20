@@ -23,6 +23,7 @@
 | [features/trainer-invites.md](features/trainer-invites.md) | Инвайты тренер → клиент (Telegram) |
 | [features/telegram-bot.md](features/telegram-bot.md) | Telegram-бот для клиента |
 | [features/workout-completions.md](features/workout-completions.md) | Отметка дней программы / история |
+| [features/trainer-analytics.md](features/trainer-analytics.md) | Аналитика тренера: клиент и программы |
 | [features/garbage-cleanup.md](features/garbage-cleanup.md) | Автоочистка БД и Redis |
 | [features/subscriptions.md](features/subscriptions.md) | Тарифы тренеров и квоты |
 | [features/admin.md](features/admin.md) | Admin API |
