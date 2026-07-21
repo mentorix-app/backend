@@ -86,15 +86,23 @@ type CompletionsResult struct {
 }
 
 type CompletionItem struct {
-	ID             uuid.UUID  `json:"id"`
-	CompletedAt    time.Time  `json:"completed_at"`
-	ProgramID      *uuid.UUID `json:"program_id"`
-	ProgramName    string     `json:"program_name"`
-	ProgramNameRu  string     `json:"program_name_ru"`
-	WeekNumber     int        `json:"week_number"`
-	DayNumber      int        `json:"day_number"`
-	ResultText     string     `json:"result_text"`
-	IsCurrentCycle bool       `json:"is_current_cycle"`
+	ID             uuid.UUID           `json:"id"`
+	CompletedAt    time.Time           `json:"completed_at"`
+	ProgramID      *uuid.UUID          `json:"program_id"`
+	ProgramName    string              `json:"program_name"`
+	ProgramNameRu  string              `json:"program_name_ru"`
+	WeekNumber     int                 `json:"week_number"`
+	DayNumber      int                 `json:"day_number"`
+	ResultText     string              `json:"result_text"`
+	IsCurrentCycle bool                `json:"is_current_cycle"`
+	Comments       []CompletionComment `json:"comments"`
+}
+
+// CompletionComment is a trainer reply attached to a completion.
+type CompletionComment struct {
+	ID        uuid.UUID `json:"id"`
+	Text      string    `json:"text"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type ProgramsAnalyticsResult struct {

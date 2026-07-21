@@ -48,6 +48,14 @@ type MentorixClientWorkoutCompletion struct {
 	CreatedAt           time.Time   `json:"created_at"`
 }
 
+type MentorixClientWorkoutCompletionComment struct {
+	ID                        pgtype.UUID `json:"id"`
+	ClientWorkoutCompletionID pgtype.UUID `json:"client_workout_completion_id"`
+	TrainerID                 pgtype.UUID `json:"trainer_id"`
+	CommentText               string      `json:"comment_text"`
+	CreatedAt                 time.Time   `json:"created_at"`
+}
+
 type MentorixExercise struct {
 	ID              pgtype.UUID        `json:"id"`
 	Name            string             `json:"name"`

@@ -162,6 +162,58 @@ func TestNotifier_versionFallbackName(t *testing.T) {
 	}
 }
 
+func TestNotifier_notifyWorkoutCommented_success(t *testing.T) {
+	sender := &recordingSender{}
+	n := telegramnotify.NewNotifierWithStore(&fakeNotifyStore{
+		subject:     "777",
+		trainerName: "Иван",
+	}, sender, nil)
+
+	err := n.NotifyWorkoutCommented(context.Background(), uuid.New(), uuid.New(), telegramnotify.WorkoutComment{
+		ProgramName:   "Strength",
+		ProgramNameRu: "Сила",
+		WeekNumber:    2,
+		DayNumber:     3,
+		ResultText:    "присед 5х5 90 кг",
+		CommentText:   "Отличная работа!",
+	})
+	if err != nil {
+		t.Fatalf("NotifyWorkoutCommented: %v", err)
+	}
+	if sender.calls != 1 || sender.chatID != 777 {
+		t.Fatalf("sender = %+v", sender)
+	}
+	want := "Тренер Иван ответил на ваш результат тренировки «Сила», неделя 2, день 3.\n\n" +
+		"Ваш результат:\nприсед 5х5 90 кг\n\n" +
+		"Ответ тренера:\nОтличная работа!"
+	if sender.text != want {
+		t.Fatalf("text = %q", sender.text)
+	}
+}
+
+func TestNotifier_notifyWorkoutCommented_skipsWithoutIdentity(t *testing.T) {
+	sender := &recordingSender{}
+	n := telegramnotify.NewNotifierWithStore(&fakeNotifyStore{
+		subjectErr: pgx.ErrNoRows,
+	}, sender, nil)
+
+	err := n.NotifyWorkoutCommented(context.Background(), uuid.New(), uuid.New(), telegramnotify.WorkoutComment{CommentText: "ok"})
+	if err != nil {
+		t.Fatalf("NotifyWorkoutCommented: %v", err)
+	}
+	if sender.calls != 0 {
+		t.Fatalf("sender calls = %d, want 0", sender.calls)
+	}
+}
+
+func TestNotifier_notifyWorkoutCommented_nilSenderNoop(t *testing.T) {
+	n := telegramnotify.NewNotifierWithStore(nil, nil, nil)
+	err := n.NotifyWorkoutCommented(context.Background(), uuid.New(), uuid.New(), telegramnotify.WorkoutComment{CommentText: "ok"})
+	if err != nil {
+		t.Fatalf("NotifyWorkoutCommented: %v", err)
+	}
+}
+
 func TestNewSender_invalidToken(t *testing.T) {
 	_, err := telegramnotify.NewSender("invalid-token")
 	if err == nil {

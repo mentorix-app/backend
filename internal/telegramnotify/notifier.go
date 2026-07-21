@@ -23,6 +23,17 @@ type ProgramNotifier interface {
 	NotifyProgramSynced(ctx context.Context, clientUserID, trainerID, programVersionID uuid.UUID) error
 }
 
+// WorkoutComment carries the completion snapshot and the trainer reply text
+// for the "trainer commented on your result" push.
+type WorkoutComment struct {
+	ProgramName   string
+	ProgramNameRu string
+	WeekNumber    int
+	DayNumber     int
+	ResultText    string
+	CommentText   string
+}
+
 type Notifier struct {
 	store  notifyStore
 	sender Sender
@@ -52,6 +63,32 @@ func (n *Notifier) NotifyProgramAssigned(ctx context.Context, clientUserID, trai
 
 func (n *Notifier) NotifyProgramSynced(ctx context.Context, clientUserID, trainerID, programVersionID uuid.UUID) error {
 	return n.notify(ctx, clientUserID, trainerID, programVersionID, syncedMessage)
+}
+
+func (n *Notifier) NotifyWorkoutCommented(ctx context.Context, clientUserID, trainerID uuid.UUID, comment WorkoutComment) error {
+	if n == nil || n.sender == nil {
+		return nil
+	}
+
+	chatID, err := n.telegramChatID(ctx, clientUserID)
+	if err != nil {
+		if errors.Is(err, errNoTelegramIdentity) {
+			return nil
+		}
+		return err
+	}
+
+	trainerName, err := n.trainerDisplayName(ctx, trainerID)
+	if err != nil {
+		return err
+	}
+
+	text := workoutCommentMessage(trainerName, comment)
+	if err := n.sender.SendMessage(ctx, chatID, text); err != nil {
+		n.log.Warn("telegram notify failed", "client_user_id", clientUserID, "error", err)
+		return err
+	}
+	return nil
 }
 
 func (n *Notifier) notify(

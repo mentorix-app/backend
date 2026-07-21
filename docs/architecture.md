@@ -16,7 +16,7 @@
 | Деплой | Render Blueprint ([`render.yaml`](../render.yaml)): stage `develop`; CI-gated Deploy Hook |
 | Логи | `log/slog`, request ID |
 
-Миграции: версия **24**, проверка `./scripts/migrate-check.sh`.
+Миграции: версия **25**, проверка `./scripts/migrate-check.sh`.
 
 ## Layout
 

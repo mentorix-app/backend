@@ -11,6 +11,7 @@ import (
 	"mentorix-backend/internal/health"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/trainerclient"
+	"mentorix-backend/internal/workoutcomment"
 )
 
 type schemaBinding struct {
@@ -136,6 +137,10 @@ func schemaBindings() []schemaBinding {
 		{name: "AnalyticsProgramActivity", typ: reflect.TypeOf(analytics.ProgramActivity{})},
 		{name: "ClientCompletionsResponse", typ: reflect.TypeOf(analytics.CompletionsResult{})},
 		{name: "ClientCompletionItem", typ: reflect.TypeOf(analytics.CompletionItem{})},
+		{name: "CompletionComment", typ: reflect.TypeOf(workoutcomment.Comment{})},
+		{name: "CreateCompletionCommentRequest", typ: reflect.TypeOf(struct {
+			Text string `json:"text"`
+		}{})},
 		{name: "ProgramsAnalyticsResponse", typ: reflect.TypeOf(analytics.ProgramsAnalyticsResult{})},
 		{name: "ProgramAnalyticsItem", typ: reflect.TypeOf(analytics.ProgramAnalyticsItem{})},
 		{name: "ProgramAnalytics", typ: reflect.TypeOf(analytics.ProgramAnalytics{})},

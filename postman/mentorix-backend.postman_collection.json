@@ -2000,6 +2000,35 @@
           "response": []
         },
         {
+          "name": "POST /trainer/clients/:client_user_id/completions/:completion_id/comments",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Отличная работа! Добавь 2.5 кг на следующей тренировке.\"\n}"
+            },
+            "url": "{{base_url}}/trainer/clients/{{client_user_id}}/completions/{{completion_id}}/comments",
+            "description": "Trainer reply on a workout result (one per completion; 409 if it already exists)"
+          },
+          "response": []
+        },
+        {
           "name": "GET /trainer/programs/analytics",
           "request": {
             "auth": {
