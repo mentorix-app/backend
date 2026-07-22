@@ -2069,6 +2069,26 @@
           "response": []
         },
         {
+          "name": "GET /trainer/programs/:program_id/weeks/:week_number/results",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/trainer/programs/{{program_id}}/weeks/{{week_number}}/results",
+            "description": "Client × day results matrix for one program week"
+          },
+          "response": []
+        },
+        {
           "name": "GET /plans",
           "event": [
             {

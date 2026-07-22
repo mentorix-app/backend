@@ -11,6 +11,7 @@ var (
 	ErrForbidden       = errors.New("forbidden")
 	ErrClientNotFound  = errors.New("client not found")
 	ErrProgramNotFound = errors.New("program not found")
+	ErrWeekNotFound    = errors.New("week not found")
 )
 
 type Pagination struct {
@@ -164,4 +165,51 @@ type ProgramWeekStats struct {
 	WeekNumber           int `json:"week_number"`
 	CompletionsCount     int `json:"completions_count"`
 	DistinctClientsCount int `json:"distinct_clients_count"`
+}
+
+const (
+	MatrixCellSubmitted = "submitted"
+	MatrixCellNoResult  = "no_result"
+)
+
+// ProgramWeekResults is the client × day matrix for one program week.
+type ProgramWeekResults struct {
+	ProgramID     uuid.UUID                 `json:"program_id"`
+	ProgramName   string                    `json:"program_name"`
+	ProgramNameRu string                    `json:"program_name_ru"`
+	WeekNumber    int                       `json:"week_number"`
+	Days          []ProgramWeekDayColumn    `json:"days"`
+	Summary       ProgramWeekMatrixSummary  `json:"summary"`
+	Clients       []ProgramWeekMatrixClient `json:"clients"`
+}
+
+type ProgramWeekDayColumn struct {
+	DayNumber int `json:"day_number"`
+}
+
+type ProgramWeekMatrixSummary struct {
+	TotalTrainingSlots int     `json:"total_training_slots"`
+	SubmittedCount     int     `json:"submitted_count"`
+	MissingCount       int     `json:"missing_count"`
+	CompletionPercent  float64 `json:"completion_percent"`
+	BehindClientsCount int     `json:"behind_clients_count"`
+}
+
+type ProgramWeekMatrixClient struct {
+	ClientUserID   uuid.UUID               `json:"client_user_id"`
+	DisplayName    string                  `json:"display_name"`
+	AvatarURL      string                  `json:"avatar_url"`
+	IsBehindLatest bool                    `json:"is_behind_latest"`
+	CompletedDays  int                     `json:"completed_days"`
+	TotalDays      int                     `json:"total_days"`
+	Days           []ProgramWeekMatrixCell `json:"days"`
+}
+
+type ProgramWeekMatrixCell struct {
+	DayNumber    int                 `json:"day_number"`
+	Status       string              `json:"status"`
+	CompletionID *uuid.UUID          `json:"completion_id"`
+	ResultText   string              `json:"result_text"`
+	CompletedAt  *time.Time          `json:"completed_at"`
+	Comments     []CompletionComment `json:"comments"`
 }

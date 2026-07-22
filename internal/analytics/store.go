@@ -153,6 +153,24 @@ func (s *Store) ProgramWeeks(ctx context.Context, programID uuid.UUID) ([]sqlc.L
 	return s.q.ListProgramAnalyticsWeeks(ctx, pgconv.ToPGUUID(programID))
 }
 
+func (s *Store) LatestVersionWeekTrainingDays(ctx context.Context, programID uuid.UUID, weekNumber int) ([]sqlc.ListLatestVersionWeekTrainingDaysRow, error) {
+	return s.q.ListLatestVersionWeekTrainingDays(ctx, sqlc.ListLatestVersionWeekTrainingDaysParams{
+		ProgramID:  pgconv.ToPGUUID(programID),
+		WeekNumber: int32(weekNumber),
+	})
+}
+
+func (s *Store) ProgramWeekMatrixClients(ctx context.Context, programID uuid.UUID) ([]sqlc.ListProgramWeekMatrixClientsRow, error) {
+	return s.q.ListProgramWeekMatrixClients(ctx, pgconv.ToPGUUID(programID))
+}
+
+func (s *Store) ProgramWeekCompletions(ctx context.Context, programID uuid.UUID, weekNumber int) ([]sqlc.ListProgramWeekCompletionsRow, error) {
+	return s.q.ListProgramWeekCompletions(ctx, sqlc.ListProgramWeekCompletionsParams{
+		ProgramID:  pgconv.ToPGUUID(programID),
+		WeekNumber: int32(weekNumber),
+	})
+}
+
 func toPGTimestamptz(t *time.Time) pgtype.Timestamptz {
 	if t == nil {
 		return pgtype.Timestamptz{}

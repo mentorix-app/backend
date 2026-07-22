@@ -45,6 +45,7 @@ func TestHandlers_Mount_registersRoutes(t *testing.T) {
 		"GET /trainer/clients/:client_user_id/completions",
 		"GET /trainer/programs/analytics",
 		"GET /trainer/programs/:program_id/analytics",
+		"GET /trainer/programs/:program_id/weeks/:week_number/results",
 	}
 	for _, rt := range want {
 		if !found[rt] {
@@ -62,6 +63,7 @@ func TestHandlers_unauthorized(t *testing.T) {
 		h.ListClientCompletions,
 		h.ListProgramsAnalytics,
 		h.GetProgramAnalytics,
+		h.GetProgramWeekResults,
 	}
 	for i, fn := range checks {
 		c, _ := testContext(e, "/", uuid.Nil, nil)
@@ -120,14 +122,36 @@ func TestHandlers_invalidQueryParams(t *testing.T) {
 	}
 }
 
+func TestHandlers_invalidWeekNumber(t *testing.T) {
+	h := testHandlers()
+	e := echo.New()
+	userID := uuid.New()
+	programID := uuid.New()
+
+	c, _ := testContext(e, "/", userID, map[string]string{
+		"program_id":  programID.String(),
+		"week_number": "not-a-number",
+	})
+	// Set both params explicitly (testContext only sets one name/value pair at a time when looping).
+	c.SetParamNames("program_id", "week_number")
+	c.SetParamValues(programID.String(), "not-a-number")
+	err := h.GetProgramWeekResults(c)
+	he, ok := err.(*echo.HTTPError)
+	if !ok || he.Code != http.StatusBadRequest {
+		t.Fatalf("err = %v, want 400", err)
+	}
+}
+
 func TestHTTPErrorFrom(t *testing.T) {
 	tests := []struct {
 		err  error
 		code int
 	}{
+		{analytics.ErrValidation, http.StatusBadRequest},
 		{analytics.ErrForbidden, http.StatusForbidden},
 		{analytics.ErrClientNotFound, http.StatusNotFound},
 		{analytics.ErrProgramNotFound, http.StatusNotFound},
+		{analytics.ErrWeekNotFound, http.StatusNotFound},
 		{echo.ErrTeapot, http.StatusInternalServerError},
 	}
 	for _, tt := range tests {

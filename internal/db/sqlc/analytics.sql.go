@@ -504,6 +504,59 @@ func (q *Queries) ListCycleWeekProgress(ctx context.Context, arg ListCycleWeekPr
 	return items, nil
 }
 
+const listLatestVersionWeekTrainingDays = `-- name: ListLatestVersionWeekTrainingDays :many
+SELECT
+  d.day_number,
+  d.day_key
+FROM mentorix.program_version_week_days d
+INNER JOIN mentorix.program_version_weeks w ON w.id = d.program_version_week_id
+INNER JOIN mentorix.program_versions pv ON pv.id = d.program_version_id
+WHERE pv.program_id = $1
+  AND w.week_number = $2
+  AND pv.version_number = (
+    SELECT COALESCE(MAX(lpv.version_number), 0)
+    FROM mentorix.program_versions lpv
+    WHERE lpv.program_id = $1
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM mentorix.program_version_week_day_blocks b
+    WHERE b.program_version_week_day_id = d.id
+  )
+ORDER BY d.day_number ASC
+`
+
+type ListLatestVersionWeekTrainingDaysParams struct {
+	ProgramID  pgtype.UUID `json:"program_id"`
+	WeekNumber int32       `json:"week_number"`
+}
+
+type ListLatestVersionWeekTrainingDaysRow struct {
+	DayNumber int32       `json:"day_number"`
+	DayKey    pgtype.UUID `json:"day_key"`
+}
+
+// Training days (days with blocks) of week_number in the latest published version.
+func (q *Queries) ListLatestVersionWeekTrainingDays(ctx context.Context, arg ListLatestVersionWeekTrainingDaysParams) ([]ListLatestVersionWeekTrainingDaysRow, error) {
+	rows, err := q.db.Query(ctx, listLatestVersionWeekTrainingDays, arg.ProgramID, arg.WeekNumber)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLatestVersionWeekTrainingDaysRow{}
+	for rows.Next() {
+		var i ListLatestVersionWeekTrainingDaysRow
+		if err := rows.Scan(&i.DayNumber, &i.DayKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProgramAnalyticsClients = `-- name: ListProgramAnalyticsClients :many
 SELECT
   pa.client_user_id,
@@ -625,6 +678,121 @@ func (q *Queries) ListProgramAnalyticsWeeks(ctx context.Context, programID pgtyp
 	for rows.Next() {
 		var i ListProgramAnalyticsWeeksRow
 		if err := rows.Scan(&i.WeekNumber, &i.CompletionsCount, &i.DistinctClientsCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramWeekCompletions = `-- name: ListProgramWeekCompletions :many
+SELECT
+  c.id,
+  c.client_user_id,
+  c.day_key,
+  c.day_number,
+  c.result_text,
+  c.completed_at
+FROM mentorix.client_workout_completions c
+INNER JOIN mentorix.program_assignments pa
+  ON pa.completion_cycle_id = c.completion_cycle_id
+  AND pa.status = 'active'
+WHERE pa.program_id = $1
+  AND c.week_number = $2
+`
+
+type ListProgramWeekCompletionsParams struct {
+	ProgramID  pgtype.UUID `json:"program_id"`
+	WeekNumber int32       `json:"week_number"`
+}
+
+type ListProgramWeekCompletionsRow struct {
+	ID           pgtype.UUID `json:"id"`
+	ClientUserID pgtype.UUID `json:"client_user_id"`
+	DayKey       pgtype.UUID `json:"day_key"`
+	DayNumber    int32       `json:"day_number"`
+	ResultText   string      `json:"result_text"`
+	CompletedAt  time.Time   `json:"completed_at"`
+}
+
+// Current-cycle completions of active assignees for one program week.
+func (q *Queries) ListProgramWeekCompletions(ctx context.Context, arg ListProgramWeekCompletionsParams) ([]ListProgramWeekCompletionsRow, error) {
+	rows, err := q.db.Query(ctx, listProgramWeekCompletions, arg.ProgramID, arg.WeekNumber)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProgramWeekCompletionsRow{}
+	for rows.Next() {
+		var i ListProgramWeekCompletionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClientUserID,
+			&i.DayKey,
+			&i.DayNumber,
+			&i.ResultText,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramWeekMatrixClients = `-- name: ListProgramWeekMatrixClients :many
+SELECT
+  pa.client_user_id,
+  u.display_name,
+  u.avatar_file_path,
+  pa.completion_cycle_id,
+  (
+    pa.program_version_id IS DISTINCT FROM (
+      SELECT lpv.id
+      FROM mentorix.program_versions lpv
+      WHERE lpv.program_id = pa.program_id
+      ORDER BY lpv.version_number DESC
+      LIMIT 1
+    )
+  )::boolean AS is_behind_latest
+FROM mentorix.program_assignments pa
+INNER JOIN mentorix.users u ON u.id = pa.client_user_id
+WHERE pa.program_id = $1
+  AND pa.status = 'active'
+ORDER BY u.display_name ASC, pa.client_user_id ASC
+`
+
+type ListProgramWeekMatrixClientsRow struct {
+	ClientUserID      pgtype.UUID `json:"client_user_id"`
+	DisplayName       string      `json:"display_name"`
+	AvatarFilePath    string      `json:"avatar_file_path"`
+	CompletionCycleID pgtype.UUID `json:"completion_cycle_id"`
+	IsBehindLatest    bool        `json:"is_behind_latest"`
+}
+
+// Active assignees for the week-results matrix (cycle id for completion join).
+func (q *Queries) ListProgramWeekMatrixClients(ctx context.Context, programID pgtype.UUID) ([]ListProgramWeekMatrixClientsRow, error) {
+	rows, err := q.db.Query(ctx, listProgramWeekMatrixClients, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProgramWeekMatrixClientsRow{}
+	for rows.Next() {
+		var i ListProgramWeekMatrixClientsRow
+		if err := rows.Scan(
+			&i.ClientUserID,
+			&i.DisplayName,
+			&i.AvatarFilePath,
+			&i.CompletionCycleID,
+			&i.IsBehindLatest,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
