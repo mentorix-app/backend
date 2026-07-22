@@ -38,6 +38,7 @@ var postmanVarToEcho = []struct{ old, new string }{
 	{"{{program_week_id}}", ":week_id"},
 	{"{{program_version_id}}", ":version_id"},
 	{"{{client_user_id}}", ":client_user_id"},
+	{"{{completion_id}}", ":completion_id"},
 	{"{{program_id}}", ":id"},
 	{"{{exercise_id}}", ":id"},
 	{"{{plan_trainer_user_id}}", ":user_id"},

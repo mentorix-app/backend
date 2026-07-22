@@ -1083,6 +1083,45 @@ paths:
         "404":
           description: Client is not linked to the trainer
 
+  /trainer/clients/{client_user_id}/completions/{completion_id}/comments:
+    parameters:
+      - $ref: "#/components/parameters/ClientUserId"
+      - $ref: "#/components/parameters/CompletionId"
+    post:
+      tags: [analytics]
+      summary: Reply to a client workout result
+      description: >
+        Creates the trainer's reply on a workout completion. One reply per
+        completion; a second attempt returns 409. The reply is shown in the
+        completions feed (`items[].comments`) and pushed to the client in
+        Telegram (best-effort).
+      operationId: createTrainerCompletionComment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompletionCommentRequest"
+      responses:
+        "201":
+          description: Reply created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletionComment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer role required
+        "404":
+          description: Completion not found for this trainer/client pair
+        "409":
+          description: Reply already exists for this completion
+
   /trainer/programs/analytics:
     get:
       tags: [analytics]
@@ -1814,6 +1853,14 @@ components:
 
     ClientUserId:
       name: client_user_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    CompletionId:
+      name: completion_id
       in: path
       required: true
       schema:
@@ -3245,7 +3292,7 @@ components:
       type: object
       required:
         [id, completed_at, program_id, program_name, program_name_ru,
-         week_number, day_number, result_text, is_current_cycle]
+         week_number, day_number, result_text, is_current_cycle, comments]
       properties:
         id:
           type: string
@@ -3271,6 +3318,34 @@ components:
         is_current_cycle:
           type: boolean
           description: True when the completion belongs to the client's current assignment cycle
+        comments:
+          type: array
+          description: Trainer replies on this result (at most one for now), oldest first
+          items:
+            $ref: "#/components/schemas/CompletionComment"
+
+    CompletionComment:
+      type: object
+      required: [id, text, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        text:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateCompletionCommentRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Trainer reply text
 
     ProgramsAnalyticsResponse:
       type: object

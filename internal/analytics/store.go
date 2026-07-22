@@ -106,6 +106,14 @@ func (s *Store) ListClientCompletions(ctx context.Context, trainerID, clientUser
 	})
 }
 
+func (s *Store) ListCommentsForCompletions(ctx context.Context, completionIDs []uuid.UUID) ([]sqlc.ListCommentsForCompletionsRow, error) {
+	ids := make([]pgtype.UUID, 0, len(completionIDs))
+	for _, id := range completionIDs {
+		ids = append(ids, pgconv.ToPGUUID(id))
+	}
+	return s.q.ListCommentsForCompletions(ctx, ids)
+}
+
 func (s *Store) CountTrainerPrograms(ctx context.Context, createdBy uuid.UUID) (int, error) {
 	total, err := s.q.CountPrograms(ctx, sqlc.CountProgramsParams{
 		FilterCreatedBy: pgconv.ToPGUUID(createdBy),

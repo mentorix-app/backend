@@ -1,0 +1,37 @@
+---
+description: Fixed changelog format (📝/🔹) for frontend/Telegram after commits
+alwaysApply: false
+---
+
+# Changelog format (frontend / Telegram)
+
+When asked for a "changelog" (для фронта / для телеграма / по паттерну), output a single
+Telegram-ready message in chat — **not** a file. Fixed format:
+
+## Template
+
+```text
+📝 **Changelog** (с `<commit>`, `<branch>`):
+
+🔹 **<Тема/эндпоинт>** — что изменилось для клиента API: поля, типы, статусы
+
+🔹 **Breaking — <тема>:** старое → новое; что править на фронте
+
+Контракт: `api/openapi.yaml` (<operationId / схемы>)
+```
+
+## Rules
+
+- Header exactly `📝 **Changelog**` + commit hash and branch in parentheses.
+- One `🔹` bullet per change; bold lead-in, then compact details in one paragraph.
+- Audience — API client (frontend): endpoints, request/response fields, types,
+  error statuses (400/403/404/409) that need UI handling.
+- No internal kitchen: migrations, sqlc, tests, package names, CI.
+- Breaking changes marked explicitly: `**Breaking — …:**`.
+- Last line points to `api/openapi.yaml` with operationId / schema names.
+- Language: Russian.
+
+## Example bullet
+
+🔹 **`GET /trainer/clients/{client_user_id}/completions`** — в каждом item новое
+поле `comments: [{ id, text, created_at }]` (всегда массив, отсортирован по времени)

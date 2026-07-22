@@ -26,6 +26,7 @@ import (
 	"mentorix-backend/internal/telegrambot"
 	"mentorix-backend/internal/telegramnotify"
 	"mentorix-backend/internal/trainerclient"
+	"mentorix-backend/internal/workoutcomment"
 	"mentorix-backend/internal/workoutcompletion"
 )
 
@@ -121,6 +122,7 @@ func main() {
 
 		var programNotifier program.ProgramNotifier
 		var trainerNotifier trainerclient.ProgramNotifier
+		var commentNotifier workoutcomment.CommentNotifier
 		if cfg.BotToken != "" {
 			sender, err := telegramnotify.NewSender(cfg.BotToken)
 			if err != nil {
@@ -129,6 +131,7 @@ func main() {
 				n := telegramnotify.NewNotifier(pool, sender, logger)
 				programNotifier = n
 				trainerNotifier = n
+				commentNotifier = n
 			}
 		}
 		progSvc := program.NewService(pool, program.WithProgramNotifier(programNotifier))
@@ -154,6 +157,9 @@ func main() {
 
 		analyticsSvc := analytics.NewService(pool, cfg.JWTSecret)
 		analytics.NewHandlers(analyticsSvc, pool, cfg.JWTSecret).Mount(e)
+
+		commentSvc := workoutcomment.NewService(pool, workoutcomment.WithCommentNotifier(commentNotifier))
+		workoutcomment.NewHandlers(commentSvc, pool, cfg.JWTSecret).Mount(e)
 
 		workoutSvc := workoutcompletion.NewService(pool)
 		workoutPending := workoutcompletion.NewPendingStore(rdb)

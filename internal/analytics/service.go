@@ -162,10 +162,20 @@ func (s *Service) ClientCompletions(ctx context.Context, trainerUserID, clientUs
 		return CompletionsResult{}, fmt.Errorf("list completions: %w", err)
 	}
 
+	comments, err := s.completionComments(ctx, rows)
+	if err != nil {
+		return CompletionsResult{}, err
+	}
+
 	items := make([]CompletionItem, 0, len(rows))
 	for _, row := range rows {
+		id := pgconv.FromPGUUID(row.ID)
+		itemComments := comments[id]
+		if itemComments == nil {
+			itemComments = []CompletionComment{}
+		}
 		items = append(items, CompletionItem{
-			ID:             pgconv.FromPGUUID(row.ID),
+			ID:             id,
 			CompletedAt:    row.CompletedAt.UTC(),
 			ProgramID:      uuidPtrFromPG(row.ProgramID),
 			ProgramName:    row.ProgramName,
@@ -174,12 +184,39 @@ func (s *Service) ClientCompletions(ctx context.Context, trainerUserID, clientUs
 			DayNumber:      int(row.DayNumber),
 			ResultText:     row.ResultText,
 			IsCurrentCycle: row.IsCurrentCycle,
+			Comments:       itemComments,
 		})
 	}
 	return CompletionsResult{
 		Items:      items,
 		Pagination: paginationMeta(params.Page, params.Limit, total),
 	}, nil
+}
+
+// completionComments loads trainer replies for the page of completions in one
+// query and groups them by completion id.
+func (s *Service) completionComments(ctx context.Context, rows []sqlc.ListClientCompletionsRow) (map[uuid.UUID][]CompletionComment, error) {
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, pgconv.FromPGUUID(row.ID))
+	}
+	commentRows, err := s.store.ListCommentsForCompletions(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list completion comments: %w", err)
+	}
+	out := make(map[uuid.UUID][]CompletionComment, len(commentRows))
+	for _, row := range commentRows {
+		completionID := pgconv.FromPGUUID(row.ClientWorkoutCompletionID)
+		out[completionID] = append(out[completionID], CompletionComment{
+			ID:        pgconv.FromPGUUID(row.ID),
+			Text:      row.CommentText,
+			CreatedAt: row.CreatedAt.UTC(),
+		})
+	}
+	return out, nil
 }
 
 func (s *Service) ProgramsAnalytics(ctx context.Context, trainerUserID uuid.UUID, params ProgramsParams) (ProgramsAnalyticsResult, error) {

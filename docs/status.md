@@ -18,11 +18,12 @@
 | Telegram-бот: /start, accept, меню, программа, отметка тренировок, push (фазы 1–4) | [features/telegram-bot.md](features/telegram-bot.md), [features/workout-completions.md](features/workout-completions.md) |
 | Отметка дней программы (day_key, cycle, журнал completions) | [features/workout-completions.md](features/workout-completions.md) |
 | Аналитика тренера (клиент: прогресс/активность/лента; программы: агрегаты, drop-off) | [features/trainer-analytics.md](features/trainer-analytics.md) |
+| Ответ тренера на результат тренировки (комментарий + push в Telegram) | [features/workout-comments.md](features/workout-comments.md) |
 | Контракт OpenAPI + Postman + apicheck | [architecture.md](architecture.md), `api/openapi.yaml` |
 | CI/CD (`make check-ci`, Deploy Hook stage, migrate preDeploy) | [environments.md](environments.md), [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |
 | Garbage cleanup (assignments one-row, auto version purge, invites, Redis stale, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Миграции: версия 24 (`./scripts/migrate-check.sh`)._
+_Миграции: версия 25 (`./scripts/migrate-check.sh`)._
 
