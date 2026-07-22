@@ -162,7 +162,7 @@ func (s *Service) ClientCompletions(ctx context.Context, trainerUserID, clientUs
 		return CompletionsResult{}, fmt.Errorf("list completions: %w", err)
 	}
 
-	comments, err := s.completionComments(ctx, rows)
+	comments, err := s.commentsByCompletionIDs(ctx, completionIDsFromClientRows(rows))
 	if err != nil {
 		return CompletionsResult{}, err
 	}
@@ -193,15 +193,18 @@ func (s *Service) ClientCompletions(ctx context.Context, trainerUserID, clientUs
 	}, nil
 }
 
-// completionComments loads trainer replies for the page of completions in one
-// query and groups them by completion id.
-func (s *Service) completionComments(ctx context.Context, rows []sqlc.ListClientCompletionsRow) (map[uuid.UUID][]CompletionComment, error) {
-	if len(rows) == 0 {
-		return nil, nil
-	}
+func completionIDsFromClientRows(rows []sqlc.ListClientCompletionsRow) []uuid.UUID {
 	ids := make([]uuid.UUID, 0, len(rows))
 	for _, row := range rows {
 		ids = append(ids, pgconv.FromPGUUID(row.ID))
+	}
+	return ids
+}
+
+// commentsByCompletionIDs loads trainer replies in one query and groups by completion id.
+func (s *Service) commentsByCompletionIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]CompletionComment, error) {
+	if len(ids) == 0 {
+		return nil, nil
 	}
 	commentRows, err := s.store.ListCommentsForCompletions(ctx, ids)
 	if err != nil {
@@ -364,6 +367,130 @@ func (s *Service) ProgramAnalytics(ctx context.Context, trainerUserID, programID
 		Summary: summary,
 		Clients: clients,
 		Weeks:   weeks,
+	}, nil
+}
+
+func (s *Service) ProgramWeekResults(ctx context.Context, trainerUserID, programID uuid.UUID, weekNumber int) (ProgramWeekResults, error) {
+	if weekNumber < 1 {
+		return ProgramWeekResults{}, fmt.Errorf("%w: week_number must be >= 1", ErrValidation)
+	}
+	if _, err := s.trainerID(ctx, trainerUserID); err != nil {
+		return ProgramWeekResults{}, err
+	}
+
+	header, err := s.store.ProgramHeader(ctx, programID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProgramWeekResults{}, ErrProgramNotFound
+		}
+		return ProgramWeekResults{}, fmt.Errorf("program header: %w", err)
+	}
+	if pgconv.FromPGUUID(header.CreatedBy) != trainerUserID {
+		return ProgramWeekResults{}, ErrProgramNotFound
+	}
+
+	dayRows, err := s.store.LatestVersionWeekTrainingDays(ctx, programID, weekNumber)
+	if err != nil {
+		return ProgramWeekResults{}, fmt.Errorf("week training days: %w", err)
+	}
+	if len(dayRows) == 0 {
+		return ProgramWeekResults{}, ErrWeekNotFound
+	}
+
+	clientRows, err := s.store.ProgramWeekMatrixClients(ctx, programID)
+	if err != nil {
+		return ProgramWeekResults{}, fmt.Errorf("matrix clients: %w", err)
+	}
+	completionRows, err := s.store.ProgramWeekCompletions(ctx, programID, weekNumber)
+	if err != nil {
+		return ProgramWeekResults{}, fmt.Errorf("week completions: %w", err)
+	}
+
+	completionIDs := make([]uuid.UUID, 0, len(completionRows))
+	// Map client_user_id → day_key → completion
+	byClientDayKey := make(map[uuid.UUID]map[uuid.UUID]sqlc.ListProgramWeekCompletionsRow, len(clientRows))
+	for _, row := range completionRows {
+		clientID := pgconv.FromPGUUID(row.ClientUserID)
+		dayKey := pgconv.FromPGUUID(row.DayKey)
+		if byClientDayKey[clientID] == nil {
+			byClientDayKey[clientID] = map[uuid.UUID]sqlc.ListProgramWeekCompletionsRow{}
+		}
+		byClientDayKey[clientID][dayKey] = row
+		completionIDs = append(completionIDs, pgconv.FromPGUUID(row.ID))
+	}
+	comments, err := s.commentsByCompletionIDs(ctx, completionIDs)
+	if err != nil {
+		return ProgramWeekResults{}, err
+	}
+
+	columns := make([]ProgramWeekDayColumn, 0, len(dayRows))
+	dayKeys := make([]uuid.UUID, 0, len(dayRows))
+	for _, row := range dayRows {
+		columns = append(columns, ProgramWeekDayColumn{DayNumber: int(row.DayNumber)})
+		dayKeys = append(dayKeys, pgconv.FromPGUUID(row.DayKey))
+	}
+
+	totalDays := len(columns)
+	var submittedCount, behindCount int
+	clients := make([]ProgramWeekMatrixClient, 0, len(clientRows))
+	for _, row := range clientRows {
+		clientID := pgconv.FromPGUUID(row.ClientUserID)
+		clientCompletions := byClientDayKey[clientID]
+		cells := make([]ProgramWeekMatrixCell, 0, totalDays)
+		completed := 0
+		for i, dayKey := range dayKeys {
+			cell := ProgramWeekMatrixCell{
+				DayNumber: columns[i].DayNumber,
+				Status:    MatrixCellNoResult,
+				Comments:  []CompletionComment{},
+			}
+			if c, ok := clientCompletions[dayKey]; ok {
+				id := pgconv.FromPGUUID(c.ID)
+				completedAt := c.CompletedAt.UTC()
+				cellComments := comments[id]
+				if cellComments == nil {
+					cellComments = []CompletionComment{}
+				}
+				cell.Status = MatrixCellSubmitted
+				cell.CompletionID = &id
+				cell.ResultText = c.ResultText
+				cell.CompletedAt = &completedAt
+				cell.Comments = cellComments
+				completed++
+				submittedCount++
+			}
+			cells = append(cells, cell)
+		}
+		if row.IsBehindLatest {
+			behindCount++
+		}
+		clients = append(clients, ProgramWeekMatrixClient{
+			ClientUserID:   clientID,
+			DisplayName:    row.DisplayName,
+			AvatarURL:      trainerclient.BuildAvatarURL(clientID, row.AvatarFilePath, s.jwtSecret),
+			IsBehindLatest: row.IsBehindLatest,
+			CompletedDays:  completed,
+			TotalDays:      totalDays,
+			Days:           cells,
+		})
+	}
+
+	totalSlots := len(clients) * totalDays
+	missing := totalSlots - submittedCount
+	return ProgramWeekResults{
+		ProgramID:     pgconv.FromPGUUID(header.ProgramID),
+		ProgramName:   header.Name,
+		ProgramNameRu: header.NameRu,
+		WeekNumber:    weekNumber,
+		Days:          columns,
+		Summary: ProgramWeekMatrixSummary{
+			TotalTrainingSlots: totalSlots,
+			SubmittedCount:     submittedCount,
+			MissingCount:       missing,
+			CompletionPercent:  completionPercent(submittedCount, totalSlots),
+			BehindClientsCount: behindCount,
+		},
+		Clients: clients,
 	}, nil
 }
 

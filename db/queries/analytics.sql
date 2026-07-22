@@ -316,3 +316,63 @@ INNER JOIN mentorix.program_assignments pa
 WHERE pa.program_id = $1
 GROUP BY c.week_number
 ORDER BY c.week_number ASC;
+
+-- name: ListLatestVersionWeekTrainingDays :many
+-- Training days (days with blocks) of week_number in the latest published version.
+SELECT
+  d.day_number,
+  d.day_key
+FROM mentorix.program_version_week_days d
+INNER JOIN mentorix.program_version_weeks w ON w.id = d.program_version_week_id
+INNER JOIN mentorix.program_versions pv ON pv.id = d.program_version_id
+WHERE pv.program_id = $1
+  AND w.week_number = $2
+  AND pv.version_number = (
+    SELECT COALESCE(MAX(lpv.version_number), 0)
+    FROM mentorix.program_versions lpv
+    WHERE lpv.program_id = $1
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM mentorix.program_version_week_day_blocks b
+    WHERE b.program_version_week_day_id = d.id
+  )
+ORDER BY d.day_number ASC;
+
+-- name: ListProgramWeekMatrixClients :many
+-- Active assignees for the week-results matrix (cycle id for completion join).
+SELECT
+  pa.client_user_id,
+  u.display_name,
+  u.avatar_file_path,
+  pa.completion_cycle_id,
+  (
+    pa.program_version_id IS DISTINCT FROM (
+      SELECT lpv.id
+      FROM mentorix.program_versions lpv
+      WHERE lpv.program_id = pa.program_id
+      ORDER BY lpv.version_number DESC
+      LIMIT 1
+    )
+  )::boolean AS is_behind_latest
+FROM mentorix.program_assignments pa
+INNER JOIN mentorix.users u ON u.id = pa.client_user_id
+WHERE pa.program_id = $1
+  AND pa.status = 'active'
+ORDER BY u.display_name ASC, pa.client_user_id ASC;
+
+-- name: ListProgramWeekCompletions :many
+-- Current-cycle completions of active assignees for one program week.
+SELECT
+  c.id,
+  c.client_user_id,
+  c.day_key,
+  c.day_number,
+  c.result_text,
+  c.completed_at
+FROM mentorix.client_workout_completions c
+INNER JOIN mentorix.program_assignments pa
+  ON pa.completion_cycle_id = c.completion_cycle_id
+  AND pa.status = 'active'
+WHERE pa.program_id = $1
+  AND c.week_number = $2;

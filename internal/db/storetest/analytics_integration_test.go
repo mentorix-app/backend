@@ -377,3 +377,76 @@ func TestAnalyticsService_ProgramAnalytics(t *testing.T) {
 		t.Fatalf("missing program err = %v", err)
 	}
 }
+
+func TestAnalyticsService_ProgramWeekResults(t *testing.T) {
+	pool := NewPool(t)
+	fx := seedAnalyticsFixture(t, pool, "an-matrix")
+	svc := analytics.NewService(pool, "test-jwt-secret-at-least-32-chars-long")
+	ctx := context.Background()
+
+	// Week 1: two training days, both submitted by the one client.
+	week1, err := svc.ProgramWeekResults(ctx, fx.trainerUserID, fx.programID, 1)
+	if err != nil {
+		t.Fatalf("week1: %v", err)
+	}
+	if week1.ProgramID != fx.programID || week1.WeekNumber != 1 {
+		t.Fatalf("header = %+v", week1)
+	}
+	if len(week1.Days) != 2 || week1.Days[0].DayNumber != 1 || week1.Days[1].DayNumber != 2 {
+		t.Fatalf("days = %+v", week1.Days)
+	}
+	if len(week1.Clients) != 1 {
+		t.Fatalf("clients = %d", len(week1.Clients))
+	}
+	cl := week1.Clients[0]
+	if cl.ClientUserID != fx.clientUserID || cl.CompletedDays != 2 || cl.TotalDays != 2 {
+		t.Fatalf("client = %+v", cl)
+	}
+	if len(cl.Days) != 2 {
+		t.Fatalf("cells = %+v", cl.Days)
+	}
+	if cl.Days[0].Status != analytics.MatrixCellSubmitted || cl.Days[0].ResultText != "day one" {
+		t.Fatalf("cell0 = %+v", cl.Days[0])
+	}
+	if cl.Days[0].CompletionID == nil || cl.Days[0].CompletedAt == nil {
+		t.Fatalf("cell0 missing ids: %+v", cl.Days[0])
+	}
+	if cl.Days[0].Comments == nil {
+		t.Fatal("comments must be non-nil slice")
+	}
+	if cl.Days[1].Status != analytics.MatrixCellSubmitted || cl.Days[1].ResultText != "day two" {
+		t.Fatalf("cell1 = %+v", cl.Days[1])
+	}
+	if week1.Summary.TotalTrainingSlots != 2 || week1.Summary.SubmittedCount != 2 || week1.Summary.MissingCount != 0 {
+		t.Fatalf("summary = %+v", week1.Summary)
+	}
+	if week1.Summary.CompletionPercent != 100 || week1.Summary.BehindClientsCount != 0 {
+		t.Fatalf("summary = %+v", week1.Summary)
+	}
+
+	// Week 2: one training day, no submission → no_result.
+	week2, err := svc.ProgramWeekResults(ctx, fx.trainerUserID, fx.programID, 2)
+	if err != nil {
+		t.Fatalf("week2: %v", err)
+	}
+	if len(week2.Days) != 1 || week2.Days[0].DayNumber != 1 {
+		t.Fatalf("week2 days = %+v", week2.Days)
+	}
+	cell := week2.Clients[0].Days[0]
+	if cell.Status != analytics.MatrixCellNoResult || cell.CompletionID != nil || cell.ResultText != "" {
+		t.Fatalf("week2 cell = %+v", cell)
+	}
+	if week2.Summary.SubmittedCount != 0 || week2.Summary.MissingCount != 1 || week2.Summary.CompletionPercent != 0 {
+		t.Fatalf("week2 summary = %+v", week2.Summary)
+	}
+
+	if _, err := svc.ProgramWeekResults(ctx, fx.trainerUserID, fx.programID, 99); !errors.Is(err, analytics.ErrWeekNotFound) {
+		t.Fatalf("missing week err = %v", err)
+	}
+	if _, err := svc.ProgramWeekResults(ctx, fx.trainerUserID, fx.programID, 0); !errors.Is(err, analytics.ErrValidation) {
+		t.Fatalf("week 0 err = %v", err)
+	}
+	if _, err := svc.ProgramWeekResults(ctx, fx.trainerUserID, uuid.New(), 1); !errors.Is(err, analytics.ErrProgramNotFound) {
+		t.Fatalf("missing program err = %v", err)
+	}
+}

@@ -148,6 +148,11 @@ func schemaBindings() []schemaBinding {
 		{name: "ProgramAnalyticsSummary", typ: reflect.TypeOf(analytics.ProgramSummary{})},
 		{name: "ProgramAnalyticsClient", typ: reflect.TypeOf(analytics.ProgramClient{})},
 		{name: "ProgramAnalyticsWeek", typ: reflect.TypeOf(analytics.ProgramWeekStats{})},
+		{name: "ProgramWeekResults", typ: reflect.TypeOf(analytics.ProgramWeekResults{})},
+		{name: "ProgramWeekDayColumn", typ: reflect.TypeOf(analytics.ProgramWeekDayColumn{})},
+		{name: "ProgramWeekMatrixSummary", typ: reflect.TypeOf(analytics.ProgramWeekMatrixSummary{})},
+		{name: "ProgramWeekMatrixClient", typ: reflect.TypeOf(analytics.ProgramWeekMatrixClient{})},
+		{name: "ProgramWeekMatrixCell", typ: reflect.TypeOf(analytics.ProgramWeekMatrixCell{})},
 	}
 }
 

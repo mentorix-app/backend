@@ -3,6 +3,7 @@ package analytics
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -31,6 +32,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.GET("/clients/:client_user_id/completions", h.ListClientCompletions)
 	g.GET("/programs/analytics", h.ListProgramsAnalytics)
 	g.GET("/programs/:program_id/analytics", h.GetProgramAnalytics)
+	g.GET("/programs/:program_id/weeks/:week_number/results", h.GetProgramWeekResults)
 }
 
 func (h *Handlers) GetClientAnalytics(c echo.Context) error {
@@ -115,14 +117,39 @@ func (h *Handlers) GetProgramAnalytics(c echo.Context) error {
 	return c.JSON(http.StatusOK, result)
 }
 
+func (h *Handlers) GetProgramWeekResults(c echo.Context) error {
+	trainerUserID, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, err := uuid.Parse(c.Param("program_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	weekNumber, err := strconv.Atoi(c.Param("week_number"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid week_number")
+	}
+
+	result, err := h.svc.ProgramWeekResults(c.Request().Context(), trainerUserID, programID, weekNumber)
+	if err != nil {
+		return HTTPErrorFrom(err)
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
 func HTTPErrorFrom(err error) *echo.HTTPError {
 	switch {
+	case errors.Is(err, ErrValidation):
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrForbidden):
 		return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
 	case errors.Is(err, ErrClientNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, "client not found")
 	case errors.Is(err, ErrProgramNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, httpx.MsgProgramNotFound)
+	case errors.Is(err, ErrWeekNotFound):
+		return echo.NewHTTPError(http.StatusNotFound, ErrWeekNotFound.Error())
 	default:
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}

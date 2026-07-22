@@ -1182,6 +1182,39 @@ paths:
         "404":
           description: Program not found or not owned by the trainer
 
+  /trainer/programs/{program_id}/weeks/{week_number}/results:
+    parameters:
+      - $ref: "#/components/parameters/AnalyticsProgramId"
+      - $ref: "#/components/parameters/AnalyticsWeekNumber"
+    get:
+      tags: [analytics]
+      summary: Program week results matrix
+      description: >
+        Client × day matrix for one program week. Columns are training days
+        (days with blocks) of `week_number` in the latest published version.
+        Cells are filled from each assignee's current completion cycle matched
+        by `day_key`. Cell `status` is `submitted` or `no_result`; submitted
+        cells include `result_text`, `completed_at`, `completion_id`, and
+        trainer `comments` for hover / reply.
+      operationId: getTrainerProgramWeekResults
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Week results matrix
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramWeekResults"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Trainer role required
+        "404":
+          description: Program not found, not owned, or week has no training days
+
   /programs/{id}/weeks:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
@@ -1930,6 +1963,14 @@ components:
       schema:
         type: string
         format: uuid
+
+    AnalyticsWeekNumber:
+      name: week_number
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
 
     ProgramAnalyticsSortBy:
       name: sort_by
@@ -3496,3 +3537,105 @@ components:
           type: integer
         distinct_clients_count:
           type: integer
+
+    ProgramWeekResults:
+      type: object
+      required:
+        [program_id, program_name, program_name_ru, week_number, days, summary, clients]
+      properties:
+        program_id:
+          type: string
+          format: uuid
+        program_name:
+          type: string
+        program_name_ru:
+          type: string
+        week_number:
+          type: integer
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramWeekDayColumn"
+        summary:
+          $ref: "#/components/schemas/ProgramWeekMatrixSummary"
+        clients:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramWeekMatrixClient"
+
+    ProgramWeekDayColumn:
+      type: object
+      required: [day_number]
+      properties:
+        day_number:
+          type: integer
+
+    ProgramWeekMatrixSummary:
+      type: object
+      required:
+        [total_training_slots, submitted_count, missing_count,
+         completion_percent, behind_clients_count]
+      properties:
+        total_training_slots:
+          type: integer
+          description: clients × training days in the week
+        submitted_count:
+          type: integer
+        missing_count:
+          type: integer
+        completion_percent:
+          type: number
+          format: double
+        behind_clients_count:
+          type: integer
+          description: Assignees whose assigned version is behind latest
+
+    ProgramWeekMatrixClient:
+      type: object
+      required:
+        [client_user_id, display_name, avatar_url, is_behind_latest,
+         completed_days, total_days, days]
+      properties:
+        client_user_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+        is_behind_latest:
+          type: boolean
+        completed_days:
+          type: integer
+          description: Submitted cells in this week
+        total_days:
+          type: integer
+          description: Training day columns in this week
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramWeekMatrixCell"
+
+    ProgramWeekMatrixCell:
+      type: object
+      required: [day_number, status, completion_id, result_text, completed_at, comments]
+      properties:
+        day_number:
+          type: integer
+        status:
+          type: string
+          enum: [submitted, no_result]
+        completion_id:
+          type: string
+          format: uuid
+          nullable: true
+        result_text:
+          type: string
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompletionComment"

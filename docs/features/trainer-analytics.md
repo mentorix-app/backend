@@ -13,7 +13,7 @@
 
 ## API
 
-Контракт: `api/openapi.yaml` — `GET /trainer/clients/{client_user_id}/analytics`, `GET /trainer/clients/{client_user_id}/completions`, `GET /trainer/programs/analytics`, `GET /trainer/programs/{program_id}/analytics`. Все — только роль `trainer` (admin → 403).
+Контракт: `api/openapi.yaml` — `GET /trainer/clients/{client_user_id}/analytics`, `GET /trainer/clients/{client_user_id}/completions`, `GET /trainer/programs/analytics`, `GET /trainer/programs/{program_id}/analytics`, `GET /trainer/programs/{program_id}/weeks/{week_number}/results`. Все — только роль `trainer` (admin → 403).
 
 Доступ: клиент должен быть в `trainer_clients` тренера, программа — `created_by` тренера; иначе `404`.
 
@@ -26,6 +26,7 @@
 - **Лента** (`/completions`) — пагинация + `from`/`to` (RFC3339 или `YYYY-MM-DD`, `to` эксклюзивно), сортировка `completed_at` desc; `is_current_cycle` — принадлежность текущему назначению. `items[].comments` — ответы тренера ([workout-comments.md](workout-comments.md)).
 - **Список программ** — все неудалённые программы тренера (включая черновики); `total_completions` по `program_id` журнала (все версии/циклы); `avg_completion_percent` — среднее по активным назначенцам, `null` без клиентов. Сортировка `sort_by=name|last_activity` (default `last_activity` desc).
 - **Деталь программы** — `clients` (активные назначенцы, прогресс текущего цикла, без пагинации — ограничено квотой клиентов), `weeks` — сдачи текущих циклов по `week_number` (drop-off). `avatar_url` — как в `GET /trainer/clients`.
+- **Матрица недели** (`/programs/{program_id}/weeks/{week_number}/results`) — клиенты × тренировочные дни выбранной недели. Колонки — дни с блоками в **latest** версии; ячейки заполняются по `day_key` из текущего цикла назначенца (`submitted` / `no_result` + `result_text` / `comments`). Неделя без тренировочных дней → 404. Summary: slots / submitted / missing / %, `behind_clients_count`.
 
 ## См. также
 
