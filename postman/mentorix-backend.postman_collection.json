@@ -1410,6 +1410,26 @@
           "response": []
         },
         {
+          "name": "POST /programs/:id/discard-unpublished",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/programs/{{program_id}}/discard-unpublished",
+            "description": "Restore working tree from latest frozen version; discards unpublished edits"
+          },
+          "response": []
+        },
+        {
           "name": "GET /programs/:id/assignments",
           "request": {
             "auth": {

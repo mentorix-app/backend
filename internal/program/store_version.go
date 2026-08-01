@@ -65,6 +65,128 @@ func (s *Store) FreezePublishedVersion(ctx context.Context, id, userID uuid.UUID
 	return s.enrichedDetail(ctx, id)
 }
 
+// RestoreWorkingTreeFromLatestVersion replaces the editable program tree with the
+// latest frozen program_version. Week/day/block/exercise row IDs are regenerated;
+// day_key values from the version are preserved.
+func (s *Store) RestoreWorkingTreeFromLatestVersion(ctx context.Context, id, userID uuid.UUID) (Detail, error) {
+	latest, err := s.q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, fmt.Errorf("latest program version: %w", err)
+	}
+	versionDetail, err := s.GetVersionDetail(ctx, pgconv.FromPGUUID(latest.ID))
+	if err != nil {
+		return Detail{}, err
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	now := time.Now().UTC()
+	programPG := pgconv.ToPGUUID(id)
+	userPG := pgconv.ToPGUUID(userID)
+
+	var category, difficulty *string
+	if versionDetail.Category != nil {
+		c := string(*versionDetail.Category)
+		category = &c
+	}
+	if versionDetail.Difficulty != nil {
+		d := string(*versionDetail.Difficulty)
+		difficulty = &d
+	}
+
+	rows, err := qtx.ReplaceProgramContent(ctx, sqlc.ReplaceProgramContentParams{
+		ID:              programPG,
+		ModifiedBy:      userPG,
+		ModifiedAt:      now,
+		Name:            versionDetail.Name,
+		NameRu:          versionDetail.NameRu,
+		Description:     versionDetail.Description,
+		DescriptionRu:   versionDetail.DescriptionRu,
+		Category:        category,
+		Difficulty:      difficulty,
+		PreviewImageUrl: versionDetail.PreviewImageURL,
+	})
+	if err != nil {
+		return Detail{}, fmt.Errorf("replace program content: %w", err)
+	}
+	if rows == 0 {
+		return Detail{}, pgx.ErrNoRows
+	}
+
+	if err := qtx.DeleteProgramWeeksByProgramID(ctx, programPG); err != nil {
+		return Detail{}, fmt.Errorf("delete program weeks: %w", err)
+	}
+
+	for _, week := range versionDetail.Weeks {
+		weekID, err := qtx.InsertProgramWeek(ctx, sqlc.InsertProgramWeekParams{
+			ProgramID:  programPG,
+			WeekNumber: int32(week.WeekNumber),
+			SortOrder:  int32(week.SortOrder),
+			ModifiedAt: now,
+			ModifiedBy: userPG,
+		})
+		if err != nil {
+			return Detail{}, fmt.Errorf("insert program week: %w", err)
+		}
+		for _, day := range week.Days {
+			dayKey := day.DayKey
+			if dayKey == uuid.Nil {
+				dayKey = uuid.New()
+			}
+			dayRow, err := qtx.InsertProgramDayWithKey(ctx, sqlc.InsertProgramDayWithKeyParams{
+				ProgramID: programPG,
+				WeekID:    weekID,
+				DayNumber: int32(day.DayNumber),
+				SortOrder: int32(day.SortOrder),
+				DayKey:    pgconv.ToPGUUID(dayKey),
+			})
+			if err != nil {
+				return Detail{}, fmt.Errorf("insert program day: %w", err)
+			}
+			for _, block := range day.Blocks {
+				blockID, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
+					ProgramWeekDayID: dayRow.ID,
+					BlockType:        string(block.BlockType),
+					Instruction:      block.Instruction,
+					SortOrder:        int32(block.SortOrder),
+					ModifiedAt:       now,
+					ModifiedBy:       userPG,
+				})
+				if err != nil {
+					return Detail{}, fmt.Errorf("insert day block: %w", err)
+				}
+				for _, ex := range block.Exercises {
+					if err := qtx.InsertBlockExercise(ctx, sqlc.InsertBlockExerciseParams{
+						ProgramWeekDayBlockID: blockID,
+						ExerciseID:            pgconv.ToPGUUID(ex.ExerciseID),
+						SortOrder:             int32(ex.SortOrder),
+						Sets:                  ex.Sets,
+						Reps:                  ex.Reps,
+						Instruction:           ex.Instruction,
+						ModifiedAt:            now,
+						ModifiedBy:            userPG,
+					}); err != nil {
+						return Detail{}, fmt.Errorf("insert block exercise: %w", err)
+					}
+				}
+			}
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
+	}
+	return s.enrichedDetail(ctx, id)
+}
+
 func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, userID uuid.UUID, now time.Time) error {
 	fp, err := DetailFingerprint(d)
 	if err != nil {

@@ -116,6 +116,15 @@ func (f *fakeProgramStore) FreezePublishedVersion(_ context.Context, _, _ uuid.U
 	return out, nil
 }
 
+func (f *fakeProgramStore) RestoreWorkingTreeFromLatestVersion(_ context.Context, _, _ uuid.UUID) (Detail, error) {
+	if f.err != nil {
+		return Detail{}, f.err
+	}
+	out := f.detail
+	out.HasUnpublishedChanges = false
+	return out, nil
+}
+
 func (f *fakeProgramStore) SoftDelete(context.Context, uuid.UUID, uuid.UUID) error {
 	return f.err
 }

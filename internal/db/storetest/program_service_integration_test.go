@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
@@ -155,6 +156,184 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	}
 	if *afterPublishUpdate.LatestProgramVersionID == *published.LatestProgramVersionID {
 		t.Fatal("expected new program version id after publish-update")
+	}
+}
+
+func TestProgramService_DiscardUnpublished(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-discard@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
+		Name:        "Row",
+		NameRu:      "Тяга",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupBack,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+
+	svc := program.NewService(pool)
+	draft, err := svc.Create(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	name := "Discard Program"
+	category := program.CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	if _, err := svc.Update(ctx, trainerID, draft.ID, program.UpdateInput{
+		Name:       &name,
+		Category:   &category,
+		Difficulty: &difficulty,
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	dayKey := draft.Weeks[0].Days[0].DayKey
+	sets, reps := "3", "8"
+	if _, err := createSingleBlock(ctx, svc, trainerID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	}); err != nil {
+		t.Fatalf("createSingleBlock: %v", err)
+	}
+
+	published, err := svc.Publish(ctx, trainerID, draft.ID)
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	publishedWeekID := published.Weeks[0].ID
+	publishedDayID := published.Weeks[0].Days[0].ID
+	if published.Weeks[0].Days[0].DayKey != dayKey {
+		t.Fatalf("day_key after publish = %s, want %s", published.Weeks[0].Days[0].DayKey, dayKey)
+	}
+
+	dirtyName := "Should be discarded"
+	afterEdit, err := svc.Update(ctx, trainerID, draft.ID, program.UpdateInput{Name: &dirtyName})
+	if err != nil {
+		t.Fatalf("Update dirty: %v", err)
+	}
+	if !afterEdit.HasUnpublishedChanges {
+		t.Fatal("expected has_unpublished_changes true after edit")
+	}
+	if _, err := svc.AddWeek(ctx, trainerID, draft.ID); err != nil {
+		t.Fatalf("AddWeek: %v", err)
+	}
+
+	restored, err := svc.DiscardUnpublished(ctx, trainerID, draft.ID)
+	if err != nil {
+		t.Fatalf("DiscardUnpublished: %v", err)
+	}
+	if restored.HasUnpublishedChanges {
+		t.Fatal("expected has_unpublished_changes false after discard")
+	}
+	if restored.Name != name {
+		t.Fatalf("name after discard = %q, want %q", restored.Name, name)
+	}
+	if len(restored.Weeks) != 1 {
+		t.Fatalf("weeks after discard = %d, want 1", len(restored.Weeks))
+	}
+	if restored.Weeks[0].ID == publishedWeekID {
+		t.Fatal("expected new week id after discard")
+	}
+	if restored.Weeks[0].Days[0].ID == publishedDayID {
+		t.Fatal("expected new day id after discard")
+	}
+	if restored.Weeks[0].Days[0].DayKey != dayKey {
+		t.Fatalf("day_key after discard = %s, want %s", restored.Weeks[0].Days[0].DayKey, dayKey)
+	}
+	if restored.LatestProgramVersionID == nil || *restored.LatestProgramVersionID != *published.LatestProgramVersionID {
+		t.Fatal("expected latest version unchanged after discard")
+	}
+
+	_, err = svc.DiscardUnpublished(ctx, trainerID, draft.ID)
+	if !errors.Is(err, program.ErrNoUnpublishedChanges) {
+		t.Fatalf("second DiscardUnpublished error = %v, want ErrNoUnpublishedChanges", err)
+	}
+}
+
+func TestProgramStore_RestoreWorkingTreeFromLatestVersion_errors(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-restore-err@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	progStore := program.NewStore(pool)
+	_, err = progStore.RestoreWorkingTreeFromLatestVersion(ctx, uuid.New(), trainerID)
+	if !errors.Is(err, program.ErrNotFound) {
+		t.Fatalf("unknown program error = %v, want ErrNotFound", err)
+	}
+
+	draft, err := progStore.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	_, err = progStore.RestoreWorkingTreeFromLatestVersion(ctx, draft.ID, trainerID)
+	if !errors.Is(err, program.ErrNotFound) {
+		t.Fatalf("draft without version error = %v, want ErrNotFound", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
+		Name:        "Pull",
+		NameRu:      "Тяга",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupBack,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+	svc := program.NewService(pool)
+	name := "Restore SoftDelete"
+	category := program.CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	if _, err := svc.Update(ctx, trainerID, draft.ID, program.UpdateInput{
+		Name:       &name,
+		Category:   &category,
+		Difficulty: &difficulty,
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	sets, reps := "2", "10"
+	if _, err := createSingleBlock(ctx, svc, trainerID, draft.ID, draft.Weeks[0].ID, draft.Weeks[0].Days[0].ID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID,
+		Sets:       &sets,
+		Reps:       &reps,
+	}); err != nil {
+		t.Fatalf("createSingleBlock: %v", err)
+	}
+	if _, err := svc.Publish(ctx, trainerID, draft.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	if err := progStore.SoftDelete(ctx, draft.ID, trainerID); err != nil {
+		t.Fatalf("SoftDelete: %v", err)
+	}
+	_, err = progStore.RestoreWorkingTreeFromLatestVersion(ctx, draft.ID, trainerID)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("soft-deleted restore error = %v, want ErrNoRows", err)
 	}
 }
 

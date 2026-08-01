@@ -95,6 +95,28 @@ UPDATE mentorix.programs SET
   preview_image_url = COALESCE(sqlc.narg('preview_image_url'), preview_image_url)
 WHERE id = sqlc.arg('id') AND deleted_at IS NULL;
 
+-- name: ReplaceProgramContent :execrows
+UPDATE mentorix.programs SET
+  modified_by = $2,
+  modified_at = $3,
+  name = $4,
+  name_ru = $5,
+  description = $6,
+  description_ru = $7,
+  category = $8,
+  difficulty = $9,
+  preview_image_url = $10
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: DeleteProgramWeeksByProgramID :exec
+DELETE FROM mentorix.program_weeks
+WHERE program_id = $1;
+
+-- name: InsertProgramDayWithKey :one
+INSERT INTO mentorix.program_week_days (program_id, week_id, day_number, sort_order, day_key)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, day_key;
+
 -- name: SetProgramStatus :execrows
 UPDATE mentorix.programs SET
   status = $2,

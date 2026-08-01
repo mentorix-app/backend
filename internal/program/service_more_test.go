@@ -385,6 +385,179 @@ func TestService_PublishUpdate_success(t *testing.T) {
 	}
 }
 
+func TestService_DiscardUnpublished_success(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	category := CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		detail: Detail{
+			Program: Program{
+				ID: programID, CreatedBy: userID, Status: StatusPublished,
+				Name: "Dirty", Category: &category, Difficulty: &difficulty,
+				HasUnpublishedChanges: true,
+			},
+		},
+	}, nil)
+
+	got, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if err != nil {
+		t.Fatalf("DiscardUnpublished() error = %v", err)
+	}
+	if got.HasUnpublishedChanges {
+		t.Fatal("expected has_unpublished_changes false")
+	}
+}
+
+func TestService_DiscardUnpublished_noChanges(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		detail: Detail{
+			Program: Program{
+				ID: programID, CreatedBy: userID, Status: StatusPublished,
+				HasUnpublishedChanges: false,
+			},
+		},
+	}, nil)
+
+	_, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if !errors.Is(err, ErrNoUnpublishedChanges) {
+		t.Fatalf("DiscardUnpublished() error = %v, want ErrNoUnpublishedChanges", err)
+	}
+}
+
+func TestService_DiscardUnpublished_notPublished(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		detail: Detail{
+			Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+		},
+	}, nil)
+
+	_, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if !errors.Is(err, ErrInvalidStatusTransition) {
+		t.Fatalf("DiscardUnpublished() error = %v, want ErrInvalidStatusTransition", err)
+	}
+}
+
+func TestService_DiscardUnpublished_archivedReadOnly(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusArchived},
+	}, nil)
+
+	_, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("DiscardUnpublished() error = %v, want ErrReadOnly", err)
+	}
+}
+
+func TestService_DiscardUnpublished_deleted(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	deleted := time.Now().UTC()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		detail: Detail{
+			Program: Program{
+				ID: programID, CreatedBy: userID, Status: StatusPublished,
+				DeletedAt:             &deleted,
+				HasUnpublishedChanges: true,
+			},
+		},
+	}, nil)
+
+	_, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DiscardUnpublished() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestService_DiscardUnpublished_getDetailNotFound(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		err:     pgx.ErrNoRows,
+	}, nil)
+	_, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DiscardUnpublished() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestService_DiscardUnpublished_getDetailStoreError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	want := errors.New("db down")
+	svc := testService(&fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		err:     want,
+	}, nil)
+	_, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if !errors.Is(err, want) {
+		t.Fatalf("DiscardUnpublished() error = %v, want %v", err, want)
+	}
+}
+
+type restoreErrStore struct {
+	fakeProgramStore
+	restoreErr error
+}
+
+func (r *restoreErrStore) RestoreWorkingTreeFromLatestVersion(context.Context, uuid.UUID, uuid.UUID) (Detail, error) {
+	return Detail{}, r.restoreErr
+}
+
+func TestService_DiscardUnpublished_restoreStoreError(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	want := errors.New("restore failed")
+	svc := testService(&restoreErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+			detail: Detail{
+				Program: Program{
+					ID: programID, CreatedBy: userID, Status: StatusPublished,
+					HasUnpublishedChanges: true,
+				},
+			},
+		},
+		restoreErr: want,
+	}, nil)
+	_, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if !errors.Is(err, want) {
+		t.Fatalf("DiscardUnpublished() error = %v, want %v", err, want)
+	}
+}
+
+func TestService_DiscardUnpublished_restoreNotFound(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	svc := testService(&restoreErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+			detail: Detail{
+				Program: Program{
+					ID: programID, CreatedBy: userID, Status: StatusPublished,
+					HasUnpublishedChanges: true,
+				},
+			},
+		},
+		restoreErr: pgx.ErrNoRows,
+	}, nil)
+	_, err := svc.DiscardUnpublished(context.Background(), userID, programID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DiscardUnpublished() error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestService_ListAssignments_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()

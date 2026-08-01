@@ -239,6 +239,16 @@ func (q *Queries) DeleteProgramWeek(ctx context.Context, arg DeleteProgramWeekPa
 	return result.RowsAffected(), nil
 }
 
+const deleteProgramWeeksByProgramID = `-- name: DeleteProgramWeeksByProgramID :exec
+DELETE FROM mentorix.program_weeks
+WHERE program_id = $1
+`
+
+func (q *Queries) DeleteProgramWeeksByProgramID(ctx context.Context, programID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteProgramWeeksByProgramID, programID)
+	return err
+}
+
 const exerciseExists = `-- name: ExerciseExists :one
 SELECT EXISTS(
   SELECT 1 FROM mentorix.exercises WHERE id = $1 AND deleted_at IS NULL
@@ -472,6 +482,38 @@ func (q *Queries) InsertProgramDayAuto(ctx context.Context, arg InsertProgramDay
 		arg.SortOrder,
 	)
 	return err
+}
+
+const insertProgramDayWithKey = `-- name: InsertProgramDayWithKey :one
+INSERT INTO mentorix.program_week_days (program_id, week_id, day_number, sort_order, day_key)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, day_key
+`
+
+type InsertProgramDayWithKeyParams struct {
+	ProgramID pgtype.UUID `json:"program_id"`
+	WeekID    pgtype.UUID `json:"week_id"`
+	DayNumber int32       `json:"day_number"`
+	SortOrder int32       `json:"sort_order"`
+	DayKey    pgtype.UUID `json:"day_key"`
+}
+
+type InsertProgramDayWithKeyRow struct {
+	ID     pgtype.UUID `json:"id"`
+	DayKey pgtype.UUID `json:"day_key"`
+}
+
+func (q *Queries) InsertProgramDayWithKey(ctx context.Context, arg InsertProgramDayWithKeyParams) (InsertProgramDayWithKeyRow, error) {
+	row := q.db.QueryRow(ctx, insertProgramDayWithKey,
+		arg.ProgramID,
+		arg.WeekID,
+		arg.DayNumber,
+		arg.SortOrder,
+		arg.DayKey,
+	)
+	var i InsertProgramDayWithKeyRow
+	err := row.Scan(&i.ID, &i.DayKey)
+	return i, err
 }
 
 const insertProgramDraft = `-- name: InsertProgramDraft :one
@@ -1047,6 +1089,52 @@ func (q *Queries) NextProgramWeekNumbers(ctx context.Context, programID pgtype.U
 	var i NextProgramWeekNumbersRow
 	err := row.Scan(&i.NextWeekNumber, &i.NextSortOrder)
 	return i, err
+}
+
+const replaceProgramContent = `-- name: ReplaceProgramContent :execrows
+UPDATE mentorix.programs SET
+  modified_by = $2,
+  modified_at = $3,
+  name = $4,
+  name_ru = $5,
+  description = $6,
+  description_ru = $7,
+  category = $8,
+  difficulty = $9,
+  preview_image_url = $10
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type ReplaceProgramContentParams struct {
+	ID              pgtype.UUID `json:"id"`
+	ModifiedBy      pgtype.UUID `json:"modified_by"`
+	ModifiedAt      time.Time   `json:"modified_at"`
+	Name            string      `json:"name"`
+	NameRu          string      `json:"name_ru"`
+	Description     string      `json:"description"`
+	DescriptionRu   string      `json:"description_ru"`
+	Category        *string     `json:"category"`
+	Difficulty      *string     `json:"difficulty"`
+	PreviewImageUrl string      `json:"preview_image_url"`
+}
+
+func (q *Queries) ReplaceProgramContent(ctx context.Context, arg ReplaceProgramContentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replaceProgramContent,
+		arg.ID,
+		arg.ModifiedBy,
+		arg.ModifiedAt,
+		arg.Name,
+		arg.NameRu,
+		arg.Description,
+		arg.DescriptionRu,
+		arg.Category,
+		arg.Difficulty,
+		arg.PreviewImageUrl,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setProgramStatus = `-- name: SetProgramStatus :execrows
