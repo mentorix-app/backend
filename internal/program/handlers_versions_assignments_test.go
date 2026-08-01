@@ -104,6 +104,43 @@ func TestHandlers_PublishUpdate_noChanges(t *testing.T) {
 	assertHTTPError(t, err, http.StatusUnprocessableEntity)
 }
 
+func TestHandlers_DiscardUnpublished_success(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	detail := publishableDetail(userID, programID)
+	detail.Status = StatusPublished
+	detail.HasUnpublishedChanges = true
+	store := &assignmentVersionStore{fakeProgramStore: fakeProgramStore{
+		program: detail.Program,
+		detail:  detail,
+	}}
+	h := programHandler(store)
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/discard-unpublished", "", userID, map[string]string{"id": programID.String()})
+
+	if err := h.DiscardUnpublished(c); err != nil {
+		t.Fatalf("DiscardUnpublished: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_DiscardUnpublished_noChanges(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	detail := publishableDetail(userID, programID)
+	detail.Status = StatusPublished
+	store := &assignmentVersionStore{fakeProgramStore: fakeProgramStore{
+		program: detail.Program,
+		detail:  detail,
+	}}
+	h := programHandler(store)
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/discard-unpublished", "", userID, map[string]string{"id": programID.String()})
+
+	err := h.DiscardUnpublished(c)
+	assertHTTPError(t, err, http.StatusUnprocessableEntity)
+}
+
 func TestHandlers_ListAssignments_success(t *testing.T) {
 	userID := uuid.New()
 	programID := uuid.New()

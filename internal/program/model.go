@@ -23,7 +23,7 @@ var (
 	ErrClientNotFound          = errors.New("client not found")
 	ErrProgramNotPublished     = errors.New("program is not published")
 	ErrAlreadyAssigned         = errors.New("program already assigned")
-	ErrNoUnpublishedChanges    = errors.New("no unpublished changes to publish")
+	ErrNoUnpublishedChanges    = errors.New("no unpublished changes")
 	ErrInvalidSyncRequest      = errors.New("invalid sync request")
 	ErrVersionHasAssignments   = errors.New("version has assignments")
 	ErrSoleProgramVersion      = errors.New("cannot delete the only program version")

@@ -115,7 +115,7 @@ func TestHandlers_Mount_registersRoutes(t *testing.T) {
 	if !found["GET /programs"] || !found["POST /programs"] {
 		t.Fatalf("routes missing: %v", found)
 	}
-	if !found["POST /programs/:id/publish-update"] || !found["GET /programs/:id/assignments"] {
+	if !found["POST /programs/:id/publish-update"] || !found["POST /programs/:id/discard-unpublished"] || !found["GET /programs/:id/assignments"] {
 		t.Fatalf("assignment/version routes missing: %v", found)
 	}
 }

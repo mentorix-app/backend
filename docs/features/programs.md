@@ -23,7 +23,7 @@
 - Publish из `archived` — только смена статуса, без новой версии.
 - Publish (draft): валидация name/category/difficulty, ≥1 неделя; в каждом непустом дне — блоки с упражнениями (`single`: 1 упражнение; группа: ≥1); `sets`/`reps` опциональны (`null`/omit); при значении — строка: только цифры (`3`), один `/` (`5/4`) или один `-` (`3-6`).
 - `training_days_count` в `Program` / `ProgramDetail`: число дней с ≥1 блоком или упражнением (пустые дни не считаются); в списке — из SQL, в `GET /programs/{id}` — из загруженных недель.
-- Published: in-place edit + `has_unpublished_changes`; publish-update — новая версия.
+- Published: in-place edit + `has_unpublished_changes`; publish-update — новая версия; discard-unpublished — откат working copy к latest version (клиенты и frozen-версии без изменений; `day_key` сохраняются, id недель/дней/блоков новые).
 - Trainer видит свои; admin — все, но **только просмотр**: любые мутации не-владельцем → `403`.
 - Квота тарифа на активные программы (draft+published): создание драфта и re-publish из archive — `409 quota_exceeded` при заполненном лимите; мутации существующих блокируются при превышении (read-only после даунгрейда); archive/delete всегда разрешены. См. [subscriptions.md](subscriptions.md).
 - `POST /programs/{id}/assignments/sync` — только владелец программы (`created_by`); admin без владения → `403` (как assign). После sync — авто-cleanup неиспользуемых версий.

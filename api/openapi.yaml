@@ -703,6 +703,38 @@ paths:
         "422":
           description: Publish validation failed
 
+  /programs/{id}/discard-unpublished:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+    post:
+      tags: [programs]
+      summary: Discard unpublished changes
+      description: >
+        Restores the working program tree from the latest frozen program_version.
+        Does not create a new version and does not change client assignments.
+        Week/day/block/exercise row IDs are regenerated; day_key values are preserved.
+        Requires has_unpublished_changes.
+      operationId: discardProgramUnpublished
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Program restored to latest published version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program not found
+        "409":
+          description: Program is not published
+        "422":
+          description: No unpublished changes to discard
+
   /programs/{id}/assignments:
     parameters:
       - $ref: "#/components/parameters/ProgramId"

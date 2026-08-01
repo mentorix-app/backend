@@ -23,6 +23,7 @@ type programStore interface {
 	PublishFromDraft(ctx context.Context, id, userID uuid.UUID, d Detail) (Detail, error)
 	Republish(ctx context.Context, id, userID uuid.UUID) (Detail, error)
 	FreezePublishedVersion(ctx context.Context, id, userID uuid.UUID, d Detail) (Detail, error)
+	RestoreWorkingTreeFromLatestVersion(ctx context.Context, id, userID uuid.UUID) (Detail, error)
 	SoftDelete(ctx context.Context, id, userID uuid.UUID) error
 	DeleteProgramAssignments(ctx context.Context, programID uuid.UUID) error
 	AddWeek(ctx context.Context, programID uuid.UUID) (Detail, error)
@@ -215,6 +216,36 @@ func (s *Service) PublishUpdate(ctx context.Context, userID, id uuid.UUID) (Deta
 		return Detail{}, err
 	}
 	out, err := s.store.FreezePublishedVersion(ctx, id, userID, d)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return out, nil
+}
+
+func (s *Service) DiscardUnpublished(ctx context.Context, userID, id uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, id); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.GetDetail(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	if d.DeletedAt != nil {
+		return Detail{}, ErrNotFound
+	}
+	if d.Status != StatusPublished {
+		return Detail{}, ErrInvalidStatusTransition
+	}
+	if !d.HasUnpublishedChanges {
+		return Detail{}, ErrNoUnpublishedChanges
+	}
+	out, err := s.store.RestoreWorkingTreeFromLatestVersion(ctx, id, userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound

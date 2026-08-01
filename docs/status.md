@@ -12,7 +12,7 @@
 | Admin (роль отдельно от trainer; глобальные упражнения, тарифы, просмотр) | [features/admin.md](features/admin.md) |
 | Тарифы тренеров (free/advance/elite, квоты, read-only, admin-грант, `/plans`, subscription в `/auth/me`) | [features/subscriptions.md](features/subscriptions.md) |
 | Упражнения (глобальные + тренерские, scope, квота, soft delete) | [features/exercises.md](features/exercises.md) |
-| Программы (CRUD, publish, версии, assignments, sync) | [features/programs.md](features/programs.md) |
+| Программы (CRUD, publish, discard-unpublished, версии, assignments, sync) | [features/programs.md](features/programs.md) |
 | Назначение программы клиенту | [features/trainer-clients.md](features/trainer-clients.md) |
 | Инвайты тренер → клиент (Telegram deep link) | [features/trainer-invites.md](features/trainer-invites.md) |
 | Telegram-бот: /start, accept, меню, программа, отметка тренировок, push (фазы 1–4) | [features/telegram-bot.md](features/telegram-bot.md), [features/workout-completions.md](features/workout-completions.md) |

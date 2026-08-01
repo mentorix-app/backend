@@ -38,6 +38,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.DELETE("/:id", h.Delete)
 	g.POST("/:id/publish", h.Publish)
 	g.POST("/:id/publish-update", h.PublishUpdate)
+	g.POST("/:id/discard-unpublished", h.DiscardUnpublished)
 	g.POST("/:id/archive", h.Archive)
 	g.GET("/:id/assignments", h.ListAssignments)
 	g.POST("/:id/assignments/sync", h.SyncAssignments)
@@ -286,6 +287,12 @@ func (h *Handlers) Publish(c echo.Context) error {
 func (h *Handlers) PublishUpdate(c echo.Context) error {
 	return h.statusAction(c, func(ctx echo.Context, uid, id uuid.UUID) (Detail, error) {
 		return h.svc.PublishUpdate(ctx.Request().Context(), uid, id)
+	})
+}
+
+func (h *Handlers) DiscardUnpublished(c echo.Context) error {
+	return h.statusAction(c, func(ctx echo.Context, uid, id uuid.UUID) (Detail, error) {
+		return h.svc.DiscardUnpublished(ctx.Request().Context(), uid, id)
 	})
 }
 
