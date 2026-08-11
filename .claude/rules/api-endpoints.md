@@ -1,9 +1,3 @@
----
-description: REST API endpoints and contract alignment
-globs: "api/**/*,internal/**/handlers*.go,internal/auth/apitypes.go,internal/apicheck/**/*,postman/**/*"
-alwaysApply: false
----
-
 # API endpoints
 
 Canon: [api/openapi.yaml](../../api/openapi.yaml). Do not duplicate full path lists in docs.

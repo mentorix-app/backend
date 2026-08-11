@@ -1,9 +1,3 @@
----
-description: Redis key naming and value conventions
-globs: internal/**/*
-alwaysApply: false
----
-
 # Redis naming
 
 Canon: prefix `const` in the package that owns the data.
@@ -42,7 +36,7 @@ Prefer plain string keys over hashes unless one identity needs multiple fields.
 1. New `{domain}` segment — do not piggyback on another feature's prefix.
 2. `const …KeyPrefix` in the owning package.
 3. Add a row to **Current keys** below.
-4. Feature docs describe *what* is stored, not the full naming spec ([docs-and-rules-maintenance.mdc](docs-and-rules-maintenance.mdc)).
+4. Feature docs describe *what* is stored, not the full naming spec ([docs-and-rules-maintenance.md](docs-and-rules-maintenance.md)).
 
 ## Current keys
 

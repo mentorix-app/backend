@@ -1,9 +1,3 @@
----
-description: Go code layout, naming, and quality (Mentorix)
-globs: "**/*.go"
-alwaysApply: false
----
-
 # Go code
 
 Optional general style: [Google Go Style](https://google.github.io/styleguide/go/) (not project canon).

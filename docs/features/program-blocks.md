@@ -10,7 +10,7 @@
 
 ## БД
 
-Дерево (см. [database-naming.mdc](../../.cursor/rules/database-naming.mdc)):
+Дерево (см. [database-naming.md](../../.claude/rules/database-naming.md)):
 
 ```text
 program_week_days → program_week_day_blocks → program_week_day_block_exercises
@@ -75,7 +75,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 1. `db/migrations/000014_program_day_blocks.up.sql` — таблицы блоков, alter exercises, version-дерево, data migration, drop `weight_kg`.
 2. `db/queries/program.sql`, `program_version.sql` — CRUD блоков.
 3. `sqlc generate`, `make schema-sync`.
-4. Обновить `database-naming.mdc` (дерево), `architecture.md`, `status.md` (номер миграции).
+4. Обновить `database-naming.md` (дерево), `architecture.md`, `status.md` (номер миграции).
 
 ### Фаза 2 — домен и чтение
 
@@ -119,7 +119,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | Обновить упражнение | `PUT .../blocks/{block_id}/exercises/{item_id}` |
 | Удалить упражнение | `DELETE .../blocks/{block_id}/exercises/{item_id}` |
 | Добавить в группу | `POST .../blocks/{block_id}/exercises` |
-| merge / ungroup / move / reorder | см. [api-endpoints.mdc](../../.cursor/rules/api-endpoints.mdc) § Program week subtree; reorder — полный список id siblings |
+| merge / ungroup / move / reorder | см. [api-endpoints.md](../../.claude/rules/api-endpoints.md) § Program week subtree; reorder — полный список id siblings |
 
 ## Вне MVP
 
