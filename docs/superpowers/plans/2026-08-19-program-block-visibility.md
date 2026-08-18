@@ -23,6 +23,8 @@
 - Проверка идёт против working copy **и** каждой версии, на которой висит активное назначение этой программы.
 - `merge` блоков с разными наборами клиентов запрещён (`400`).
 - `block_key` наружу в API не выходит: тег `json:"-"`.
+- `client_user_ids` всегда сериализуется массивом — `[]` для общего блока,
+  никогда `null`. В OpenAPI поле не `nullable`.
 - После изменений в `db/migrations/` — `make schema-sync`; после изменений в `db/queries/` — `sqlc generate`.
 - Каждая задача завершается коммитом; pre-commit прогоняет `make check-ci`.
 - Коммиты — Conventional Commits на английском. `feat` только для user-facing поведения.
@@ -470,12 +472,18 @@ func (s *Store) listProgramBlockClients(ctx context.Context, programID uuid.UUID
 }
 
 // applyBlockClients fills DayBlock.ClientUserIDs from the rules map.
+// A block with no rules gets an empty, non-nil slice: the field must serialize
+// as [] and never as null, so a consumer has one shape to handle, not two.
 func applyBlockClients(d *Detail, rules map[uuid.UUID][]uuid.UUID) {
 	for wi := range d.Weeks {
 		for di := range d.Weeks[wi].Days {
 			for bi := range d.Weeks[wi].Days[di].Blocks {
 				block := &d.Weeks[wi].Days[di].Blocks[bi]
-				block.ClientUserIDs = rules[block.BlockKey]
+				ids := rules[block.BlockKey]
+				if ids == nil {
+					ids = []uuid.UUID{}
+				}
+				block.ClientUserIDs = ids
 			}
 		}
 	}
