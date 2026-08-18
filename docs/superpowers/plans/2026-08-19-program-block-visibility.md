@@ -181,9 +181,10 @@ CREATE TABLE mentorix.program_block_clients (
     UNIQUE (program_id, block_key, client_user_id)
 );
 
-CREATE INDEX program_block_clients_program_id_block_key_idx
-  ON mentorix.program_block_clients (program_id, block_key);
-
+-- No index on (program_id, block_key): the UNIQUE constraint above already
+-- creates a b-tree on (program_id, block_key, client_user_id), whose leftmost
+-- prefix serves those lookups. client_user_id is the third column, so it needs
+-- its own index for "all rules of this client".
 CREATE INDEX program_block_clients_client_user_id_idx
   ON mentorix.program_block_clients (client_user_id);
 ```
@@ -226,12 +227,27 @@ Expected: обе команды без ошибок.
 Run: `./scripts/docs-check.sh`
 Expected: `docs-check passed.`
 
+- [ ] **Step 8a: Дописать колонку в feature-док**
+
+`docs/features/program-blocks.md` перечисляет колонки `program_week_day_blocks`
+таблицей. Добавить в неё строку — иначе список молча расходится со схемой, а
+`CLAUDE.md` § «Docs sync» требует обновлять таблицы feature-дока при изменении
+`db/migrations/`:
+
+```markdown
+| `block_key` | uuid NOT NULL DEFAULT `gen_random_uuid()` | стабильная идентичность блока между publish и discard |
+```
+
+`docs-check.sh` это не ловит — он проверяет структуру, а не соответствие схеме.
+
 - [ ] **Step 9: Коммит**
 
 ```bash
 git add db/migrations/000026_program_block_visibility.up.sql \
         db/migrations/000026_program_block_visibility.down.sql \
         db/schema.sql docs/status.md docs/architecture.md \
+        docs/features/program-blocks.md \
+        internal/db/sqlc/ \
         internal/db/storetest/program_block_visibility_integration_test.go
 git commit -m "feat(db): stable block_key and program_block_clients table"
 ```
