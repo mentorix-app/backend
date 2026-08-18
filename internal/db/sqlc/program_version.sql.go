@@ -254,7 +254,7 @@ INSERT INTO mentorix.program_version_week_day_blocks (
   instruction,
   sort_order
 ) VALUES ($1, $2, $3, $4)
-RETURNING id, program_version_week_day_id, block_type, instruction, sort_order, created_at
+RETURNING id, program_version_week_day_id, block_type, instruction, sort_order, created_at, block_key
 `
 
 type InsertProgramVersionDayBlockParams struct {
@@ -279,6 +279,7 @@ func (q *Queries) InsertProgramVersionDayBlock(ctx context.Context, arg InsertPr
 		&i.Instruction,
 		&i.SortOrder,
 		&i.CreatedAt,
+		&i.BlockKey,
 	)
 	return i, err
 }
@@ -356,7 +357,7 @@ func (q *Queries) InsertProgramVersionWeek(ctx context.Context, arg InsertProgra
 }
 
 const listProgramVersionDayBlocksByVersionID = `-- name: ListProgramVersionDayBlocksByVersionID :many
-SELECT pvb.id, pvb.program_version_week_day_id, pvb.block_type, pvb.instruction, pvb.sort_order, pvb.created_at
+SELECT pvb.id, pvb.program_version_week_day_id, pvb.block_type, pvb.instruction, pvb.sort_order, pvb.created_at, pvb.block_key
 FROM mentorix.program_version_week_day_blocks pvb
 JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
 WHERE pd.program_version_id = $1
@@ -379,6 +380,7 @@ func (q *Queries) ListProgramVersionDayBlocksByVersionID(ctx context.Context, pr
 			&i.Instruction,
 			&i.SortOrder,
 			&i.CreatedAt,
+			&i.BlockKey,
 		); err != nil {
 			return nil, err
 		}

@@ -108,6 +108,15 @@ type MentorixProgramAssignment struct {
 	CompletionCycleID pgtype.UUID `json:"completion_cycle_id"`
 }
 
+type MentorixProgramBlockClient struct {
+	ID           pgtype.UUID `json:"id"`
+	ProgramID    pgtype.UUID `json:"program_id"`
+	BlockKey     pgtype.UUID `json:"block_key"`
+	ClientUserID pgtype.UUID `json:"client_user_id"`
+	CreatedAt    time.Time   `json:"created_at"`
+	CreatedBy    pgtype.UUID `json:"created_by"`
+}
+
 type MentorixProgramVersion struct {
 	ID                 pgtype.UUID `json:"id"`
 	ProgramID          pgtype.UUID `json:"program_id"`
@@ -150,6 +159,7 @@ type MentorixProgramVersionWeekDayBlock struct {
 	Instruction             string      `json:"instruction"`
 	SortOrder               int32       `json:"sort_order"`
 	CreatedAt               time.Time   `json:"created_at"`
+	BlockKey                pgtype.UUID `json:"block_key"`
 }
 
 type MentorixProgramVersionWeekDayBlockExercise struct {
@@ -194,6 +204,7 @@ type MentorixProgramWeekDayBlock struct {
 	CreatedAt        time.Time   `json:"created_at"`
 	ModifiedAt       time.Time   `json:"modified_at"`
 	ModifiedBy       pgtype.UUID `json:"modified_by"`
+	BlockKey         pgtype.UUID `json:"block_key"`
 }
 
 type MentorixProgramWeekDayBlockExercise struct {

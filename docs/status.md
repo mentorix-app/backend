@@ -25,5 +25,5 @@
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |
 | Garbage cleanup (assignments one-row, auto version purge, invites, Redis stale, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Миграции: версия 25 (`./scripts/migrate-check.sh`)._
+_Миграции: версия 26 (`./scripts/migrate-check.sh`)._
 
