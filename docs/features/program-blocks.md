@@ -50,7 +50,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | `client_user_id` | uuid FK → `users` | |
 | `created_at`, `created_by` | | |
 
-UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id, block_key)` нет → блок виден всем клиентам программы — отдельного boolean-флага нет. `GET .../programs/{id}` возвращает список в `blocks[].client_user_ids`; пусто/отсутствует = виден всем. Управление правилами (запись) — вне текущего MVP.
+UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id, block_key)` нет → блок виден всем клиентам программы — отдельного boolean-флага нет. `GET .../programs/{id}` возвращает `blocks[].client_user_ids`: пустой массив `[]`, никогда `null` — виден всем клиентам программы. Управление правилами (запись) — вне текущего MVP.
 
 **`sort_order`:** после любой операции, затрагивающей порядок (create, move, reorder, delete, merge, ungroup, extract), store нормализует siblings к уникальным `1..N` без дублей. Ответ `GET /programs/{id}` — дерево уже отсортировано по `sort_order`.
 

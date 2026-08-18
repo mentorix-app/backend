@@ -198,12 +198,18 @@ func (s *Store) listProgramBlockClients(ctx context.Context, programID uuid.UUID
 }
 
 // applyBlockClients fills DayBlock.ClientUserIDs from the rules map.
+// A block with no rules gets an empty, non-nil slice: the field must serialize
+// as [] and never as null, so a consumer has one shape to handle, not two.
 func applyBlockClients(d *Detail, rules map[uuid.UUID][]uuid.UUID) {
 	for wi := range d.Weeks {
 		for di := range d.Weeks[wi].Days {
 			for bi := range d.Weeks[wi].Days[di].Blocks {
 				block := &d.Weeks[wi].Days[di].Blocks[bi]
-				block.ClientUserIDs = rules[block.BlockKey]
+				ids := rules[block.BlockKey]
+				if ids == nil {
+					ids = []uuid.UUID{}
+				}
+				block.ClientUserIDs = ids
 			}
 		}
 	}
