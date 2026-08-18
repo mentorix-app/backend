@@ -59,26 +59,23 @@
 
 ```sql
 ALTER TABLE mentorix.program_week_day_blocks
-  ADD COLUMN program_id uuid,
   ADD COLUMN block_key uuid NOT NULL DEFAULT gen_random_uuid();
 
--- backfill program_id: program_week_day_blocks → program_week_days.program_id
--- затем SET NOT NULL + FK → programs(id) ON DELETE CASCADE
-
-ALTER TABLE mentorix.program_week_day_blocks
-  ADD CONSTRAINT program_week_day_blocks_program_id_block_key_uniq
-  UNIQUE (program_id, block_key);
-
 ALTER TABLE mentorix.program_version_week_day_blocks
-  ADD COLUMN block_key uuid;
--- backfill сопоставлением с блоком шаблона по (week_number, day_number, sort_order),
--- COALESCE(..., gen_random_uuid()) для несопоставленных — как 000020 делал для day_key;
--- затем SET NOT NULL
+  ADD COLUMN block_key uuid NOT NULL DEFAULT gen_random_uuid();
+-- затем backfill: сопоставить замороженный блок с блоком шаблона по
+-- (week_number, day_number, sort_order) — как 000020 делал для day_key.
+-- Несопоставленные строки остаются со случайным ключом от дефолта.
 ```
 
-`program_id` на блоке — денормализация. Она нужна, чтобы выразить уникальность
-ключа в БД, и повторяет то, что уже сделано у `program_week_days` (там
-`program_id` и `week_id` лежат рядом).
+`DEFAULT gen_random_uuid()` на обеих колонках — обязательное условие, а не
+удобство: существующие `InsertDayBlock` и `InsertProgramVersionDayBlock` про
+`block_key` не знают, и без дефолта миграция сломала бы любую вставку блока.
+
+Отдельной колонки `program_id` на блоке нет. Она понадобилась бы только ради
+`UNIQUE (program_id, block_key)`, но ни один запрос фичи её не читает, а
+уникальность ключа даёт генерация uuid. `program_id` блока достаётся джойном
+через `program_week_days`, где он уже лежит.
 
 ### Правила видимости
 
@@ -241,8 +238,10 @@ Working copy: день 3 = [A, B, C]      C — общий
 DELETE FROM mentorix.program_block_clients pbc
 WHERE pbc.program_id = $1
   AND NOT EXISTS (
-    SELECT 1 FROM mentorix.program_week_day_blocks b
-    WHERE b.program_id = pbc.program_id AND b.block_key = pbc.block_key
+    SELECT 1
+    FROM mentorix.program_week_day_blocks b
+    JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+    WHERE d.program_id = pbc.program_id AND b.block_key = pbc.block_key
   )
   AND NOT EXISTS (
     SELECT 1

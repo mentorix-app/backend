@@ -39,7 +39,12 @@
 
 **Interfaces:**
 - Consumes: ничего.
-- Produces: колонки `program_week_day_blocks.program_id`, `program_week_day_blocks.block_key`, `program_version_week_day_blocks.block_key`; таблица `mentorix.program_block_clients (id, program_id, block_key, client_user_id, created_at, created_by)`.
+- Produces: колонки `program_week_day_blocks.block_key` и `program_version_week_day_blocks.block_key` (обе `NOT NULL DEFAULT gen_random_uuid()`); таблица `mentorix.program_block_clients (id, program_id, block_key, client_user_id, created_at, created_by)`.
+
+Колонки `program_id` на блоке **нет**: её единственным назначением был бы
+`UNIQUE (program_id, block_key)`, но ни один запрос фичи её не читает, а
+уникальность ключа обеспечивается генерацией uuid. `program_id` для блока
+достаётся джойном через `program_week_days`, где он уже есть.
 
 - [ ] **Step 1: Написать падающий интеграционный тест**
 
@@ -52,6 +57,7 @@ package storetest
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -59,30 +65,30 @@ func TestMigration_BlockKeyColumnsExist(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	var templateNulls int
-	err := pool.QueryRow(ctx, `
-		SELECT count(*) FROM mentorix.program_week_day_blocks
-		WHERE block_key IS NULL OR program_id IS NULL`).Scan(&templateNulls)
-	if err != nil {
-		t.Fatalf("query template blocks: %v", err)
-	}
-	if templateNulls != 0 {
-		t.Fatalf("template blocks with NULL block_key/program_id = %d, want 0", templateNulls)
-	}
-
-	var versionNulls int
-	err = pool.QueryRow(ctx, `
-		SELECT count(*) FROM mentorix.program_version_week_day_blocks
-		WHERE block_key IS NULL`).Scan(&versionNulls)
-	if err != nil {
-		t.Fatalf("query version blocks: %v", err)
-	}
-	if versionNulls != 0 {
-		t.Fatalf("version blocks with NULL block_key = %d, want 0", versionNulls)
+	// Both block_key columns must be NOT NULL *and* carry a generated default:
+	// the existing insert queries do not mention block_key until Tasks 2 and 3,
+	// so without the default this migration breaks every block insert.
+	for _, table := range []string{"program_week_day_blocks", "program_version_week_day_blocks"} {
+		var isNullable string
+		var columnDefault *string
+		err := pool.QueryRow(ctx, `
+			SELECT is_nullable, column_default
+			FROM information_schema.columns
+			WHERE table_schema = 'mentorix' AND table_name = $1 AND column_name = 'block_key'`,
+			table).Scan(&isNullable, &columnDefault)
+		if err != nil {
+			t.Fatalf("query %s.block_key: %v", table, err)
+		}
+		if isNullable != "NO" {
+			t.Fatalf("%s.block_key is_nullable = %q, want NO", table, isNullable)
+		}
+		if columnDefault == nil || !strings.Contains(*columnDefault, "gen_random_uuid") {
+			t.Fatalf("%s.block_key default = %v, want gen_random_uuid()", table, columnDefault)
+		}
 	}
 
 	var hasTable bool
-	err = pool.QueryRow(ctx, `
+	err := pool.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1 FROM information_schema.tables
 			WHERE table_schema = 'mentorix' AND table_name = 'program_block_clients')`).Scan(&hasTable)
@@ -97,12 +103,12 @@ func TestMigration_BlockKeyColumnsExist(t *testing.T) {
 	err = pool.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1 FROM pg_constraint
-			WHERE conname = 'program_week_day_blocks_program_id_block_key_uniq')`).Scan(&hasUniq)
+			WHERE conname = 'program_block_clients_program_block_key_client_uniq')`).Scan(&hasUniq)
 	if err != nil {
 		t.Fatalf("query pg_constraint: %v", err)
 	}
 	if !hasUniq {
-		t.Fatal("unique constraint on (program_id, block_key) is missing")
+		t.Fatal("unique constraint on program_block_clients is missing")
 	}
 }
 ```
@@ -116,40 +122,32 @@ Expected: FAIL — `column "block_key" does not exist`.
 
 Создать `db/migrations/000026_program_block_visibility.up.sql`:
 
+Both columns carry `DEFAULT gen_random_uuid()`. That is load-bearing, not
+cosmetic: existing `InsertDayBlock` and `InsertProgramVersionDayBlock` do not
+mention `block_key` and only start doing so in Tasks 2 and 3. Without the
+default, this migration alone would break every block insert in the suite.
+
 ```sql
 -- Stable block identity across publish/discard + per-client block visibility rules.
 
 ALTER TABLE mentorix.program_week_day_blocks
-  ADD COLUMN program_id uuid,
   ADD COLUMN block_key uuid NOT NULL DEFAULT gen_random_uuid();
 
-UPDATE mentorix.program_week_day_blocks b
-SET program_id = d.program_id
-FROM mentorix.program_week_days d
-WHERE d.id = b.program_week_day_id;
-
-ALTER TABLE mentorix.program_week_day_blocks
-  ALTER COLUMN program_id SET NOT NULL;
-
-ALTER TABLE mentorix.program_week_day_blocks
-  ADD CONSTRAINT program_week_day_blocks_program_id_fkey
-  FOREIGN KEY (program_id) REFERENCES mentorix.programs (id) ON DELETE CASCADE;
-
-ALTER TABLE mentorix.program_week_day_blocks
-  ADD CONSTRAINT program_week_day_blocks_program_id_block_key_uniq
-  UNIQUE (program_id, block_key);
+CREATE INDEX program_week_day_blocks_block_key_idx
+  ON mentorix.program_week_day_blocks (block_key);
 
 ALTER TABLE mentorix.program_version_week_day_blocks
-  ADD COLUMN block_key uuid;
+  ADD COLUMN block_key uuid NOT NULL DEFAULT gen_random_uuid();
 
--- Best-effort backfill: match a frozen block to its template block by
--- (week_number, day_number, sort_order). Same approach 000020 used for day_key.
+-- Best-effort backfill: point a frozen block at its template block's key, matched
+-- by (week_number, day_number, sort_order). Same approach 000020 used for day_key.
+-- Rows with no template match keep the random key the column default gave them.
 UPDATE mentorix.program_version_week_day_blocks vb
 SET block_key = sub.block_key
 FROM (
   SELECT
     vb2.id AS version_block_id,
-    COALESCE(tb.block_key, gen_random_uuid()) AS block_key
+    tb.block_key AS block_key
   FROM mentorix.program_version_week_day_blocks vb2
   JOIN mentorix.program_version_week_days vd
     ON vd.id = vb2.program_version_week_day_id
@@ -157,25 +155,17 @@ FROM (
     ON vw.id = vd.program_version_week_id
   JOIN mentorix.program_versions v
     ON v.id = vd.program_version_id
-  LEFT JOIN mentorix.program_weeks tw
+  JOIN mentorix.program_weeks tw
     ON tw.program_id = v.program_id
    AND tw.week_number = vw.week_number
-  LEFT JOIN mentorix.program_week_days td
+  JOIN mentorix.program_week_days td
     ON td.week_id = tw.id
    AND td.day_number = vd.day_number
-  LEFT JOIN mentorix.program_week_day_blocks tb
+  JOIN mentorix.program_week_day_blocks tb
     ON tb.program_week_day_id = td.id
    AND tb.sort_order = vb2.sort_order
 ) sub
-WHERE vb.id = sub.version_block_id
-  AND vb.block_key IS NULL;
-
-UPDATE mentorix.program_version_week_day_blocks
-SET block_key = gen_random_uuid()
-WHERE block_key IS NULL;
-
-ALTER TABLE mentorix.program_version_week_day_blocks
-  ALTER COLUMN block_key SET NOT NULL;
+WHERE vb.id = sub.version_block_id;
 
 CREATE INDEX program_version_week_day_blocks_block_key_idx
   ON mentorix.program_version_week_day_blocks (block_key);
@@ -206,19 +196,12 @@ CREATE INDEX program_block_clients_client_user_id_idx
 DROP TABLE IF EXISTS mentorix.program_block_clients;
 
 DROP INDEX IF EXISTS mentorix.program_version_week_day_blocks_block_key_idx;
-
 ALTER TABLE mentorix.program_version_week_day_blocks
   DROP COLUMN IF EXISTS block_key;
 
+DROP INDEX IF EXISTS mentorix.program_week_day_blocks_block_key_idx;
 ALTER TABLE mentorix.program_week_day_blocks
-  DROP CONSTRAINT IF EXISTS program_week_day_blocks_program_id_block_key_uniq;
-
-ALTER TABLE mentorix.program_week_day_blocks
-  DROP CONSTRAINT IF EXISTS program_week_day_blocks_program_id_fkey;
-
-ALTER TABLE mentorix.program_week_day_blocks
-  DROP COLUMN IF EXISTS block_key,
-  DROP COLUMN IF EXISTS program_id;
+  DROP COLUMN IF EXISTS block_key;
 ```
 
 - [ ] **Step 5: Применить миграцию и пересобрать схему**
@@ -396,40 +379,36 @@ WHERE id = $1;
 
 -- name: InsertDayBlockWithKey :one
 INSERT INTO mentorix.program_week_day_blocks (
-  program_id, program_week_day_id, block_key, block_type, instruction,
+  program_week_day_id, block_key, block_type, instruction,
   sort_order, modified_at, modified_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, block_key;
 ```
 
-Существующий `InsertDayBlock` дополнить колонкой `program_id`, чтобы новые блоки
-проходили `NOT NULL`:
+Существующий `InsertDayBlock` менять только в части `RETURNING` — колонки
+вставки те же, `block_key` проставит дефолт:
 
 ```sql
 -- name: InsertDayBlock :one
 INSERT INTO mentorix.program_week_day_blocks (
-  program_id, program_week_day_id, block_type, instruction, sort_order,
+  program_week_day_id, block_type, instruction, sort_order,
   modified_at, modified_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
+) VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, block_key;
 ```
 
 - [ ] **Step 5: Перегенерировать sqlc**
 
 Run: `sqlc generate`
-Expected: без ошибок; в `internal/db/sqlc/` появились `ListProgramBlockClients`, `InsertDayBlockWithKey`, а `InsertDayBlockParams` получил поле `ProgramID`.
+Expected: без ошибок; в `internal/db/sqlc/` появились `ListProgramBlockClients` и `InsertDayBlockWithKey`.
 
 - [ ] **Step 6: Починить вызовы `InsertDayBlock` и заполнить новые поля**
 
 Найти все места вызова: `grep -rn 'InsertDayBlock(' internal/`.
 
-В каждом нужны **два** изменения:
-
-1. Добавить `ProgramID: programPG` в параметры (значение `program_id` уже
-   доступно в этих функциях как аргумент или через загруженный `Detail`).
-2. `RETURNING id, block_key` меняет тип результата с `pgtype.UUID` на
-   структуру строки. Вызовы вида `blockID, err := qtx.InsertDayBlock(...)`
-   больше не компилируются — заменить на:
+`RETURNING id, block_key` меняет тип результата с `pgtype.UUID` на структуру
+строки. Параметры вставки те же. Вызовы вида
+`blockID, err := qtx.InsertDayBlock(...)` больше не компилируются — заменить на:
 
 ```go
 blockRow, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{ /* … */ })
@@ -632,7 +611,6 @@ if blockKey == uuid.Nil {
 	blockKey = uuid.New()
 }
 blockRow, err := qtx.InsertDayBlockWithKey(ctx, sqlc.InsertDayBlockWithKeyParams{
-	ProgramID:        programPG,
 	ProgramWeekDayID: dayRow.ID,
 	BlockKey:         pgconv.ToPGUUID(blockKey),
 	BlockType:        string(block.BlockType),
@@ -2142,8 +2120,10 @@ Expected: FAIL
 DELETE FROM mentorix.program_block_clients pbc
 WHERE pbc.program_id = $1
   AND NOT EXISTS (
-    SELECT 1 FROM mentorix.program_week_day_blocks b
-    WHERE b.program_id = pbc.program_id AND b.block_key = pbc.block_key
+    SELECT 1
+    FROM mentorix.program_week_day_blocks b
+    JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+    WHERE d.program_id = pbc.program_id AND b.block_key = pbc.block_key
   )
   AND NOT EXISTS (
     SELECT 1
@@ -2157,8 +2137,10 @@ WHERE pbc.program_id = $1
 -- name: PurgeOrphanProgramBlockClients :execrows
 DELETE FROM mentorix.program_block_clients pbc
 WHERE NOT EXISTS (
-    SELECT 1 FROM mentorix.program_week_day_blocks b
-    WHERE b.program_id = pbc.program_id AND b.block_key = pbc.block_key
+    SELECT 1
+    FROM mentorix.program_week_day_blocks b
+    JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+    WHERE d.program_id = pbc.program_id AND b.block_key = pbc.block_key
   )
   AND NOT EXISTS (
     SELECT 1
