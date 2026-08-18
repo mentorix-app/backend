@@ -2592,7 +2592,7 @@ components:
 
     ProgramDayBlock:
       type: object
-      required: [id, block_type, instruction, sort_order, exercises, created_at]
+      required: [id, block_type, instruction, sort_order, client_user_ids, exercises, created_at]
       properties:
         id:
           type: string
@@ -2603,6 +2603,15 @@ components:
           type: string
         sort_order:
           type: integer
+        client_user_ids:
+          type: array
+          nullable: true
+          description: >-
+            Clients allowed to see this block. Empty or null means visible to
+            every client assigned to the program.
+          items:
+            type: string
+            format: uuid
         exercises:
           type: array
           items:

@@ -243,14 +243,14 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 
 	newBlockIDs := make([]uuid.UUID, 0, len(exercises))
 	for _, ex := range exercises {
-		newBlockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
+		newBlockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
 		if err != nil {
 			return Detail{}, fmt.Errorf("insert single block: %w", err)
 		}
-		newBlockIDs = append(newBlockIDs, pgconv.FromPGUUID(newBlockID))
+		newBlockIDs = append(newBlockIDs, pgconv.FromPGUUID(newBlockRow.ID))
 		if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
 			ID:                    ex.ID,
-			ProgramWeekDayBlockID: newBlockID,
+			ProgramWeekDayBlockID: newBlockRow.ID,
 			SortOrder:             1,
 			ModifiedAt:            time.Now().UTC(),
 			ModifiedBy:            pgtype.UUID{},
@@ -366,7 +366,7 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 
 	qtx := s.q.WithTx(tx)
 	dayPG := pgconv.ToPGUUID(dayID)
-	newBlockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
+	newBlockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("insert single block: %w", err)
 	}
@@ -374,7 +374,7 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 	now := time.Now().UTC()
 	if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
 		ID:                    pgconv.ToPGUUID(itemID),
-		ProgramWeekDayBlockID: newBlockID,
+		ProgramWeekDayBlockID: newBlockRow.ID,
 		SortOrder:             1,
 		ModifiedAt:            now,
 		ModifiedBy:            pgconv.ToPGUUID(userID),
@@ -382,7 +382,7 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 		return Detail{}, fmt.Errorf("extract exercise: %w", err)
 	}
 
-	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, pgconv.FromPGUUID(newBlockID), insertSort, userID); err != nil {
+	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, pgconv.FromPGUUID(newBlockRow.ID), insertSort, userID); err != nil {
 		return Detail{}, err
 	}
 	if err := normalizeBlockExerciseSort(ctx, qtx, pgconv.FromPGUUID(meta.ProgramWeekDayBlockID)); err != nil {

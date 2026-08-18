@@ -152,7 +152,7 @@ func (s *Store) RestoreWorkingTreeFromLatestVersion(ctx context.Context, id, use
 				return Detail{}, fmt.Errorf("insert program day: %w", err)
 			}
 			for _, block := range day.Blocks {
-				blockID, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
+				blockRow, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
 					ProgramWeekDayID: dayRow.ID,
 					BlockType:        string(block.BlockType),
 					Instruction:      block.Instruction,
@@ -165,7 +165,7 @@ func (s *Store) RestoreWorkingTreeFromLatestVersion(ctx context.Context, id, use
 				}
 				for _, ex := range block.Exercises {
 					if err := qtx.InsertBlockExercise(ctx, sqlc.InsertBlockExerciseParams{
-						ProgramWeekDayBlockID: blockID,
+						ProgramWeekDayBlockID: blockRow.ID,
 						ExerciseID:            pgconv.ToPGUUID(ex.ExerciseID),
 						SortOrder:             int32(ex.SortOrder),
 						Sets:                  ex.Sets,

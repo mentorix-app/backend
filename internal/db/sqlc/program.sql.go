@@ -291,13 +291,14 @@ func (q *Queries) GetBlockExerciseMeta(ctx context.Context, id pgtype.UUID) (Get
 }
 
 const getDayBlockByID = `-- name: GetDayBlockByID :one
-SELECT id, program_week_day_id, block_type, instruction, sort_order, created_at
+SELECT id, block_key, program_week_day_id, block_type, instruction, sort_order, created_at
 FROM mentorix.program_week_day_blocks
 WHERE id = $1
 `
 
 type GetDayBlockByIDRow struct {
 	ID               pgtype.UUID `json:"id"`
+	BlockKey         pgtype.UUID `json:"block_key"`
 	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
 	BlockType        string      `json:"block_type"`
 	Instruction      string      `json:"instruction"`
@@ -310,6 +311,7 @@ func (q *Queries) GetDayBlockByID(ctx context.Context, id pgtype.UUID) (GetDayBl
 	var i GetDayBlockByIDRow
 	err := row.Scan(
 		&i.ID,
+		&i.BlockKey,
 		&i.ProgramWeekDayID,
 		&i.BlockType,
 		&i.Instruction,
@@ -406,7 +408,7 @@ const insertDayBlock = `-- name: InsertDayBlock :one
 INSERT INTO mentorix.program_week_day_blocks (
   program_week_day_id, block_type, instruction, sort_order, modified_at, modified_by
 ) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id
+RETURNING id, block_key
 `
 
 type InsertDayBlockParams struct {
@@ -418,7 +420,12 @@ type InsertDayBlockParams struct {
 	ModifiedBy       pgtype.UUID `json:"modified_by"`
 }
 
-func (q *Queries) InsertDayBlock(ctx context.Context, arg InsertDayBlockParams) (pgtype.UUID, error) {
+type InsertDayBlockRow struct {
+	ID       pgtype.UUID `json:"id"`
+	BlockKey pgtype.UUID `json:"block_key"`
+}
+
+func (q *Queries) InsertDayBlock(ctx context.Context, arg InsertDayBlockParams) (InsertDayBlockRow, error) {
 	row := q.db.QueryRow(ctx, insertDayBlock,
 		arg.ProgramWeekDayID,
 		arg.BlockType,
@@ -427,9 +434,47 @@ func (q *Queries) InsertDayBlock(ctx context.Context, arg InsertDayBlockParams) 
 		arg.ModifiedAt,
 		arg.ModifiedBy,
 	)
-	var id pgtype.UUID
-	err := row.Scan(&id)
-	return id, err
+	var i InsertDayBlockRow
+	err := row.Scan(&i.ID, &i.BlockKey)
+	return i, err
+}
+
+const insertDayBlockWithKey = `-- name: InsertDayBlockWithKey :one
+INSERT INTO mentorix.program_week_day_blocks (
+  program_week_day_id, block_key, block_type, instruction,
+  sort_order, modified_at, modified_by
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, block_key
+`
+
+type InsertDayBlockWithKeyParams struct {
+	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
+	BlockKey         pgtype.UUID `json:"block_key"`
+	BlockType        string      `json:"block_type"`
+	Instruction      string      `json:"instruction"`
+	SortOrder        int32       `json:"sort_order"`
+	ModifiedAt       time.Time   `json:"modified_at"`
+	ModifiedBy       pgtype.UUID `json:"modified_by"`
+}
+
+type InsertDayBlockWithKeyRow struct {
+	ID       pgtype.UUID `json:"id"`
+	BlockKey pgtype.UUID `json:"block_key"`
+}
+
+func (q *Queries) InsertDayBlockWithKey(ctx context.Context, arg InsertDayBlockWithKeyParams) (InsertDayBlockWithKeyRow, error) {
+	row := q.db.QueryRow(ctx, insertDayBlockWithKey,
+		arg.ProgramWeekDayID,
+		arg.BlockKey,
+		arg.BlockType,
+		arg.Instruction,
+		arg.SortOrder,
+		arg.ModifiedAt,
+		arg.ModifiedBy,
+	)
+	var i InsertDayBlockWithKeyRow
+	err := row.Scan(&i.ID, &i.BlockKey)
+	return i, err
 }
 
 const insertProgramDay = `-- name: InsertProgramDay :one
@@ -693,7 +738,7 @@ func (q *Queries) ListDayBlockIDsForDay(ctx context.Context, programWeekDayID pg
 }
 
 const listDayBlocks = `-- name: ListDayBlocks :many
-SELECT id, block_type, instruction, sort_order, created_at
+SELECT id, block_key, block_type, instruction, sort_order, created_at
 FROM mentorix.program_week_day_blocks
 WHERE program_week_day_id = $1
 ORDER BY sort_order ASC, created_at ASC
@@ -701,6 +746,7 @@ ORDER BY sort_order ASC, created_at ASC
 
 type ListDayBlocksRow struct {
 	ID          pgtype.UUID `json:"id"`
+	BlockKey    pgtype.UUID `json:"block_key"`
 	BlockType   string      `json:"block_type"`
 	Instruction string      `json:"instruction"`
 	SortOrder   int32       `json:"sort_order"`
@@ -718,6 +764,7 @@ func (q *Queries) ListDayBlocks(ctx context.Context, programWeekDayID pgtype.UUI
 		var i ListDayBlocksRow
 		if err := rows.Scan(
 			&i.ID,
+			&i.BlockKey,
 			&i.BlockType,
 			&i.Instruction,
 			&i.SortOrder,

@@ -40,6 +40,18 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 
 Зеркало для version-дерева (см. naming rule).
 
+### `program_block_clients` — видимость блока
+
+| Колонка | Тип | Примечание |
+| ------- | --- | ---------- |
+| `id` | uuid PK | |
+| `program_id` | uuid FK → `programs` | |
+| `block_key` | uuid | не FK — стабильный ключ, а не `program_week_day_blocks.id` |
+| `client_user_id` | uuid FK → `users` | |
+| `created_at`, `created_by` | | |
+
+UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id, block_key)` нет → блок виден всем клиентам программы — отдельного boolean-флага нет. `GET .../programs/{id}` возвращает список в `blocks[].client_user_ids`; пусто/отсутствует = виден всем. Управление правилами (запись) — вне текущего MVP.
+
 **`sort_order`:** после любой операции, затрагивающей порядок (create, move, reorder, delete, merge, ungroup, extract), store нормализует siblings к уникальным `1..N` без дублей. Ответ `GET /programs/{id}` — дерево уже отсортировано по `sort_order`.
 
 ### Миграция данных

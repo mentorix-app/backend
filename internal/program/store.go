@@ -172,7 +172,41 @@ func (s *Store) loadDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
 	}
 	d := Detail{Program: p, Weeks: weeks}
 	sortProgramDetail(&d)
+
+	rules, err := s.listProgramBlockClients(ctx, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	applyBlockClients(&d, rules)
+
 	return d, nil
+}
+
+// listProgramBlockClients returns visibility rules of a program keyed by block_key.
+// A block_key absent from the map has no rules and is visible to every client.
+func (s *Store) listProgramBlockClients(ctx context.Context, programID uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	rows, err := s.q.ListProgramBlockClients(ctx, pgconv.ToPGUUID(programID))
+	if err != nil {
+		return nil, fmt.Errorf("list program block clients: %w", err)
+	}
+	out := make(map[uuid.UUID][]uuid.UUID, len(rows))
+	for _, row := range rows {
+		key := pgconv.FromPGUUID(row.BlockKey)
+		out[key] = append(out[key], pgconv.FromPGUUID(row.ClientUserID))
+	}
+	return out, nil
+}
+
+// applyBlockClients fills DayBlock.ClientUserIDs from the rules map.
+func applyBlockClients(d *Detail, rules map[uuid.UUID][]uuid.UUID) {
+	for wi := range d.Weeks {
+		for di := range d.Weeks[wi].Days {
+			for bi := range d.Weeks[wi].Days[di].Blocks {
+				block := &d.Weeks[wi].Days[di].Blocks[bi]
+				block.ClientUserIDs = rules[block.BlockKey]
+			}
+		}
+	}
 }
 
 func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, programID uuid.UUID) ([]Week, error) {
@@ -242,6 +276,7 @@ func (s *Store) listDayBlocks(ctx context.Context, dayID uuid.UUID) ([]DayBlock,
 		}
 		out = append(out, DayBlock{
 			ID:          blockID,
+			BlockKey:    pgconv.FromPGUUID(row.BlockKey),
 			BlockType:   BlockType(row.BlockType),
 			Instruction: row.Instruction,
 			SortOrder:   int(row.SortOrder),
@@ -576,14 +611,14 @@ func (s *Store) CreateDayBlock(ctx context.Context, userID, programID, weekID, d
 
 	qtx := s.q.WithTx(tx)
 	dayPG := pgconv.ToPGUUID(dayID)
-	blockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(blockType), "", 1, userID))
+	blockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(blockType), "", 1, userID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("insert day block: %w", err)
 	}
-	blockUUID := pgconv.FromPGUUID(blockID)
+	blockUUID := pgconv.FromPGUUID(blockRow.ID)
 
 	if in.Exercise != nil {
-		if err := qtx.InsertBlockExercise(ctx, blockExerciseInsertParams(blockID, 1, userID, *in.Exercise)); err != nil {
+		if err := qtx.InsertBlockExercise(ctx, blockExerciseInsertParams(blockRow.ID, 1, userID, *in.Exercise)); err != nil {
 			return Detail{}, fmt.Errorf("insert block exercise: %w", err)
 		}
 	}

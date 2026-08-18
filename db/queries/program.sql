@@ -203,13 +203,13 @@ WHERE week_id = $1
 ORDER BY sort_order ASC, day_number ASC;
 
 -- name: ListDayBlocks :many
-SELECT id, block_type, instruction, sort_order, created_at
+SELECT id, block_key, block_type, instruction, sort_order, created_at
 FROM mentorix.program_week_day_blocks
 WHERE program_week_day_id = $1
 ORDER BY sort_order ASC, created_at ASC;
 
 -- name: GetDayBlockByID :one
-SELECT id, program_week_day_id, block_type, instruction, sort_order, created_at
+SELECT id, block_key, program_week_day_id, block_type, instruction, sort_order, created_at
 FROM mentorix.program_week_day_blocks
 WHERE id = $1;
 
@@ -236,7 +236,14 @@ WHERE program_week_day_id = $1;
 INSERT INTO mentorix.program_week_day_blocks (
   program_week_day_id, block_type, instruction, sort_order, modified_at, modified_by
 ) VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id;
+RETURNING id, block_key;
+
+-- name: InsertDayBlockWithKey :one
+INSERT INTO mentorix.program_week_day_blocks (
+  program_week_day_id, block_key, block_type, instruction,
+  sort_order, modified_at, modified_by
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, block_key;
 
 -- name: UpdateDayBlock :execrows
 UPDATE mentorix.program_week_day_blocks SET

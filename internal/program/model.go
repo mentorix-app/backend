@@ -93,12 +93,14 @@ type DayExercise struct {
 }
 
 type DayBlock struct {
-	ID          uuid.UUID     `json:"id"`
-	BlockType   BlockType     `json:"block_type"`
-	Instruction string        `json:"instruction"`
-	SortOrder   int           `json:"sort_order"`
-	Exercises   []DayExercise `json:"exercises"`
-	CreatedAt   time.Time     `json:"created_at"`
+	ID            uuid.UUID     `json:"id"`
+	BlockKey      uuid.UUID     `json:"-"`
+	BlockType     BlockType     `json:"block_type"`
+	Instruction   string        `json:"instruction"`
+	SortOrder     int           `json:"sort_order"`
+	ClientUserIDs []uuid.UUID   `json:"client_user_ids"`
+	Exercises     []DayExercise `json:"exercises"`
+	CreatedAt     time.Time     `json:"created_at"`
 }
 
 type Week struct {
