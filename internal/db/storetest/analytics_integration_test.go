@@ -98,6 +98,7 @@ func seedAnalyticsFixture(t *testing.T, pool *pgxpool.Pool, emailPrefix string) 
 		if withBlock {
 			if _, err := q.InsertProgramVersionDayBlock(ctx, sqlc.InsertProgramVersionDayBlockParams{
 				ProgramVersionWeekDayID: day.ID,
+				BlockKey:                pgconv.ToPGUUID(uuid.New()),
 				BlockType:               "single",
 				SortOrder:               1,
 			}); err != nil {

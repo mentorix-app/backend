@@ -56,6 +56,7 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 		dayID := pgconv.FromPGUUID(blockRow.ProgramVersionWeekDayID)
 		blocksByDay[dayID] = append(blocksByDay[dayID], DayBlock{
 			ID:          pgconv.FromPGUUID(blockRow.ID),
+			BlockKey:    pgconv.FromPGUUID(blockRow.BlockKey),
 			BlockType:   BlockType(blockRow.BlockType),
 			Instruction: blockRow.Instruction,
 			SortOrder:   int(blockRow.SortOrder),
@@ -116,7 +117,7 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 		difficulty = &d
 	}
 
-	return Detail{
+	detail := Detail{
 		Program: Program{
 			ID:              pgconv.FromPGUUID(version.ProgramID),
 			Status:          StatusPublished,
@@ -131,5 +132,17 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 			ModifiedAt:      version.PublishedAt.UTC(),
 		},
 		Weeks: weeks,
-	}, nil
+	}
+
+	// Visibility rules are keyed by (program_id, block_key) and apply to any
+	// version carrying that key, so a trainer browsing an old version sees the
+	// real client lists rather than a uniformly empty one. This also guarantees
+	// client_user_ids serializes as [] rather than null on every block.
+	rules, err := s.listProgramBlockClients(ctx, pgconv.FromPGUUID(version.ProgramID))
+	if err != nil {
+		return Detail{}, err
+	}
+	applyBlockClients(&detail, rules)
+
+	return detail, nil
 }

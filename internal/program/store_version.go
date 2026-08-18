@@ -152,8 +152,13 @@ func (s *Store) RestoreWorkingTreeFromLatestVersion(ctx context.Context, id, use
 				return Detail{}, fmt.Errorf("insert program day: %w", err)
 			}
 			for _, block := range day.Blocks {
-				blockRow, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
+				blockKey := block.BlockKey
+				if blockKey == uuid.Nil {
+					blockKey = uuid.New()
+				}
+				blockRow, err := qtx.InsertDayBlockWithKey(ctx, sqlc.InsertDayBlockWithKeyParams{
 					ProgramWeekDayID: dayRow.ID,
+					BlockKey:         pgconv.ToPGUUID(blockKey),
 					BlockType:        string(block.BlockType),
 					Instruction:      block.Instruction,
 					SortOrder:        int32(block.SortOrder),
@@ -255,6 +260,7 @@ func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, us
 			for _, block := range day.Blocks {
 				blockRow, err := q.InsertProgramVersionDayBlock(ctx, sqlc.InsertProgramVersionDayBlockParams{
 					ProgramVersionWeekDayID: dayRow.ID,
+					BlockKey:                pgconv.ToPGUUID(block.BlockKey),
 					BlockType:               string(block.BlockType),
 					Instruction:             block.Instruction,
 					SortOrder:               int32(block.SortOrder),

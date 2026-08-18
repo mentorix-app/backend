@@ -214,3 +214,58 @@ func TestProgramDetail_BlockClientRules_ScopedByBlockKey(t *testing.T) {
 		t.Fatalf("shared block ClientUserIDs = %v, want empty (no rule row)", reloadedShared.ClientUserIDs)
 	}
 }
+
+func TestBlockKey_SurvivesPublishAndDiscard(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "block-key-publish")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+	detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore: %v", err)
+	}
+	block, _ := firstDayBlock(detail.Weeks[0].Days[0])
+	wantKey := block.BlockKey
+
+	// Publish freezes the tree; the frozen block must keep the same key.
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	_ = published
+
+	var frozenKey uuid.UUID
+	err = pool.QueryRow(ctx, `
+		SELECT vb.block_key
+		FROM mentorix.program_version_week_day_blocks vb
+		JOIN mentorix.program_version_week_days vd ON vd.id = vb.program_version_week_day_id
+		JOIN mentorix.program_versions v ON v.id = vd.program_version_id
+		WHERE v.program_id = $1`, detail.ID).Scan(&frozenKey)
+	if err != nil {
+		t.Fatalf("query frozen block_key: %v", err)
+	}
+	if frozenKey != wantKey {
+		t.Fatalf("frozen block_key = %s, want %s", frozenKey, wantKey)
+	}
+
+	// Discard rebuilds the working copy from the latest version; the key must survive.
+	restored, err := store.RestoreWorkingTreeFromLatestVersion(ctx, detail.ID, userID)
+	if err != nil {
+		t.Fatalf("RestoreWorkingTreeFromLatestVersion: %v", err)
+	}
+	restoredBlock, ok := firstDayBlock(restored.Weeks[0].Days[0])
+	if !ok {
+		t.Fatal("expected one block after restore")
+	}
+	if restoredBlock.BlockKey != wantKey {
+		t.Fatalf("restored block_key = %s, want %s", restoredBlock.BlockKey, wantKey)
+	}
+}
