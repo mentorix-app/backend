@@ -1,8 +1,3 @@
----
-description: How to create and maintain docs, rules, and status.md
-alwaysApply: true
----
-
 # Docs and rules maintenance
 
 Human mirror: [docs/maintenance.md](../../docs/maintenance.md).
@@ -11,7 +6,8 @@ Human mirror: [docs/maintenance.md](../../docs/maintenance.md).
 
 | Kind | Location |
 | ---- | -------- |
-| Patterns (how) | `.cursor/rules/*.mdc` |
+| Patterns (how) | `.claude/rules/*.md` |
+| Always-on context + rule routing | `CLAUDE.md` |
 | Implemented (what) | `docs/status.md` |
 | Feature facts | `docs/features/<name>.md` |
 | API contract | `api/openapi.yaml` |
@@ -22,18 +18,26 @@ Human mirror: [docs/maintenance.md](../../docs/maintenance.md).
 
 1. Add `docs/features/<name>.md`; link in `docs/README.md`.
 2. When **done** — one row in `docs/status.md`.
-3. New naming/process pattern → update the matching `.mdc` (one line or new narrow file).
+3. New naming/process pattern → update the matching rule (one line or new narrow file).
 
 ## New agent rule
 
 | Topic | File |
 | ----- | ---- |
-| DB | `database-naming.mdc` or new `*.mdc` with `globs: db/**` |
-| Redis | `redis-naming.mdc` |
-| Go | `go-code.mdc` or new with `globs: **/*.go` |
-| HTTP/API | `api-endpoints.mdc` |
-| QA/CI | `qa-before-push.mdc` |
-| Other | new `.mdc`, prefer `globs` over `alwaysApply` |
+| DB | `database-naming.md` |
+| Redis | `redis-naming.md` |
+| Go | `go-code.md` |
+| HTTP/API | `api-endpoints.md` |
+| QA/CI, git, always-on | `CLAUDE.md` |
+| Repeatable workflow / on-demand output | new `.claude/skills/<name>/SKILL.md` |
+| Other | new `.claude/rules/<topic>.md` |
+
+Rules load **on demand**, not automatically: a new file is invisible until
+`CLAUDE.md` routes to it. Adding `.claude/rules/<topic>.md` means adding its row
+to the routing table in `CLAUDE.md` in the same commit.
+
+Put a rule in `CLAUDE.md` itself only when it applies to every task regardless of
+which files are touched — it costs context on each request.
 
 ## status.md
 
@@ -47,7 +51,8 @@ After new `db/migrations/*.up.sql`, update version in `docs/architecture.md` and
 
 ## Size limits
 
-Rule ~80–120 lines; feature doc ~150; `index.mdc` ~40. Split or trim when exceeded.
+Rule ~80–120 lines; skill ~120; feature doc ~150; `CLAUDE.md` ~120. Split or trim
+when exceeded. Enforced by `./scripts/docs-check.sh`.
 
 ## Forbidden
 
@@ -57,5 +62,5 @@ Rule ~80–120 lines; feature doc ~150; `index.mdc` ~40. Split or trim when exce
 
 ## On every commit
 
-1. Sync docs/rules/status with the diff — see [qa-before-push.mdc](qa-before-push.mdc) §A.
+1. Sync docs/rules/status with the diff — see `CLAUDE.md` § Docs sync.
 2. Run `./scripts/docs-check.sh` (or `make check-ci`).

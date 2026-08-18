@@ -26,4 +26,4 @@
 ## См. также
 
 - [subscriptions.md](subscriptions.md) — квоты
-- `.cursor/rules/database-naming.mdc`
+- `.claude/rules/database-naming.md`

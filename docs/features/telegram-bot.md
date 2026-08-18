@@ -15,7 +15,7 @@
 - **Webhook** на API (`POST /telegram/webhook`) — один Render Web Service, без отдельного worker.
 - Библиотека: `go-telegram-bot-api/v5` (см. [architecture.md](../architecture.md)).
 - Меню: reply keyboard (`Программа`, `Тренеры`, `Помощь`) + inline для выбора тренера и навигации по программе.
-- **Активный тренер:** Redis (`active_trainer` key — см. [redis-naming.mdc](../../.cursor/rules/redis-naming.mdc)).
+- **Активный тренер:** Redis (`active_trainer` key — см. [redis-naming.md](../../.claude/rules/redis-naming.md)).
   - После accept инвайта — автоматически активный = тренер из инвайта.
   - При нескольких тренерах клиент меняет активного в «Тренеры» (inline); после выбора — одно сообщение с активным тренером и программой.
   - Один тренер — выбор не показываем, он активен по умолчанию.

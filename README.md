@@ -27,7 +27,7 @@ Local + Render stage (CI/CD): [docs/environments.md](docs/environments.md). Prod
 ## QA
 
 - **Pre-commit:** `make install-hooks` (once; in `make setup`) — `make check-ci` on every commit. Override: `PRE_COMMIT_CHECK_FLAGS=--no-coverage git commit …`.
-- **Before commit:** sync docs/rules — [.cursor/rules/qa-before-push.mdc](.cursor/rules/qa-before-push.mdc) §A (`docs-check` in check-ci).
+- **Before commit:** sync docs/rules — [CLAUDE.md](CLAUDE.md) § Docs sync (`docs-check` in check-ci).
 - **Before push:** `make check` (full: migrate-check + smoke).
 
 Details: [docs/README.md#qa](docs/README.md#qa).
@@ -35,5 +35,7 @@ Details: [docs/README.md#qa](docs/README.md#qa).
 ## Documentation
 
 **[docs/README.md](docs/README.md)** — product, architecture, features, status.
+
+Agent context: [CLAUDE.md](CLAUDE.md) (always loaded) + [.claude/rules/](.claude/rules/) (read per area).
 
 API contract: [api/openapi.yaml](api/openapi.yaml).

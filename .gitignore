@@ -53,3 +53,6 @@ Thumbs.db
 # Logs and tooling scratch (e.g. Air)
 *.log
 tmp/
+
+# Claude Code local overrides (settings.json is shared)
+.claude/settings.local.json

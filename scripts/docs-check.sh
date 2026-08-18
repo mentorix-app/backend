@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate docs/ and project .cursor/rules for size, links, and migration version sync.
+# Validate docs/, CLAUDE.md and .claude/rules for size, links, and migration version sync.
 #
 # Usage: ./scripts/docs-check.sh
 set -euo pipefail
@@ -67,15 +67,20 @@ for f in docs/*.md docs/features/*.md; do
   fi
 done
 
-for f in .cursor/rules/*.mdc; do
+for f in .claude/rules/*.md; do
   [[ -f "$f" ]] || continue
   check_lines "$f" 120 "rule"
 done
 
-check_lines ".cursor/rules/index.mdc" 40 "index rule"
+for f in .claude/skills/*/SKILL.md; do
+  [[ -f "$f" ]] || continue
+  check_lines "$f" 120 "skill"
+done
+
+check_lines "CLAUDE.md" 120 "root memory"
 
 echo ""
-echo "=== Markdown links (docs/) ==="
+echo "=== Markdown links (docs/, CLAUDE.md, .claude/) ==="
 
 python3 <<'PY' || failed=1
 import re
@@ -83,11 +88,15 @@ import sys
 from pathlib import Path
 
 root = Path(".")
-docs = root / "docs"
 link_re = re.compile(r"\]\(([^)]+)\)")
 
+targets = sorted((root / "docs").rglob("*.md"))
+targets += sorted(root.glob(".claude/**/*.md"))
+if (root / "CLAUDE.md").is_file():
+    targets.append(root / "CLAUDE.md")
+
 errors = []
-for md in sorted(docs.rglob("*.md")):
+for md in targets:
     text = md.read_text(encoding="utf-8")
     for raw in link_re.findall(text):
         target = raw.split("#", 1)[0].strip()
@@ -110,19 +119,22 @@ PY
 echo ""
 echo "=== Legacy references ==="
 
-# Prefer ripgrep; fall back to grep for CI runners without rg.
-if command -v rg >/dev/null 2>&1; then
-  legacy_hits="$(rg -n 'AGENTS\.md|mentorix\.mdc' --glob '!scripts/docs-check.sh' . 2>/dev/null | rg -v 'old AGENTS\.md pattern' || true)"
+# Scan what git knows about (tracked + untracked, minus ignored), so hidden dirs
+# (.claude/) and build output behave the same locally and in CI.
+# Patterns are anchored to path-like forms so identifiers such as resp.cursor pass.
+if ! git rev-parse --git-dir >/dev/null 2>&1; then
+  fail "legacy scan needs a git repository (git missing or .git absent)"
 else
-  legacy_hits="$(grep -RInE 'AGENTS\.md|mentorix\.mdc' \
-    --exclude-dir=.git --exclude-dir=node_modules --exclude=docs-check.sh . 2>/dev/null \
-    | grep -v 'old AGENTS\.md pattern' || true)"
-fi
-if [[ -n "$legacy_hits" ]]; then
-  echo "$legacy_hits" >&2
-  fail "stale references to AGENTS.md or mentorix.mdc"
-else
-  echo "OK"
+  legacy_hits="$(git ls-files --cached --others --exclude-standard -z \
+    | xargs -0 grep -IHnE 'AGENTS\.md|(^|[^A-Za-z0-9_])\.cursor|\.mdc([^A-Za-z0-9_]|$)' -- \
+    | grep -v '^\.claude/rules/docs-and-rules-maintenance\.md:.*old AGENTS\.md pattern' \
+    | grep -v '^scripts/docs-check\.sh:' || true)"
+  if [[ -n "$legacy_hits" ]]; then
+    echo "$legacy_hits" >&2
+    fail "stale references to AGENTS.md or Cursor rules (.cursor / *.mdc)"
+  else
+    echo "OK"
+  fi
 fi
 
 echo ""

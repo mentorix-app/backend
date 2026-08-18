@@ -1,9 +1,3 @@
----
-description: PostgreSQL table and column naming
-globs: db/**/*
-alwaysApply: false
----
-
 # Database naming
 
 Canon: [db/schema.sql](../../db/schema.sql). Locked by migration `000007_schema_naming_unification`.
