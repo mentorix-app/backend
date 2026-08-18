@@ -421,9 +421,25 @@ Expected: без ошибок; в `internal/db/sqlc/` появились `ListPr
 
 - [ ] **Step 6: Починить вызовы `InsertDayBlock` и заполнить новые поля**
 
-Найти все места вызова: `grep -rn "InsertDayBlock(" internal/ --include=*.go`.
-В каждом добавить `ProgramID: programPG` в параметры (значение `program_id`
-уже доступно в этих функциях как аргумент или через загруженный `Detail`).
+Найти все места вызова: `grep -rn 'InsertDayBlock(' internal/`.
+
+В каждом нужны **два** изменения:
+
+1. Добавить `ProgramID: programPG` в параметры (значение `program_id` уже
+   доступно в этих функциях как аргумент или через загруженный `Detail`).
+2. `RETURNING id, block_key` меняет тип результата с `pgtype.UUID` на
+   структуру строки. Вызовы вида `blockID, err := qtx.InsertDayBlock(...)`
+   больше не компилируются — заменить на:
+
+```go
+blockRow, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{ /* … */ })
+if err != nil {
+	return Detail{}, fmt.Errorf("insert day block: %w", err)
+}
+blockID := blockRow.ID
+```
+
+Точное имя типа результата взять из сгенерированного `internal/db/sqlc/`.
 
 В `internal/program/store.go` в `listDayBlocks` заполнить `BlockKey` из строки:
 
@@ -670,7 +686,6 @@ git commit -m "feat(program): carry block_key through publish and discard"
   - `func BlockVisibleToClient(block DayBlock, clientUserID uuid.UUID) bool`
   - `func FilterDetailForClient(d Detail, clientUserID uuid.UUID) Detail`
   - `func dayHasSharedBlock(day Day) bool`
-  - `func daysContainingBlockKey(d Detail, blockKey uuid.UUID) []Day`
   - `func daySharedAfterRestrict(day Day, blockKey uuid.UUID) bool`
 
 - [ ] **Step 1: Написать падающие тесты**
@@ -872,22 +887,6 @@ func dayHasSharedBlock(day Day) bool {
 	return false
 }
 
-// daysContainingBlockKey returns the days of d that hold a block with this key.
-func daysContainingBlockKey(d Detail, blockKey uuid.UUID) []Day {
-	var out []Day
-	for _, week := range d.Weeks {
-		for _, day := range week.Days {
-			for _, block := range day.Blocks {
-				if block.BlockKey == blockKey {
-					out = append(out, day)
-					break
-				}
-			}
-		}
-	}
-	return out
-}
-
 // daySharedAfterRestrict reports whether the day still holds a shared block once
 // the block with blockKey becomes restricted. A day that does not hold the key,
 // or holds no blocks at all, is unaffected.
@@ -939,7 +938,7 @@ git commit -m "feat(program): block visibility predicates and day invariant help
 - Test: `internal/program/handlers_blocks_test.go`, `internal/db/storetest/program_block_visibility_integration_test.go`
 
 **Interfaces:**
-- Consumes: `daysContainingBlockKey`, `daySharedAfterRestrict` из Task 4; `GetDayBlockByID` из Task 2.
+- Consumes: `daySharedAfterRestrict` из Task 4; `GetDayBlockByID` из Task 2.
 - Produces:
   - `program.ErrLastSharedBlock`, `program.ErrClientNotAssignedToProgram`
   - `func (s *Service) SetBlockClients(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, clientUserIDs []uuid.UUID) (Detail, error)`
@@ -948,63 +947,104 @@ git commit -m "feat(program): block visibility predicates and day invariant help
 
 - [ ] **Step 1: Написать падающий handler-тест**
 
-Дописать в `internal/program/handlers_blocks_test.go` (использовать тот же способ
-подмены сервиса, что и соседние тесты в файле):
+Использовать существующие хелперы пакета: `blockHandlerFixture()`,
+`programHandler(store)`, `programContext(e, method, path, body, userID, params)`,
+`assertStatus`, `assertHTTPError`, `fakeProgramStore`. Паттерн подмены ошибки —
+как в `internal/program/handlers_blocks_test.go:352-370`
+(`reorderDayBlocksErrStore`).
+
+Дописать в `internal/program/handlers_blocks_test.go`:
 
 ```go
-func TestSetBlockClients_lastSharedBlock(t *testing.T) {
-	h, svcStub := newBlockHandlersStub(t)
-	svcStub.err = fmt.Errorf("%w: week 1 day 3 would have no shared block", ErrLastSharedBlock)
-
-	rec, c := newJSONRequest(t, http.MethodPut,
-		"/programs/"+uuid.New().String()+"/weeks/"+uuid.New().String()+
-			"/blocks/"+uuid.New().String()+"/clients",
-		`{"client_user_ids":["`+uuid.New().String()+`"]}`)
-
-	err := h.SetBlockClients(c)
-	he := asHTTPError(t, err)
-	if he.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", he.Code, http.StatusBadRequest)
-	}
-	_ = rec
+type setBlockClientsErrStore struct {
+	fakeProgramStore
+	setErr error
 }
 
-func TestSetBlockClients_clientNotAssigned(t *testing.T) {
-	h, svcStub := newBlockHandlersStub(t)
-	svcStub.err = ErrClientNotAssignedToProgram
-
-	_, c := newJSONRequest(t, http.MethodPut,
-		"/programs/"+uuid.New().String()+"/weeks/"+uuid.New().String()+
-			"/blocks/"+uuid.New().String()+"/clients",
-		`{"client_user_ids":["`+uuid.New().String()+`"]}`)
-
-	err := h.SetBlockClients(c)
-	he := asHTTPError(t, err)
-	if he.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", he.Code, http.StatusBadRequest)
-	}
+func (s *setBlockClientsErrStore) SetBlockClients(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return Detail{}, s.setErr
 }
 
-func TestSetBlockClients_rejectsDuplicateIDs(t *testing.T) {
-	h, _ := newBlockHandlersStub(t)
+func setBlockClientsContext(t *testing.T, userID, programID, weekID, blockID uuid.UUID, body string) (echo.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	e := echo.New()
+	return programContext(e, http.MethodPut,
+		"/programs/"+programID.String()+"/weeks/"+weekID.String()+
+			"/blocks/"+blockID.String()+"/clients",
+		body, userID, map[string]string{
+			"id":       programID.String(),
+			"week_id":  weekID.String(),
+			"block_id": blockID.String(),
+		})
+}
+
+func TestHandlers_SetBlockClients(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	body := `{"client_user_ids":["` + uuid.New().String() + `"]}`
+	c, rec := setBlockClientsContext(t, userID, programID, weekID, blockID, body)
+	if err := h.SetBlockClients(c); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_SetBlockClients_mapsLastSharedBlock(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	store := &setBlockClientsErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		},
+		setErr: fmt.Errorf("%w: week 1 day 3 in working copy", ErrLastSharedBlock),
+	}
+	h := programHandler(store)
+	body := `{"client_user_ids":["` + uuid.New().String() + `"]}`
+	c, _ := setBlockClientsContext(t, userID, programID, uuid.New(), uuid.New(), body)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
+}
+
+func TestHandlers_SetBlockClients_mapsClientNotAssigned(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	store := &setBlockClientsErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		},
+		setErr: ErrClientNotAssignedToProgram,
+	}
+	h := programHandler(store)
+	body := `{"client_user_ids":["` + uuid.New().String() + `"]}`
+	c, _ := setBlockClientsContext(t, userID, programID, uuid.New(), uuid.New(), body)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
+}
+
+func TestHandlers_SetBlockClients_rejectsDuplicateIDs(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
 	dup := uuid.New().String()
+	body := `{"client_user_ids":["` + dup + `","` + dup + `"]}`
+	c, _ := setBlockClientsContext(t, userID, programID, weekID, blockID, body)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
+}
 
-	_, c := newJSONRequest(t, http.MethodPut,
-		"/programs/"+uuid.New().String()+"/weeks/"+uuid.New().String()+
-			"/blocks/"+uuid.New().String()+"/clients",
-		`{"client_user_ids":["`+dup+`","`+dup+`"]}`)
-
-	err := h.SetBlockClients(c)
-	he := asHTTPError(t, err)
-	if he.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", he.Code, http.StatusBadRequest)
-	}
+func TestHandlers_SetBlockClients_rejectsNonUUID(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	body := `{"client_user_ids":["not-a-uuid"]}`
+	c, _ := setBlockClientsContext(t, userID, programID, weekID, blockID, body)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
 }
 ```
 
-Если хелперов `newBlockHandlersStub`, `newJSONRequest`, `asHTTPError` в пакете нет —
-завести их в этом же файле по образцу существующих тестов
-`internal/program/handlers_blocks_test.go`; не изобретать новый стиль.
+Добавить в импорты файла `context` и `fmt`, если их там ещё нет.
+
+**Важно:** после добавления `SetBlockClients` в интерфейс стора (Step 7) базовый
+`fakeProgramStore` в `internal/program/service_test.go` перестанет его
+удовлетворять. Дописать туда метод:
+
+```go
+func (f *fakeProgramStore) SetBlockClients(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+```
 
 - [ ] **Step 2: Запустить тесты, убедиться что падают**
 
