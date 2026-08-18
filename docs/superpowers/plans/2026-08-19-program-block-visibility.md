@@ -649,13 +649,33 @@ if err != nil {
 blockID := blockRow.ID
 ```
 
-- [ ] **Step 6: Заполнять `BlockKey` при чтении версии**
+- [ ] **Step 6: Заполнять `BlockKey` и правила при чтении версии**
+
+`GetVersionDetail` — третье место в коде, где собирается `DayBlock` (кроме
+`loadDetail` и будущего клиентского пути). Сейчас оно не заполняет ни `BlockKey`,
+ни `ClientUserIDs`, из-за чего `GET /programs/{id}/versions/{version_id}` отдаёт
+`client_user_ids: null`, нарушая гарантию «всегда массив».
 
 В `internal/program/store_client_program.go` в сборке `DayBlock` добавить:
 
 ```go
 BlockKey: pgconv.FromPGUUID(blockRow.BlockKey),
 ```
+
+и в конце `GetVersionDetail`, перед возвратом, наложить правила программы —
+`program_id` берётся из уже загруженной строки версии:
+
+```go
+rules, err := s.listProgramBlockClients(ctx, pgconv.FromPGUUID(version.ProgramID))
+if err != nil {
+	return Detail{}, err
+}
+applyBlockClients(&detail, rules)
+```
+
+Правила действуют на любую версию, к которой относится их `block_key`, поэтому
+показывать их тренеру в просмотре версии — правда, а `[]` на каждом блоке было бы
+ложью. Заодно это чинит `null` и упрощает Task 8.
 
 - [ ] **Step 7: Запустить тест, убедиться что проходит**
 
@@ -1244,11 +1264,7 @@ func (s *Store) ensureDaysKeepSharedBlock(ctx context.Context, programID, blockK
 		if err != nil {
 			return err
 		}
-		rules, err := s.listProgramBlockClients(ctx, programID)
-		if err != nil {
-			return err
-		}
-		applyBlockClients(&detail, rules)
+		// GetVersionDetail already applies the program's rules (Task 3).
 		trees = append(trees, struct {
 			label  string
 			detail Detail
@@ -1824,7 +1840,7 @@ git commit -m "feat(program): inherit block clients on ungroup and extract, guar
 **Interfaces:**
 - Consumes: `FilterDetailForClient` из Task 4, `listProgramBlockClients` из Task 2.
 - Produces:
-  - `func (s *Store) GetVersionDetailForClient(ctx context.Context, versionID, programID, clientUserID uuid.UUID) (Detail, error)`
+  - `func (s *Store) GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (Detail, error)`
   - тот же метод на `*Service`
   - `ClientProgramReader` требует `GetVersionDetailForClient`
 
@@ -1855,7 +1871,7 @@ func TestGetVersionDetailForClient_hidesForeignBlocks(t *testing.T) {
 
 	versionID := assignedVersionID(t, pool, programID, petya)
 
-	forPetya, err := store.GetVersionDetailForClient(ctx, versionID, programID, petya)
+	forPetya, err := store.GetVersionDetailForClient(ctx, versionID, petya)
 	if err != nil {
 		t.Fatalf("GetVersionDetailForClient(petya): %v", err)
 	}
@@ -1863,7 +1879,7 @@ func TestGetVersionDetailForClient_hidesForeignBlocks(t *testing.T) {
 		t.Fatalf("blocks for listed client = %d, want 2", got)
 	}
 
-	forVasya, err := store.GetVersionDetailForClient(ctx, versionID, programID, vasya)
+	forVasya, err := store.GetVersionDetailForClient(ctx, versionID, vasya)
 	if err != nil {
 		t.Fatalf("GetVersionDetailForClient(vasya): %v", err)
 	}
@@ -1892,16 +1908,12 @@ Expected: FAIL — `store.GetVersionDetailForClient undefined`.
 // GetVersionDetailForClient loads a frozen version and drops the blocks this
 // client must not see. Visibility rules live on the program, not on the
 // version, so they apply to whichever version the client is currently on.
-func (s *Store) GetVersionDetailForClient(ctx context.Context, versionID, programID, clientUserID uuid.UUID) (Detail, error) {
+// GetVersionDetail already applies them (Task 3), so this only filters.
+func (s *Store) GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (Detail, error) {
 	detail, err := s.GetVersionDetail(ctx, versionID)
 	if err != nil {
 		return Detail{}, err
 	}
-	rules, err := s.listProgramBlockClients(ctx, programID)
-	if err != nil {
-		return Detail{}, err
-	}
-	applyBlockClients(&detail, rules)
 	return FilterDetailForClient(detail, clientUserID), nil
 }
 ```
@@ -1911,8 +1923,8 @@ func (s *Store) GetVersionDetailForClient(ctx context.Context, versionID, progra
 В `internal/program/service_version.go` рядом с `GetVersionDetail`:
 
 ```go
-func (s *Service) GetVersionDetailForClient(ctx context.Context, versionID, programID, clientUserID uuid.UUID) (Detail, error) {
-	return s.store.GetVersionDetailForClient(ctx, versionID, programID, clientUserID)
+func (s *Service) GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (Detail, error) {
+	return s.store.GetVersionDetailForClient(ctx, versionID, clientUserID)
 }
 ```
 
@@ -1925,17 +1937,16 @@ func (s *Service) GetVersionDetailForClient(ctx context.Context, versionID, prog
 добавить:
 
 ```go
-GetVersionDetailForClient(ctx context.Context, versionID, programID, clientUserID uuid.UUID) (program.Detail, error)
+GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (program.Detail, error)
 ```
 
 и заменить вызов на строке 165:
 
 ```go
-detail, err := reader.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, assignment.ProgramID, clientUserID)
+detail, err := reader.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, clientUserID)
 ```
 
-Если `assignment.ProgramID` в этой структуре отсутствует — взять его из
-`program.Assignment` (поле уже есть, см. `internal/program/assignment_types.go`).
+
 
 - [ ] **Step 6: Починить фейки в тестах бота**
 
@@ -1977,7 +1988,7 @@ func TestDaySnapshot_containsOnlyVisibleBlocks(t *testing.T) {
 		t.Fatalf("SetBlockClients: %v", err)
 	}
 
-	detail, err := store.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, programID, vasya)
+	detail, err := store.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, vasya)
 	if err != nil {
 		t.Fatalf("GetVersionDetailForClient: %v", err)
 	}
