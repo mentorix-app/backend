@@ -125,3 +125,92 @@ func TestProgramDetail_BlockCarriesKeyAndEmptyClients(t *testing.T) {
 		t.Fatalf("block.ClientUserIDs = %v, want empty (shared block)", block.ClientUserIDs)
 	}
 }
+
+// TestProgramDetail_BlockClientRules_ScopedByBlockKey covers the "block has
+// rules" path end to end through the real ListProgramBlockClients query: it
+// inserts a row directly into mentorix.program_block_clients (the store has
+// no writer for this table until Task 5) and checks that only the block
+// whose block_key matches picks up the rule, while a sibling block in the
+// same day stays empty. TestProgramDetail_BlockCarriesKeyAndEmptyClients only
+// covers the zero-rows case, which would still pass even if the query scanned
+// block_key/client_user_id into the wrong columns.
+func TestProgramDetail_BlockClientRules_ScopedByBlockKey(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	trainerID, exerciseID := seedTrainerAndExercise(t, pool, "block-rules-trainer")
+
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	clientID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(
+		ctx, "block-rules-client@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register client: %v", err)
+	}
+
+	detail, err := store.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	// Restricted block: gets a visibility rule below.
+	detail, err = createSingleBlockStore(ctx, store, trainerID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore (restricted block): %v", err)
+	}
+	// Shared block: no rule row, must stay visible to everyone.
+	detail, err = createSingleBlockStore(ctx, store, trainerID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore (shared block): %v", err)
+	}
+
+	day = detail.Weeks[0].Days[0]
+	if len(day.Blocks) != 2 {
+		t.Fatalf("expected 2 blocks in day, got %d", len(day.Blocks))
+	}
+	restrictedBlock, sharedBlock := day.Blocks[0], day.Blocks[1]
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO mentorix.program_block_clients (program_id, block_key, client_user_id)
+		VALUES ($1, $2, $3)`,
+		detail.ID, restrictedBlock.BlockKey, clientID); err != nil {
+		t.Fatalf("insert program_block_clients row: %v", err)
+	}
+
+	detail, err = store.GetDetail(ctx, detail.ID)
+	if err != nil {
+		t.Fatalf("GetDetail: %v", err)
+	}
+	day = detail.Weeks[0].Days[0]
+	if len(day.Blocks) != 2 {
+		t.Fatalf("expected 2 blocks in day after reload, got %d", len(day.Blocks))
+	}
+
+	var reloadedRestricted, reloadedShared program.DayBlock
+	var foundRestricted, foundShared bool
+	for _, b := range day.Blocks {
+		switch b.ID {
+		case restrictedBlock.ID:
+			reloadedRestricted, foundRestricted = b, true
+		case sharedBlock.ID:
+			reloadedShared, foundShared = b, true
+		}
+	}
+	if !foundRestricted || !foundShared {
+		t.Fatalf("could not find both blocks after reload: restricted=%v shared=%v", foundRestricted, foundShared)
+	}
+
+	if len(reloadedRestricted.ClientUserIDs) != 1 || reloadedRestricted.ClientUserIDs[0] != clientID {
+		t.Fatalf("restricted block ClientUserIDs = %v, want [%v]", reloadedRestricted.ClientUserIDs, clientID)
+	}
+	if len(reloadedShared.ClientUserIDs) != 0 {
+		t.Fatalf("shared block ClientUserIDs = %v, want empty (no rule row)", reloadedShared.ClientUserIDs)
+	}
+}
