@@ -51,8 +51,10 @@ CREATE TABLE mentorix.program_block_clients (
     UNIQUE (program_id, block_key, client_user_id)
 );
 
-CREATE INDEX program_block_clients_program_id_block_key_idx
-  ON mentorix.program_block_clients (program_id, block_key);
+-- No index on (program_id, block_key): the UNIQUE constraint above already
+-- creates a b-tree on (program_id, block_key, client_user_id), whose leftmost
+-- prefix serves those lookups. client_user_id is the third column, so it needs
+-- its own index for "all rules of this client".
 
 CREATE INDEX program_block_clients_client_user_id_idx
   ON mentorix.program_block_clients (client_user_id);

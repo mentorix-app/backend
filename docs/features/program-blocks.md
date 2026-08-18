@@ -29,6 +29,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | `created_at` | timestamptz | |
 | `modified_at` | timestamptz | |
 | `modified_by` | uuid FK → `users` | nullable |
+| `block_key` | uuid NOT NULL DEFAULT `gen_random_uuid()` | стабильная идентичность блока между publish и discard |
 
 `block_type`: `single`, `emom`, `amrap`, `for_time`, `intervals`, `chipper`, `ladder`, `death_by`, `superset`, `complex`, `skill_work`, `strength`, `conditioning`, `gymnastics`, `weightlifting`.
 
