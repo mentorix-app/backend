@@ -319,3 +319,139 @@ func TestTelegramClient_beforeProgramAssignment(t *testing.T) {
 		t.Fatalf("GetVersionDetail missing err = %v", err)
 	}
 }
+
+// TestTelegramClient_todayHidesRestrictedBlock exercises the real production
+// wiring, not just the store method: trainerclient.Service.GetTelegramToday
+// routes through clientProgramView, which calls
+// program.GetVersionDetailForClient(ctx, assignment.ProgramVersionID,
+// clientUserID) at bot_service.go. TestGetVersionDetailForClient_
+// hidesForeignBlocks (program_block_visibility_integration_test.go) already
+// proves the store method itself filters correctly; this test proves the
+// bot service actually passes the *client's* id into that call rather than,
+// say, the trainer id — a bug that would compile, would still find the
+// assignment, and would silently stop filtering for every client.
+func TestTelegramClient_todayHidesRestrictedBlock(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	trainerUserID, err := authStore.RegisterTrainerEmailPassword(
+		ctx, "tg-restrict-trainer@test.com", pwHash, "Coach Restrict")
+	if err != nil {
+		t.Fatalf("register trainer: %v", err)
+	}
+
+	progSvc := program.NewService(pool)
+	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
+		TelegramBotUsername: "mentorix_bot",
+		InviteTTL:           7 * 24 * time.Hour,
+	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
+
+	inviteA, err := svc.CreateInvite(ctx, trainerUserID)
+	if err != nil {
+		t.Fatalf("CreateInvite A: %v", err)
+	}
+	inviteB, err := svc.CreateInvite(ctx, trainerUserID)
+	if err != nil {
+		t.Fatalf("CreateInvite B: %v", err)
+	}
+	acceptA, err := svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
+		Token: inviteTokenFromURL(inviteA.InviteURL), TelegramUserID: "777201", DisplayName: "Petya",
+	})
+	if err != nil {
+		t.Fatalf("AcceptInvite A: %v", err)
+	}
+	acceptB, err := svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
+		Token: inviteTokenFromURL(inviteB.InviteURL), TelegramUserID: "777202", DisplayName: "Vasya",
+	})
+	if err != nil {
+		t.Fatalf("AcceptInvite B: %v", err)
+	}
+
+	exStore := exercise.NewStore(pool)
+	catalogExercise, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
+		Name:        "Bench Press",
+		NameRu:      "Жим",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupChest,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+
+	draft, err := progSvc.Create(ctx, trainerUserID)
+	if err != nil {
+		t.Fatalf("Create program: %v", err)
+	}
+	weekID := draft.Weeks[0].ID
+	dayID := draft.Weeks[0].Days[0].ID
+	sets, reps := "3", "10"
+	if _, err := createSingleBlock(ctx, progSvc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID, Sets: &sets, Reps: &reps,
+	}); err != nil {
+		t.Fatalf("create block 1: %v", err)
+	}
+	detail, err := createSingleBlock(ctx, progSvc, trainerUserID, draft.ID, weekID, dayID, program.DayExerciseInput{
+		ExerciseID: catalogExercise.ID, Sets: &sets, Reps: &reps,
+	})
+	if err != nil {
+		t.Fatalf("create block 2: %v", err)
+	}
+	blocks := detail.Weeks[0].Days[0].Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("blocks before publish = %d, want 2", len(blocks))
+	}
+	restrictedBlockID := blocks[1].ID
+
+	name := "Restricted Plan"
+	category := program.CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	if _, err := progSvc.Update(ctx, trainerUserID, draft.ID, program.UpdateInput{
+		Name: &name, Category: &category, Difficulty: &difficulty,
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, err := progSvc.Publish(ctx, trainerUserID, draft.ID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	programID := draft.ID
+
+	if _, err := svc.BulkSetClientProgramAssignment(ctx, trainerUserID, program.BulkSetClientProgramAssignmentRequest{
+		ProgramID:     &programID,
+		ClientUserIDs: []uuid.UUID{acceptA.UserID, acceptB.UserID},
+	}); err != nil {
+		t.Fatalf("BulkSetClientProgramAssignment: %v", err)
+	}
+
+	// Restrict the second block to Petya (client A) only. Vasya (client B)
+	// stays assigned to the same program — same frozen version, since only
+	// one publish ever happened — but must not see it.
+	if _, err := progSvc.SetBlockClients(ctx, trainerUserID, programID, weekID, restrictedBlockID,
+		[]uuid.UUID{acceptA.UserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	todayA, err := svc.GetTelegramToday(ctx, "777201", nil)
+	if err != nil {
+		t.Fatalf("GetTelegramToday A: %v", err)
+	}
+	if !todayA.HasProgram || len(todayA.Blocks) != 2 {
+		t.Fatalf("today for listed client = %+v, want HasProgram and 2 blocks", todayA)
+	}
+
+	todayB, err := svc.GetTelegramToday(ctx, "777202", nil)
+	if err != nil {
+		t.Fatalf("GetTelegramToday B: %v", err)
+	}
+	if !todayB.HasProgram || len(todayB.Blocks) != 1 {
+		t.Fatalf("today for unlisted client = %+v, want HasProgram and 1 block", todayB)
+	}
+	if len(todayB.Blocks[0].ClientUserIDs) != 0 {
+		t.Fatal("unlisted client kept a restricted block through the Telegram service path")
+	}
+}

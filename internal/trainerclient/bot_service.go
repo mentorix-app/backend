@@ -11,7 +11,6 @@ import (
 
 type ClientProgramReader interface {
 	GetAssignmentByTrainerID(ctx context.Context, trainerID, clientUserID uuid.UUID) (*program.Assignment, error)
-	GetVersionDetail(ctx context.Context, versionID uuid.UUID) (program.Detail, error)
 	GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (program.Detail, error)
 }
 
