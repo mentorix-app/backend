@@ -638,6 +638,44 @@ func TestSetBlockClients_refusesLastSharedBlockInAssignedVersionOnly(t *testing.
 	}
 }
 
+// TestClearAssignment_removesClientFromBlocks proves that clearing a client's
+// program assignment deletes their block visibility rules for that program.
+// Without this, a rule naming a client who no longer has the program would
+// linger forever, and would wrongly restrict the block again if the client
+// were later reassigned to the same program.
+func TestClearAssignment_removesClientFromBlocks(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "clear-assign", 2)
+	trainerUserID := ownerUserID(t, pool, programID)
+	var trainerID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT id FROM mentorix.trainers WHERE user_id = $1`, trainerUserID).Scan(&trainerID); err != nil {
+		t.Fatalf("select trainer id: %v", err)
+	}
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	if _, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, clientUserID, nil); err != nil {
+		t.Fatalf("SetClientProgramAssignment(clear): %v", err)
+	}
+
+	var left int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM mentorix.program_block_clients
+		WHERE program_id = $1 AND client_user_id = $2`, programID, clientUserID).Scan(&left); err != nil {
+		t.Fatalf("count block clients: %v", err)
+	}
+	if left != 0 {
+		t.Fatalf("block client rows after clear = %d, want 0", left)
+	}
+}
+
 // ownerUserID returns the trainer user id that created the program.
 func ownerUserID(t *testing.T, pool *pgxpool.Pool, programID uuid.UUID) uuid.UUID {
 	t.Helper()

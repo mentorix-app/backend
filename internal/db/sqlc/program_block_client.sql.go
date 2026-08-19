@@ -179,3 +179,63 @@ func (q *Queries) LockProgramForUpdate(ctx context.Context, id pgtype.UUID) erro
 	_, err := q.db.Exec(ctx, lockProgramForUpdate, id)
 	return err
 }
+
+const purgeOrphanProgramBlockClients = `-- name: PurgeOrphanProgramBlockClients :execrows
+DELETE FROM mentorix.program_block_clients pbc
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM mentorix.program_week_day_blocks b
+    JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+    WHERE d.program_id = pbc.program_id AND b.block_key = pbc.block_key
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM mentorix.program_version_week_day_blocks vb
+    JOIN mentorix.program_version_week_days vd
+      ON vd.id = vb.program_version_week_day_id
+    JOIN mentorix.program_versions v ON v.id = vd.program_version_id
+    WHERE v.program_id = pbc.program_id AND vb.block_key = pbc.block_key
+  )
+`
+
+func (q *Queries) PurgeOrphanProgramBlockClients(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeOrphanProgramBlockClients)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const purgeOrphanProgramBlockClientsForProgram = `-- name: PurgeOrphanProgramBlockClientsForProgram :execrows
+
+DELETE FROM mentorix.program_block_clients pbc
+WHERE pbc.program_id = $1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM mentorix.program_week_day_blocks b
+    JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+    WHERE d.program_id = pbc.program_id AND b.block_key = pbc.block_key
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM mentorix.program_version_week_day_blocks vb
+    JOIN mentorix.program_version_week_days vd
+      ON vd.id = vb.program_version_week_day_id
+    JOIN mentorix.program_versions v ON v.id = vd.program_version_id
+    WHERE v.program_id = pbc.program_id AND vb.block_key = pbc.block_key
+  )
+`
+
+// A rule is orphaned only when its block_key exists in neither the working
+// copy (program_week_day_blocks, joined through program_week_days for the
+// program_id) nor any surviving version of the same program. The version
+// half matters: a block_key removed from the working copy can still live
+// inside a frozen version a client is currently assigned to, and deleting
+// its rule there would wrongly un-restrict the block for that client.
+func (q *Queries) PurgeOrphanProgramBlockClientsForProgram(ctx context.Context, programID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeOrphanProgramBlockClientsForProgram, programID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

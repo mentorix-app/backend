@@ -10,8 +10,9 @@ import (
 )
 
 type Result struct {
-	TrainerInvites  int64
-	RefreshSessions int64
+	TrainerInvites      int64
+	RefreshSessions     int64
+	ProgramBlockClients int64
 }
 
 func Run(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
@@ -27,8 +28,14 @@ func Run(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 		return Result{}, fmt.Errorf("purge refresh sessions: %w", err)
 	}
 
+	blockClients, err := q.PurgeOrphanProgramBlockClients(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("purge orphan program block clients: %w", err)
+	}
+
 	return Result{
-		TrainerInvites:  invites,
-		RefreshSessions: sessions,
+		TrainerInvites:      invites,
+		RefreshSessions:     sessions,
+		ProgramBlockClients: blockClients,
 	}, nil
 }

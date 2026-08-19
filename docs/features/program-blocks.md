@@ -50,7 +50,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | `client_user_id` | uuid FK → `users` | |
 | `created_at`, `created_by` | | |
 
-UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id, block_key)` нет → блок виден всем клиентам программы — отдельного boolean-флага нет. `GET .../programs/{id}` возвращает `blocks[].client_user_ids`: пустой массив `[]`, никогда `null` — виден всем клиентам программы. `block_key` переживает publish и `discard-unpublished` (working copy ↔ frozen version), поэтому правило продолжает указывать на тот же блок в любой версии. Внутренний инвариант: `GetVersionDetail` заполняет `BlockKey` и применяет правила программы — это не HTTP-контракт, а то, что не даёт `discard-unpublished` пересоздать ключи блоков и молча сломать все правила.
+UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id, block_key)` нет → блок виден всем клиентам программы — отдельного boolean-флага нет. `GET .../programs/{id}` возвращает `blocks[].client_user_ids`: пустой массив `[]`, никогда `null` — виден всем клиентам программы. `block_key` переживает publish и `discard-unpublished` (working copy ↔ frozen version), поэтому правило продолжает указывать на тот же блок в любой версии. Внутренний инвариант: `GetVersionDetail` заполняет `BlockKey` и применяет правила программы — это не HTTP-контракт, а то, что не даёт `discard-unpublished` пересоздать ключи блоков и молча сломать все правила. Автоочистка строк при снятии клиента с программы и осиротевших правил — [garbage-cleanup.md](garbage-cleanup.md).
 
 Запись правил — `PUT .../blocks/{block_id}/clients`, полная замена списка; пустой список возвращает блок к общему доступу. День обязан сохранять хотя бы один общий блок: ограничение отклоняется `400` (`ErrLastSharedBlock`), если сделает день без общего блока — проверка идёт по рабочей копии **и** по каждой опубликованной версии с активным назначением, потому что клиенты сидят на этих версиях прямо сейчас, без publish. Проверка запускается только на переходе shared → restricted; смена состава клиентов уже ограниченного блока или снятие ограничения инвариант не ломает. `client_user_ids` в теле должны быть клиентами, назначенными на программу — иначе `400` (`ErrClientNotAssignedToProgram`).
 
@@ -146,3 +146,4 @@ Structured `settings` по `block_type`; таймеры клиента; `weight_
 ## См. также
 
 - [programs.md](programs.md) — программы, publish, версии
+- [garbage-cleanup.md](garbage-cleanup.md) — автоочистка `program_block_clients`

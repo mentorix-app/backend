@@ -409,35 +409,50 @@ func (s *Store) CleanupProgramVersions(ctx context.Context, programID uuid.UUID)
 				Reason:    "sole_version",
 			})
 		}
-		return result, nil
-	}
-
-	for _, row := range rows {
-		versionID := pgconv.FromPGUUID(row.ID)
-		if row.AssignmentCount > 0 {
-			result.Skipped = append(result.Skipped, VersionCleanupSkipped{
-				VersionID: versionID,
-				Reason:    "has_assignments",
-			})
-			continue
-		}
-		if err := s.DeleteProgramVersion(ctx, programID, versionID); err != nil {
-			if errors.Is(err, ErrSoleProgramVersion) {
+	} else {
+		for _, row := range rows {
+			versionID := pgconv.FromPGUUID(row.ID)
+			if row.AssignmentCount > 0 {
 				result.Skipped = append(result.Skipped, VersionCleanupSkipped{
 					VersionID: versionID,
-					Reason:    "sole_version",
+					Reason:    "has_assignments",
 				})
 				continue
 			}
-			return VersionCleanupResult{}, err
+			if err := s.DeleteProgramVersion(ctx, programID, versionID); err != nil {
+				if errors.Is(err, ErrSoleProgramVersion) {
+					result.Skipped = append(result.Skipped, VersionCleanupSkipped{
+						VersionID: versionID,
+						Reason:    "sole_version",
+					})
+					continue
+				}
+				return VersionCleanupResult{}, err
+			}
+			result.DeletedVersionIDs = append(result.DeletedVersionIDs, versionID)
 		}
-		result.DeletedVersionIDs = append(result.DeletedVersionIDs, versionID)
+	}
+
+	// A version deleted just above can be the last surviving place a block_key
+	// lived outside the working copy, so this is exactly the moment an orphan
+	// rule can appear. Purge unconditionally: even the "nothing deleted" path
+	// above can follow a working-copy-only block deletion that already
+	// orphaned a rule on its own.
+	if _, err := s.q.PurgeOrphanProgramBlockClientsForProgram(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return VersionCleanupResult{}, fmt.Errorf("purge orphan block clients: %w", err)
 	}
 	return result, nil
 }
 
 func (s *Store) cleanupUnusedVersionsBestEffort(ctx context.Context, programID uuid.UUID) {
 	if _, err := s.CleanupProgramVersions(ctx, programID); err != nil {
+		// Best-effort: assignment change already committed; log would need a logger on Store.
+		_ = err
+	}
+	// Independent of the call above: CleanupProgramVersions can fail before it
+	// reaches its own purge (e.g. ListProgramVersionsByProgramID), so retry the
+	// purge here too. Cheap and idempotent when the first attempt already ran.
+	if _, err := s.q.PurgeOrphanProgramBlockClientsForProgram(ctx, pgconv.ToPGUUID(programID)); err != nil {
 		// Best-effort: assignment change already committed; log would need a logger on Store.
 		_ = err
 	}
