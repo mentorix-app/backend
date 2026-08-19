@@ -25,6 +25,8 @@
 - `block_key` наружу в API не выходит: тег `json:"-"`.
 - `client_user_ids` всегда сериализуется массивом — `[]` для общего блока,
   никогда `null`. В OpenAPI поле не `nullable`.
+- `//nolint` в репозитории нет ни одного — не вводить. Функция без вызывающего
+  покрывается тестом (`run.tests: true` в `.golangci.yml`), а не подавлением.
 - После изменений в `db/migrations/` — `make schema-sync`; после изменений в `db/queries/` — `sqlc generate`.
 - Каждая задача завершается коммитом; pre-commit прогоняет `make check-ci`.
 - Коммиты — Conventional Commits на английском. `feat` только для user-facing поведения.
@@ -798,6 +800,40 @@ func TestFilterDetailForClient_dropsHiddenBlocks(t *testing.T) {
 	// The source detail must not be mutated.
 	if got := len(d.Weeks[0].Days[0].Blocks); got != 2 {
 		t.Fatalf("source detail mutated: blocks = %d, want 2", got)
+	}
+}
+
+func TestDayHasSharedBlock(t *testing.T) {
+	petya := uuid.New()
+
+	tests := []struct {
+		name string
+		day  Day
+		want bool
+	}{
+		{
+			name: "day keeps one shared block",
+			day:  Day{Blocks: []DayBlock{{ClientUserIDs: []uuid.UUID{petya}}, {}}},
+			want: true,
+		},
+		{
+			name: "every block in the day is restricted",
+			day:  Day{Blocks: []DayBlock{{ClientUserIDs: []uuid.UUID{petya}}}},
+			want: false,
+		},
+		{
+			name: "day with no blocks at all",
+			day:  Day{},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := dayHasSharedBlock(tc.day); got != tc.want {
+				t.Fatalf("dayHasSharedBlock() = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
