@@ -72,7 +72,7 @@ Prefix: `/programs/{id}/weeks/{week_id}`
 | Week | `POST /weeks`, `PUT /weeks/reorder`, `DELETE /weeks/{week_id}` |
 | Day collection | `POST /days`, `PUT /days/reorder`, `DELETE /days/{day_id}` |
 | Block collection (in day) | `POST /days/{day_id}/blocks`, `PUT …/blocks/reorder`, `POST …/blocks/merge` |
-| Block instance | `PATCH /blocks/{block_id}`, `DELETE /blocks/{block_id}`, `POST …/ungroup`, `POST …/move` |
+| Block instance | `PATCH /blocks/{block_id}`, `DELETE /blocks/{block_id}`, `POST …/ungroup`, `POST …/move`, `PUT …/blocks/{block_id}/clients` |
 | Block exercises | `POST /blocks/{block_id}/exercises`, `PUT …/exercises/reorder`, `PUT\|DELETE …/exercises/{item_id}`, `POST …/extract`, `POST …/move` |
 
 Day id **only** where the operation is about the day's block list (create, reorder, merge). Block `block_id` ops sit at **week** level.

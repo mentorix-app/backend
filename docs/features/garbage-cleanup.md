@@ -25,7 +25,7 @@
 - `clear`/`reassign` (`SetClientProgramAssignment`) — в той же транзакции `DeleteProgramBlockClientsForClient` удаляет строки клиента для **прежней** `program_id` (не новой).
 - Правило-сирота — `block_key`, которого нет ни в рабочей копии (`program_week_day_blocks`), ни в одной сохранившейся версии (`program_version_week_day_blocks`) программы; оба условия обязательны, версии — потому что клиент может быть назначен на версию, куда рабочая копия уже не смотрит.
 - `PurgeOrphanProgramBlockClientsForProgram` (scoped) вызывается из `CleanupProgramVersions` и из best-effort прохода после `assign`/`reassign`/`clear`/`sync` — момент, когда у `block_key` может исчезнуть последняя версия.
-- `PurgeOrphanProgramBlockClients` (глобальный) — то же самое без `program_id`, вызывается из `cleanup.Run`. Модель данных — [program-blocks.md](program-blocks.md).
+- `PurgeOrphanProgramBlockClients` (глобальный) — то же самое без `program_id`, вызывается из `cleanup.Run`. Модель данных и правила — [program-block-visibility.md](program-block-visibility.md).
 
 ## Инвайты
 

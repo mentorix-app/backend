@@ -19,6 +19,7 @@
 | [features/exercises.md](features/exercises.md) | Справочник упражнений |
 | [features/programs.md](features/programs.md) | Программы тренировок |
 | [features/program-blocks.md](features/program-blocks.md) | Блоки упражнений в дне |
+| [features/program-block-visibility.md](features/program-block-visibility.md) | Видимость блока по клиентам |
 | [features/trainer-clients.md](features/trainer-clients.md) | Назначение программы клиенту |
 | [features/trainer-invites.md](features/trainer-invites.md) | Инвайты тренер → клиент (Telegram) |
 | [features/telegram-bot.md](features/telegram-bot.md) | Telegram-бот для клиента |

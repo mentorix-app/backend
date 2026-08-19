@@ -54,6 +54,8 @@ programs → program_weeks → program_week_days → program_week_day_blocks
 program_versions → program_version_weeks → program_version_week_days
   → program_version_week_day_blocks → program_version_week_day_block_exercises
 program_assignments
+program_block_clients — per-client visibility rule, keyed by `block_key` (not FK to
+  `…_blocks.id`); `block_key` lives on both block trees above and survives publish
 ```
 
 ## Workflow
