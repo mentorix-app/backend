@@ -84,6 +84,12 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 			}); err != nil {
 				return nil, fmt.Errorf("delete assignment: %w", err)
 			}
+			if err := qtx.DeleteProgramBlockClientsForClient(ctx, sqlc.DeleteProgramBlockClientsForClientParams{
+				ProgramID:    pgconv.ToPGUUID(*previousProgramID),
+				ClientUserID: clientPG,
+			}); err != nil {
+				return nil, fmt.Errorf("delete block clients for client: %w", err)
+			}
 		}
 		if err := tx.Commit(ctx); err != nil {
 			return nil, fmt.Errorf("commit: %w", err)
@@ -157,6 +163,15 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 		})
 		if err != nil {
 			return nil, fmt.Errorf("update program assignment: %w", err)
+		}
+		// previousProgramID is guaranteed != *programID here: the equal case
+		// already returned ErrAlreadyAssigned above. Use it, not *programID —
+		// the client's rules belong to the program they are leaving.
+		if err := qtx.DeleteProgramBlockClientsForClient(ctx, sqlc.DeleteProgramBlockClientsForClientParams{
+			ProgramID:    pgconv.ToPGUUID(*previousProgramID),
+			ClientUserID: clientPG,
+		}); err != nil {
+			return nil, fmt.Errorf("delete block clients for client: %w", err)
 		}
 	}
 

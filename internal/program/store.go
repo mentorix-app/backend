@@ -124,7 +124,7 @@ func (s *Store) List(ctx context.Context, params ListParams) (ListResult, error)
 	items := make([]Program, 0, len(rows))
 	for _, row := range rows {
 		p := programFromListRow(row)
-		p, err = s.enrichProgram(ctx, p, nil)
+		p, err = s.enrichProgram(ctx, s.q, p, nil)
 		if err != nil {
 			return ListResult{}, err
 		}
@@ -138,7 +138,14 @@ func (s *Store) List(ctx context.Context, params ListParams) (ListResult, error)
 }
 
 func (s *Store) GetProgramRow(ctx context.Context, id uuid.UUID) (Program, error) {
-	row, err := s.q.GetProgramByID(ctx, pgconv.ToPGUUID(id))
+	return s.getProgramRow(ctx, s.q, id)
+}
+
+// getProgramRow takes the queries object explicitly for the same reason as
+// listProgramBlockClients: a caller inside a locked transaction passes qtx to
+// read a serialized view instead of reaching back into the pool.
+func (s *Store) getProgramRow(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (Program, error) {
+	row, err := q.GetProgramByID(ctx, pgconv.ToPGUUID(id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Program{}, pgx.ErrNoRows
@@ -149,11 +156,19 @@ func (s *Store) GetProgramRow(ctx context.Context, id uuid.UUID) (Program, error
 }
 
 func (s *Store) GetDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
-	d, err := s.loadDetail(ctx, id)
+	return s.getDetail(ctx, s.q, id)
+}
+
+// getDetail takes the queries object explicitly so a caller already holding
+// the program lock (LockProgramForUpdate, via qtx) can run the whole read
+// in-transaction on its own connection instead of reaching back into the pool
+// for a second one (see SetBlockClients).
+func (s *Store) getDetail(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (Detail, error) {
+	d, err := s.loadDetail(ctx, q, id)
 	if err != nil {
 		return Detail{}, err
 	}
-	p, err := s.enrichProgram(ctx, d.Program, &d)
+	p, err := s.enrichProgram(ctx, q, d.Program, &d)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -161,23 +176,66 @@ func (s *Store) GetDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
 	return d, nil
 }
 
-func (s *Store) loadDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
-	p, err := s.GetProgramRow(ctx, id)
+func (s *Store) loadDetail(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (Detail, error) {
+	p, err := s.getProgramRow(ctx, q, id)
 	if err != nil {
 		return Detail{}, err
 	}
-	weeks, err := s.listWeeksWithDaysAndExercises(ctx, id)
+	weeks, err := s.listWeeksWithDaysAndExercises(ctx, q, id)
 	if err != nil {
 		return Detail{}, err
 	}
 	d := Detail{Program: p, Weeks: weeks}
 	sortProgramDetail(&d)
+
+	rules, err := s.listProgramBlockClients(ctx, q, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	applyBlockClients(&d, rules)
+
 	return d, nil
 }
 
-func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, programID uuid.UUID) ([]Week, error) {
+// listProgramBlockClients returns visibility rules of a program keyed by block_key.
+// A block_key absent from the map has no rules and is visible to every client.
+// Takes the queries object explicitly so a caller holding the program lock
+// (LockProgramForUpdate, via qtx) can read a serialized view instead of an
+// unlocked one through s.q.
+func (s *Store) listProgramBlockClients(ctx context.Context, q *sqlc.Queries, programID uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	rows, err := q.ListProgramBlockClients(ctx, pgconv.ToPGUUID(programID))
+	if err != nil {
+		return nil, fmt.Errorf("list program block clients: %w", err)
+	}
+	out := make(map[uuid.UUID][]uuid.UUID, len(rows))
+	for _, row := range rows {
+		key := pgconv.FromPGUUID(row.BlockKey)
+		out[key] = append(out[key], pgconv.FromPGUUID(row.ClientUserID))
+	}
+	return out, nil
+}
+
+// applyBlockClients fills DayBlock.ClientUserIDs from the rules map.
+// A block with no rules gets an empty, non-nil slice: the field must serialize
+// as [] and never as null, so a consumer has one shape to handle, not two.
+func applyBlockClients(d *Detail, rules map[uuid.UUID][]uuid.UUID) {
+	for wi := range d.Weeks {
+		for di := range d.Weeks[wi].Days {
+			for bi := range d.Weeks[wi].Days[di].Blocks {
+				block := &d.Weeks[wi].Days[di].Blocks[bi]
+				ids := rules[block.BlockKey]
+				if ids == nil {
+					ids = []uuid.UUID{}
+				}
+				block.ClientUserIDs = ids
+			}
+		}
+	}
+}
+
+func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, q *sqlc.Queries, programID uuid.UUID) ([]Week, error) {
 	programPG := pgconv.ToPGUUID(programID)
-	weekRows, err := s.q.ListProgramWeeks(ctx, programPG)
+	weekRows, err := q.ListProgramWeeks(ctx, programPG)
 	if err != nil {
 		return nil, fmt.Errorf("list program weeks: %w", err)
 	}
@@ -185,7 +243,7 @@ func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, programID uui
 	weeks := make([]Week, 0, len(weekRows))
 	for _, w := range weekRows {
 		weekID := pgconv.FromPGUUID(w.ID)
-		days, err := s.listDaysWithBlocks(ctx, weekID)
+		days, err := s.listDaysWithBlocks(ctx, q, weekID)
 		if err != nil {
 			return nil, err
 		}
@@ -200,9 +258,9 @@ func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, programID uui
 	return weeks, nil
 }
 
-func (s *Store) listDaysWithBlocks(ctx context.Context, weekID uuid.UUID) ([]Day, error) {
+func (s *Store) listDaysWithBlocks(ctx context.Context, q *sqlc.Queries, weekID uuid.UUID) ([]Day, error) {
 	weekPG := pgconv.ToPGUUID(weekID)
-	dayRows, err := s.q.ListProgramDaysForWeek(ctx, weekPG)
+	dayRows, err := q.ListProgramDaysForWeek(ctx, weekPG)
 	if err != nil {
 		return nil, fmt.Errorf("list program days: %w", err)
 	}
@@ -210,7 +268,7 @@ func (s *Store) listDaysWithBlocks(ctx context.Context, weekID uuid.UUID) ([]Day
 	days := make([]Day, 0, len(dayRows))
 	for _, d := range dayRows {
 		dayID := pgconv.FromPGUUID(d.ID)
-		blocks, err := s.listDayBlocks(ctx, dayID)
+		blocks, err := s.listDayBlocks(ctx, q, dayID)
 		if err != nil {
 			return nil, err
 		}
@@ -226,9 +284,9 @@ func (s *Store) listDaysWithBlocks(ctx context.Context, weekID uuid.UUID) ([]Day
 	return days, nil
 }
 
-func (s *Store) listDayBlocks(ctx context.Context, dayID uuid.UUID) ([]DayBlock, error) {
+func (s *Store) listDayBlocks(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID) ([]DayBlock, error) {
 	dayPG := pgconv.ToPGUUID(dayID)
-	blockRows, err := s.q.ListDayBlocks(ctx, dayPG)
+	blockRows, err := q.ListDayBlocks(ctx, dayPG)
 	if err != nil {
 		return nil, fmt.Errorf("list day blocks: %w", err)
 	}
@@ -236,12 +294,13 @@ func (s *Store) listDayBlocks(ctx context.Context, dayID uuid.UUID) ([]DayBlock,
 	out := make([]DayBlock, 0, len(blockRows))
 	for _, row := range blockRows {
 		blockID := pgconv.FromPGUUID(row.ID)
-		exercises, err := s.listBlockExercises(ctx, blockID)
+		exercises, err := s.listBlockExercises(ctx, q, blockID)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, DayBlock{
 			ID:          blockID,
+			BlockKey:    pgconv.FromPGUUID(row.BlockKey),
 			BlockType:   BlockType(row.BlockType),
 			Instruction: row.Instruction,
 			SortOrder:   int(row.SortOrder),
@@ -252,8 +311,8 @@ func (s *Store) listDayBlocks(ctx context.Context, dayID uuid.UUID) ([]DayBlock,
 	return out, nil
 }
 
-func (s *Store) listBlockExercises(ctx context.Context, blockID uuid.UUID) ([]DayExercise, error) {
-	rows, err := s.q.ListBlockExercises(ctx, pgconv.ToPGUUID(blockID))
+func (s *Store) listBlockExercises(ctx context.Context, q *sqlc.Queries, blockID uuid.UUID) ([]DayExercise, error) {
+	rows, err := q.ListBlockExercises(ctx, pgconv.ToPGUUID(blockID))
 	if err != nil {
 		return nil, fmt.Errorf("list block exercises: %w", err)
 	}
@@ -576,14 +635,14 @@ func (s *Store) CreateDayBlock(ctx context.Context, userID, programID, weekID, d
 
 	qtx := s.q.WithTx(tx)
 	dayPG := pgconv.ToPGUUID(dayID)
-	blockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(blockType), "", 1, userID))
+	blockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(blockType), "", 1, userID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("insert day block: %w", err)
 	}
-	blockUUID := pgconv.FromPGUUID(blockID)
+	blockUUID := pgconv.FromPGUUID(blockRow.ID)
 
 	if in.Exercise != nil {
-		if err := qtx.InsertBlockExercise(ctx, blockExerciseInsertParams(blockID, 1, userID, *in.Exercise)); err != nil {
+		if err := qtx.InsertBlockExercise(ctx, blockExerciseInsertParams(blockRow.ID, 1, userID, *in.Exercise)); err != nil {
 			return Detail{}, fmt.Errorf("insert block exercise: %w", err)
 		}
 	}

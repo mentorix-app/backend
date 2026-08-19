@@ -46,5 +46,6 @@ func main() {
 	logger.Info("janitor completed",
 		"trainer_invites_deleted", result.TrainerInvites,
 		"refresh_sessions_deleted", result.RefreshSessions,
+		"program_block_clients_deleted", result.ProgramBlockClients,
 	)
 }

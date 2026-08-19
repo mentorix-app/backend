@@ -250,15 +250,17 @@ func (q *Queries) InsertProgramVersionDay(ctx context.Context, arg InsertProgram
 const insertProgramVersionDayBlock = `-- name: InsertProgramVersionDayBlock :one
 INSERT INTO mentorix.program_version_week_day_blocks (
   program_version_week_day_id,
+  block_key,
   block_type,
   instruction,
   sort_order
-) VALUES ($1, $2, $3, $4)
-RETURNING id, program_version_week_day_id, block_type, instruction, sort_order, created_at
+) VALUES ($1, $2, $3, $4, $5)
+RETURNING id, program_version_week_day_id, block_type, instruction, sort_order, created_at, block_key
 `
 
 type InsertProgramVersionDayBlockParams struct {
 	ProgramVersionWeekDayID pgtype.UUID `json:"program_version_week_day_id"`
+	BlockKey                pgtype.UUID `json:"block_key"`
 	BlockType               string      `json:"block_type"`
 	Instruction             string      `json:"instruction"`
 	SortOrder               int32       `json:"sort_order"`
@@ -267,6 +269,7 @@ type InsertProgramVersionDayBlockParams struct {
 func (q *Queries) InsertProgramVersionDayBlock(ctx context.Context, arg InsertProgramVersionDayBlockParams) (MentorixProgramVersionWeekDayBlock, error) {
 	row := q.db.QueryRow(ctx, insertProgramVersionDayBlock,
 		arg.ProgramVersionWeekDayID,
+		arg.BlockKey,
 		arg.BlockType,
 		arg.Instruction,
 		arg.SortOrder,
@@ -279,6 +282,7 @@ func (q *Queries) InsertProgramVersionDayBlock(ctx context.Context, arg InsertPr
 		&i.Instruction,
 		&i.SortOrder,
 		&i.CreatedAt,
+		&i.BlockKey,
 	)
 	return i, err
 }
@@ -356,7 +360,7 @@ func (q *Queries) InsertProgramVersionWeek(ctx context.Context, arg InsertProgra
 }
 
 const listProgramVersionDayBlocksByVersionID = `-- name: ListProgramVersionDayBlocksByVersionID :many
-SELECT pvb.id, pvb.program_version_week_day_id, pvb.block_type, pvb.instruction, pvb.sort_order, pvb.created_at
+SELECT pvb.id, pvb.program_version_week_day_id, pvb.block_type, pvb.instruction, pvb.sort_order, pvb.created_at, pvb.block_key
 FROM mentorix.program_version_week_day_blocks pvb
 JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
 WHERE pd.program_version_id = $1
@@ -379,6 +383,7 @@ func (q *Queries) ListProgramVersionDayBlocksByVersionID(ctx context.Context, pr
 			&i.Instruction,
 			&i.SortOrder,
 			&i.CreatedAt,
+			&i.BlockKey,
 		); err != nil {
 			return nil, err
 		}

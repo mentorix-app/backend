@@ -1,6 +1,8 @@
 package program
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -540,4 +542,87 @@ func TestHandlers_blockEndpoints_notFound(t *testing.T) {
 			assertHTTPError(t, tc.run(), http.StatusNotFound)
 		})
 	}
+}
+
+type setBlockClientsErrStore struct {
+	fakeProgramStore
+	setErr error
+}
+
+func (s *setBlockClientsErrStore) SetBlockClients(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return Detail{}, s.setErr
+}
+
+func setBlockClientsContext(t *testing.T, userID, programID, weekID, blockID uuid.UUID, body string) (echo.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	e := echo.New()
+	return programContext(e, http.MethodPut,
+		"/programs/"+programID.String()+"/weeks/"+weekID.String()+
+			"/blocks/"+blockID.String()+"/clients",
+		body, userID, map[string]string{
+			"id":       programID.String(),
+			"week_id":  weekID.String(),
+			"block_id": blockID.String(),
+		})
+}
+
+func TestHandlers_SetBlockClients(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	body := `{"client_user_ids":["` + uuid.New().String() + `"]}`
+	c, rec := setBlockClientsContext(t, userID, programID, weekID, blockID, body)
+	if err := h.SetBlockClients(c); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+func TestHandlers_SetBlockClients_mapsLastSharedBlock(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	store := &setBlockClientsErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		},
+		setErr: fmt.Errorf("%w: week 1 day 3 in working copy", ErrLastSharedBlock),
+	}
+	h := programHandler(store)
+	body := `{"client_user_ids":["` + uuid.New().String() + `"]}`
+	c, _ := setBlockClientsContext(t, userID, programID, uuid.New(), uuid.New(), body)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
+}
+
+func TestHandlers_SetBlockClients_mapsClientNotAssigned(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	store := &setBlockClientsErrStore{
+		fakeProgramStore: fakeProgramStore{
+			program: Program{ID: programID, CreatedBy: userID, Status: StatusPublished},
+		},
+		setErr: ErrClientNotAssignedToProgram,
+	}
+	h := programHandler(store)
+	body := `{"client_user_ids":["` + uuid.New().String() + `"]}`
+	c, _ := setBlockClientsContext(t, userID, programID, uuid.New(), uuid.New(), body)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
+}
+
+func TestHandlers_SetBlockClients_rejectsDuplicateIDs(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	dup := uuid.New().String()
+	body := `{"client_user_ids":["` + dup + `","` + dup + `"]}`
+	c, _ := setBlockClientsContext(t, userID, programID, weekID, blockID, body)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
+}
+
+func TestHandlers_SetBlockClients_rejectsNonUUID(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	body := `{"client_user_ids":["not-a-uuid"]}`
+	c, _ := setBlockClientsContext(t, userID, programID, weekID, blockID, body)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
+}
+
+func TestHandlers_SetBlockClients_rejectsMissingClientUserIDs(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	c, _ := setBlockClientsContext(t, userID, programID, weekID, blockID, `{}`)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
 }

@@ -7,6 +7,7 @@
 | Область | Ссылка |
 | ------- | ------ |
 | Блоки упражнений в дне программы (single / группы, merge, move) | [features/program-blocks.md](features/program-blocks.md) |
+| Персональная видимость блоков дня (`block_key`, список клиентов на блоке) | [features/program-block-visibility.md](features/program-block-visibility.md) |
 | Инфра (health, config, slog, CORS, proxy) | [features/health.md](features/health.md), [architecture.md](architecture.md) |
 | Auth (register, login, refresh, logout, me, rate limit) | [features/auth.md](features/auth.md) |
 | Admin (роль отдельно от trainer; глобальные упражнения, тарифы, просмотр) | [features/admin.md](features/admin.md) |
@@ -23,7 +24,7 @@
 | CI/CD (`make check-ci`, Deploy Hook stage, migrate preDeploy) | [environments.md](environments.md), [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |
-| Garbage cleanup (assignments one-row, auto version purge, invites, Redis stale, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
+| Garbage cleanup (assignments one-row, auto version purge, осиротевшие правила видимости блоков, invites, Redis stale, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Миграции: версия 25 (`./scripts/migrate-check.sh`)._
+_Миграции: версия 26 (`./scripts/migrate-check.sh`)._
 

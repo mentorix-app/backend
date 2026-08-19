@@ -1,0 +1,1328 @@
+//go:build integration
+
+package storetest
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"mentorix-backend/internal/auth"
+	"mentorix-backend/internal/exercise"
+	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/workoutcompletion"
+)
+
+func TestMigration_BlockKeyColumnsExist(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	// Both block_key columns must be NOT NULL *and* carry a generated default:
+	// the existing insert queries do not mention block_key until Tasks 2 and 3,
+	// so without the default this migration breaks every block insert.
+	for _, table := range []string{"program_week_day_blocks", "program_version_week_day_blocks"} {
+		var isNullable string
+		var columnDefault *string
+		err := pool.QueryRow(ctx, `
+			SELECT is_nullable, column_default
+			FROM information_schema.columns
+			WHERE table_schema = 'mentorix' AND table_name = $1 AND column_name = 'block_key'`,
+			table).Scan(&isNullable, &columnDefault)
+		if err != nil {
+			t.Fatalf("query %s.block_key: %v", table, err)
+		}
+		if isNullable != "NO" {
+			t.Fatalf("%s.block_key is_nullable = %q, want NO", table, isNullable)
+		}
+		if columnDefault == nil || !strings.Contains(*columnDefault, "gen_random_uuid") {
+			t.Fatalf("%s.block_key default = %v, want gen_random_uuid()", table, columnDefault)
+		}
+	}
+
+	var hasTable bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema = 'mentorix' AND table_name = 'program_block_clients')`).Scan(&hasTable)
+	if err != nil {
+		t.Fatalf("query information_schema: %v", err)
+	}
+	if !hasTable {
+		t.Fatal("table mentorix.program_block_clients does not exist")
+	}
+
+	var hasUniq bool
+	err = pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM pg_constraint
+			WHERE conname = 'program_block_clients_program_block_key_client_uniq')`).Scan(&hasUniq)
+	if err != nil {
+		t.Fatalf("query pg_constraint: %v", err)
+	}
+	if !hasUniq {
+		t.Fatal("unique constraint on program_block_clients is missing")
+	}
+}
+
+// seedTrainerAndExercise registers a trainer and one catalog exercise.
+// Returns the trainer's user id and the exercise id.
+func seedTrainerAndExercise(t *testing.T, pool *pgxpool.Pool, emailPrefix string) (uuid.UUID, uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	userID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(
+		ctx, emailPrefix+"@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register trainer: %v", err)
+	}
+
+	ex, err := exercise.NewStore(pool).Create(ctx, userID, nil, exercise.UpsertInput{
+		Name:        "Bench Press",
+		NameRu:      "Жим",
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupChest,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+	return userID, ex.ID
+}
+
+func TestProgramDetail_BlockCarriesKeyAndEmptyClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "block-key-detail")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore: %v", err)
+	}
+
+	block, ok := firstDayBlock(detail.Weeks[0].Days[0])
+	if !ok {
+		t.Fatal("expected one block in day")
+	}
+	if block.BlockKey == uuid.Nil {
+		t.Fatal("block.BlockKey is uuid.Nil, want generated key")
+	}
+	if len(block.ClientUserIDs) != 0 {
+		t.Fatalf("block.ClientUserIDs = %v, want empty (shared block)", block.ClientUserIDs)
+	}
+}
+
+// TestProgramDetail_BlockClientRules_ScopedByBlockKey covers the "block has
+// rules" path end to end through the real ListProgramBlockClients query: it
+// inserts a row directly into mentorix.program_block_clients (the store has
+// no writer for this table until Task 5) and checks that only the block
+// whose block_key matches picks up the rule, while a sibling block in the
+// same day stays empty. TestProgramDetail_BlockCarriesKeyAndEmptyClients only
+// covers the zero-rows case, which would still pass even if the query scanned
+// block_key/client_user_id into the wrong columns.
+func TestProgramDetail_BlockClientRules_ScopedByBlockKey(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	trainerID, exerciseID := seedTrainerAndExercise(t, pool, "block-rules-trainer")
+
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	clientID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(
+		ctx, "block-rules-client@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register client: %v", err)
+	}
+
+	detail, err := store.CreateDraft(ctx, trainerID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	// Restricted block: gets a visibility rule below.
+	detail, err = createSingleBlockStore(ctx, store, trainerID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore (restricted block): %v", err)
+	}
+	// Shared block: no rule row, must stay visible to everyone.
+	detail, err = createSingleBlockStore(ctx, store, trainerID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore (shared block): %v", err)
+	}
+
+	day = detail.Weeks[0].Days[0]
+	if len(day.Blocks) != 2 {
+		t.Fatalf("expected 2 blocks in day, got %d", len(day.Blocks))
+	}
+	restrictedBlock, sharedBlock := day.Blocks[0], day.Blocks[1]
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO mentorix.program_block_clients (program_id, block_key, client_user_id)
+		VALUES ($1, $2, $3)`,
+		detail.ID, restrictedBlock.BlockKey, clientID); err != nil {
+		t.Fatalf("insert program_block_clients row: %v", err)
+	}
+
+	detail, err = store.GetDetail(ctx, detail.ID)
+	if err != nil {
+		t.Fatalf("GetDetail: %v", err)
+	}
+	day = detail.Weeks[0].Days[0]
+	if len(day.Blocks) != 2 {
+		t.Fatalf("expected 2 blocks in day after reload, got %d", len(day.Blocks))
+	}
+
+	var reloadedRestricted, reloadedShared program.DayBlock
+	var foundRestricted, foundShared bool
+	for _, b := range day.Blocks {
+		switch b.ID {
+		case restrictedBlock.ID:
+			reloadedRestricted, foundRestricted = b, true
+		case sharedBlock.ID:
+			reloadedShared, foundShared = b, true
+		}
+	}
+	if !foundRestricted || !foundShared {
+		t.Fatalf("could not find both blocks after reload: restricted=%v shared=%v", foundRestricted, foundShared)
+	}
+
+	if len(reloadedRestricted.ClientUserIDs) != 1 || reloadedRestricted.ClientUserIDs[0] != clientID {
+		t.Fatalf("restricted block ClientUserIDs = %v, want [%v]", reloadedRestricted.ClientUserIDs, clientID)
+	}
+	if len(reloadedShared.ClientUserIDs) != 0 {
+		t.Fatalf("shared block ClientUserIDs = %v, want empty (no rule row)", reloadedShared.ClientUserIDs)
+	}
+}
+
+func TestBlockKey_SurvivesPublishAndDiscard(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "block-key-publish")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+	detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore: %v", err)
+	}
+	block, _ := firstDayBlock(detail.Weeks[0].Days[0])
+	wantKey := block.BlockKey
+
+	// Publish freezes the tree; the frozen block must keep the same key.
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	_ = published
+
+	var frozenKey uuid.UUID
+	err = pool.QueryRow(ctx, `
+		SELECT vb.block_key
+		FROM mentorix.program_version_week_day_blocks vb
+		JOIN mentorix.program_version_week_days vd ON vd.id = vb.program_version_week_day_id
+		JOIN mentorix.program_versions v ON v.id = vd.program_version_id
+		WHERE v.program_id = $1`, detail.ID).Scan(&frozenKey)
+	if err != nil {
+		t.Fatalf("query frozen block_key: %v", err)
+	}
+	if frozenKey != wantKey {
+		t.Fatalf("frozen block_key = %s, want %s", frozenKey, wantKey)
+	}
+
+	// Discard rebuilds the working copy from the latest version; the key must survive.
+	restored, err := store.RestoreWorkingTreeFromLatestVersion(ctx, detail.ID, userID)
+	if err != nil {
+		t.Fatalf("RestoreWorkingTreeFromLatestVersion: %v", err)
+	}
+	restoredBlock, ok := firstDayBlock(restored.Weeks[0].Days[0])
+	if !ok {
+		t.Fatal("expected one block after restore")
+	}
+	if restoredBlock.BlockKey != wantKey {
+		t.Fatalf("restored block_key = %s, want %s", restoredBlock.BlockKey, wantKey)
+	}
+}
+
+// seedAssignedClient registers a client user and links them to the trainer.
+// Returns the client's user id and the trainer id.
+func seedAssignedClient(t *testing.T, pool *pgxpool.Pool, trainerUserID uuid.UUID, emailPrefix string) (uuid.UUID, uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	clientUserID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(
+		ctx, emailPrefix+"@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register client user: %v", err)
+	}
+
+	var trainerID uuid.UUID
+	err = pool.QueryRow(ctx,
+		`SELECT id FROM mentorix.trainers WHERE user_id = $1`, trainerUserID).Scan(&trainerID)
+	if err != nil {
+		t.Fatalf("select trainer id: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id, status)
+		VALUES ($1, $2, 'active')`, trainerID, clientUserID); err != nil {
+		t.Fatalf("insert trainer_clients: %v", err)
+	}
+	return clientUserID, trainerID
+}
+
+func TestSetBlockClients_refusesLastSharedBlock(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "last-shared")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	for i := 0; i < 2; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	blocks := detail.Weeks[0].Days[0].Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2", len(blocks))
+	}
+
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	clientUserID, trainerID := seedAssignedClient(t, pool, userID, "last-shared-client")
+	programID := published.ID
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientUserID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+
+	// Restricting the first block is fine — the second one stays shared.
+	if _, err := store.SetBlockClients(ctx, userID, programID, week.ID, blocks[0].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients on first block: %v", err)
+	}
+
+	// Restricting the second one would leave the day without a shared block.
+	_, err = store.SetBlockClients(ctx, userID, programID, week.ID, blocks[1].ID,
+		[]uuid.UUID{clientUserID})
+	if !errors.Is(err, program.ErrLastSharedBlock) {
+		t.Fatalf("SetBlockClients on last shared block error = %v, want ErrLastSharedBlock", err)
+	}
+}
+
+func TestSetBlockClients_refusesUnassignedClient(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "unassigned")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+	detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore: %v", err)
+	}
+	block, _ := firstDayBlock(detail.Weeks[0].Days[0])
+
+	stranger, _ := seedAssignedClient(t, pool, userID, "unassigned-client")
+	_, err = store.SetBlockClients(ctx, userID, detail.ID, week.ID, block.ID,
+		[]uuid.UUID{stranger})
+	if !errors.Is(err, program.ErrClientNotAssignedToProgram) {
+		t.Fatalf("SetBlockClients error = %v, want ErrClientNotAssignedToProgram", err)
+	}
+}
+
+// blockByID finds a block by id anywhere in the detail's first day. Test
+// helper only: the fixtures below always operate on a single week/day.
+func blockByID(d program.Detail, id uuid.UUID) (program.DayBlock, bool) {
+	for _, b := range d.Weeks[0].Days[0].Blocks {
+		if b.ID == id {
+			return b, true
+		}
+	}
+	return program.DayBlock{}, false
+}
+
+// TestSetBlockClients_concurrentRestrictKeepsSharedBlock is a regression test
+// for the race where two requests restrict different blocks of the same day
+// at once: without a serializing lock, each reads a snapshot where the
+// other's block is still shared, both pass the day-invariant check, and both
+// commit — leaving the day with zero shared blocks. With the row lock in
+// place, exactly one of the two must lose the race and be refused.
+func TestSetBlockClients_concurrentRestrictKeepsSharedBlock(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "race")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	for i := 0; i < 2; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	blocks := detail.Weeks[0].Days[0].Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2", len(blocks))
+	}
+	blockAID, blockBID := blocks[0].ID, blocks[1].ID
+
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	clientUserID, trainerID := seedAssignedClient(t, pool, userID, "race-client")
+	programID := published.ID
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientUserID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+
+	// A single race attempt rarely lands the two goroutines' reads in the same
+	// window on a fast local database, so this repeats the experiment, resetting
+	// both blocks to shared between attempts. Without the row lock this fails
+	// reliably within a handful of attempts (observed 1-in-8 to 1-in-10 locally);
+	// with it, every attempt must land exactly one ErrLastSharedBlock.
+	const attempts = 15
+	for attempt := 0; attempt < attempts; attempt++ {
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, errs[0] = store.SetBlockClients(ctx, userID, programID, week.ID, blockAID,
+				[]uuid.UUID{clientUserID})
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			_, errs[1] = store.SetBlockClients(ctx, userID, programID, week.ID, blockBID,
+				[]uuid.UUID{clientUserID})
+		}()
+		close(start)
+		wg.Wait()
+
+		lastSharedCount := 0
+		for _, err := range errs {
+			switch {
+			case errors.Is(err, program.ErrLastSharedBlock):
+				lastSharedCount++
+			case err != nil:
+				t.Fatalf("attempt %d: unexpected SetBlockClients error: %v", attempt, err)
+			}
+		}
+		if lastSharedCount != 1 {
+			t.Fatalf("attempt %d: ErrLastSharedBlock count = %d, want exactly 1 (errs=%v)",
+				attempt, lastSharedCount, errs)
+		}
+
+		final, err := store.GetDetail(ctx, programID)
+		if err != nil {
+			t.Fatalf("attempt %d: GetDetail: %v", attempt, err)
+		}
+		sharedCount := 0
+		for _, b := range final.Weeks[0].Days[0].Blocks {
+			if len(b.ClientUserIDs) == 0 {
+				sharedCount++
+			}
+		}
+		if sharedCount == 0 {
+			t.Fatalf("attempt %d: day has no shared block after concurrent restrict: %+v",
+				attempt, final.Weeks[0].Days[0].Blocks)
+		}
+
+		// Reset both blocks back to shared before the next attempt. Clearing a
+		// restriction can never break the invariant, so both must succeed.
+		if _, err := store.SetBlockClients(ctx, userID, programID, week.ID, blockAID, nil); err != nil {
+			t.Fatalf("attempt %d: reset block A: %v", attempt, err)
+		}
+		if _, err := store.SetBlockClients(ctx, userID, programID, week.ID, blockBID, nil); err != nil {
+			t.Fatalf("attempt %d: reset block B: %v", attempt, err)
+		}
+	}
+}
+
+// TestSetBlockClients_fullReplace covers the headline PUT semantics: a
+// second call with a different (or empty) list must fully replace the
+// previous rule, not append to it. ON CONFLICT DO NOTHING on the insert
+// would make this endpoint silently append-only, so this asserts the
+// resulting client_user_ids after each call rather than just the error.
+func TestSetBlockClients_fullReplace(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "full-replace")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	// Two blocks: the second one keeps the day's invariant satisfied while
+	// the first one is restricted below.
+	for i := 0; i < 2; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	target := detail.Weeks[0].Days[0].Blocks[0].ID
+
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	clientUserID, trainerID := seedAssignedClient(t, pool, userID, "full-replace-client")
+	programID := published.ID
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientUserID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+
+	restricted, err := store.SetBlockClients(ctx, userID, programID, week.ID, target,
+		[]uuid.UUID{clientUserID})
+	if err != nil {
+		t.Fatalf("SetBlockClients (restrict): %v", err)
+	}
+	gotRestricted, ok := blockByID(restricted, target)
+	if !ok {
+		t.Fatal("target block not found after restrict")
+	}
+	if len(gotRestricted.ClientUserIDs) != 1 || gotRestricted.ClientUserIDs[0] != clientUserID {
+		t.Fatalf("ClientUserIDs after restrict = %v, want [%v]", gotRestricted.ClientUserIDs, clientUserID)
+	}
+
+	shared, err := store.SetBlockClients(ctx, userID, programID, week.ID, target, nil)
+	if err != nil {
+		t.Fatalf("SetBlockClients (clear): %v", err)
+	}
+	gotShared, ok := blockByID(shared, target)
+	if !ok {
+		t.Fatal("target block not found after clear")
+	}
+	if len(gotShared.ClientUserIDs) != 0 {
+		t.Fatalf("ClientUserIDs after clearing = %v, want empty (delete-then-reinsert must not append)",
+			gotShared.ClientUserIDs)
+	}
+}
+
+// TestSetBlockClients_refusesLastSharedBlockInAssignedVersionOnly proves the
+// version loop in ensureDaysKeepSharedBlock does real work: it constructs a
+// case where the working copy alone would wrongly allow the restrict (it
+// gained a third shared block after publish) while the frozen version a
+// client is assigned to — which never saw that third block — would end up
+// with zero shared blocks. Deleting the version loop must make this test
+// fail.
+func TestSetBlockClients_refusesLastSharedBlockInAssignedVersionOnly(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "version-loop")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	// Blocks A and B exist at publish time.
+	for i := 0; i < 2; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	blocks := detail.Weeks[0].Days[0].Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("blocks before publish = %d, want 2", len(blocks))
+	}
+	blockA, blockB := blocks[0], blocks[1]
+
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	clientUserID, trainerID := seedAssignedClient(t, pool, userID, "version-loop-client")
+	programID := published.ID
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientUserID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+
+	// Block C is added to the working copy AFTER publish: it exists there,
+	// but not in the frozen version the client is assigned to.
+	detail, err = createSingleBlockStore(ctx, store, userID, programID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore (block C): %v", err)
+	}
+	if got := len(detail.Weeks[0].Days[0].Blocks); got != 3 {
+		t.Fatalf("working copy blocks after adding C = %d, want 3", got)
+	}
+
+	// Restrict B: the working copy keeps A and C shared, and the assigned
+	// version (which only ever had A and B) keeps A shared. Both pass.
+	if _, err := store.SetBlockClients(ctx, userID, programID, week.ID, blockB.ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients on B: %v", err)
+	}
+
+	// Restrict A too: the working copy still has C shared, so a check that
+	// only looked at the working copy would pass. But the assigned version's
+	// day only ever contained A and B — both now restricted — leaving it
+	// with zero shared blocks. Only the per-version loop catches this.
+	_, err = store.SetBlockClients(ctx, userID, programID, week.ID, blockA.ID,
+		[]uuid.UUID{clientUserID})
+	if !errors.Is(err, program.ErrLastSharedBlock) {
+		t.Fatalf("SetBlockClients on A error = %v, want ErrLastSharedBlock", err)
+	}
+}
+
+// TestClearAssignment_opensPersonalBlockToRemainingClients pins accepted,
+// deliberate behaviour, not a bug: unassigning the client who was the sole
+// entry in a block's rule set does not just delete his rows — the rule set
+// for that (program_id, block_key) goes empty, and empty means shared, so
+// the block opens to every other client still assigned to the program,
+// immediately, on the version they already sit on, with no publish, no
+// error and no log line. Neither the day invariant nor publish validation
+// catch this: both only guard against a shared block being lost, never
+// against one being gained. See docs/features/program-block-visibility.md
+// § Правила ("Снятие клиента может открыть персональный блок") for the
+// write-up. Do not "fix" this test by asserting the block stays hidden —
+// that would contradict the accepted design; if this behaviour ever changes
+// on purpose, update the doc alongside the test.
+func TestClearAssignment_opensPersonalBlockToRemainingClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientOne := seedDayWithBlocks(t, pool, "clear-opens", 2)
+	trainerUserID := ownerUserID(t, pool, programID)
+	var trainerID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT id FROM mentorix.trainers WHERE user_id = $1`, trainerUserID).Scan(&trainerID); err != nil {
+		t.Fatalf("select trainer id: %v", err)
+	}
+
+	// A second client, assigned to the same program, is the one whose view
+	// we check before and after clientOne is unassigned.
+	clientTwo, _ := seedAssignedClient(t, pool, trainerUserID, "clear-opens-two")
+	pid := programID
+	assignmentTwo, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, clientTwo, &pid)
+	if err != nil {
+		t.Fatalf("SetClientProgramAssignment(clientTwo): %v", err)
+	}
+
+	// Restrict blocks[1] to clientOne alone.
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{clientOne}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	// Before the clear: clientTwo, who is not on the block's list, must not
+	// see it.
+	before, err := store.GetVersionDetailForClient(ctx, assignmentTwo.ProgramVersionID, clientTwo)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient (before clear): %v", err)
+	}
+	if got := len(before.Weeks[0].Days[0].Blocks); got != 1 {
+		t.Fatalf("blocks visible to clientTwo before clear = %d, want 1", got)
+	}
+
+	if _, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, clientOne, nil); err != nil {
+		t.Fatalf("SetClientProgramAssignment (clear clientOne): %v", err)
+	}
+
+	var left int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM mentorix.program_block_clients
+		WHERE program_id = $1 AND client_user_id = $2`, programID, clientOne).Scan(&left); err != nil {
+		t.Fatalf("count block clients: %v", err)
+	}
+	if left != 0 {
+		t.Fatalf("block client rows after clear = %d, want 0", left)
+	}
+
+	// After the clear: the block's rule set is empty, so it reads as shared
+	// again — clientTwo now sees both blocks, on the same version, with no
+	// publish in between. This is the consequence the test pins.
+	after, err := store.GetVersionDetailForClient(ctx, assignmentTwo.ProgramVersionID, clientTwo)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient (after clear): %v", err)
+	}
+	if got := len(after.Weeks[0].Days[0].Blocks); got != 2 {
+		t.Fatalf("blocks visible to clientTwo after clear = %d, want 2 (block opened to remaining clients)", got)
+	}
+}
+
+// ownerUserID returns the trainer user id that created the program.
+func ownerUserID(t *testing.T, pool *pgxpool.Pool, programID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var userID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT created_by FROM mentorix.programs WHERE id = $1`, programID).Scan(&userID); err != nil {
+		t.Fatalf("select program owner: %v", err)
+	}
+	return userID
+}
+
+// dayIDOfBlock returns the day a block currently belongs to.
+func dayIDOfBlock(t *testing.T, pool *pgxpool.Pool, blockID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var dayID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT program_week_day_id FROM mentorix.program_week_day_blocks WHERE id = $1`,
+		blockID).Scan(&dayID); err != nil {
+		t.Fatalf("select block day: %v", err)
+	}
+	return dayID
+}
+
+// groupBlock returns the first non-single block in a day. Fails the test if
+// the day has no group block.
+func groupBlock(t *testing.T, day program.Day) program.DayBlock {
+	t.Helper()
+	for _, b := range day.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			return b
+		}
+	}
+	t.Fatal("no group block found in day")
+	return program.DayBlock{}
+}
+
+// secondDayID returns the id of the second day (by day_number) in a week.
+func secondDayID(t *testing.T, pool *pgxpool.Pool, weekID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var dayID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		SELECT id FROM mentorix.program_week_days
+		WHERE week_id = $1
+		ORDER BY day_number OFFSET 1 LIMIT 1`, weekID).Scan(&dayID); err != nil {
+		t.Fatalf("select second day: %v", err)
+	}
+	return dayID
+}
+
+// seedDayWithBlocks publishes a program with n single blocks in week 1 day 1 and
+// assigns it to one client. Returns program id, week id, the blocks and the client.
+func seedDayWithBlocks(t *testing.T, pool *pgxpool.Pool, emailPrefix string, n int) (uuid.UUID, uuid.UUID, []program.DayBlock, uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, emailPrefix)
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+	for i := 0; i < n; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	clientUserID, trainerID := seedAssignedClient(t, pool, userID, emailPrefix+"-client")
+	programID := published.ID
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientUserID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+	return programID, week.ID, published.Weeks[0].Days[0].Blocks, clientUserID
+}
+
+func TestMerge_rejectsDifferentClientSets(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "merge-mismatch", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[0].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	_, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("MergeDayBlocks error = %v, want ErrValidation", err)
+	}
+}
+
+// TestMerge_rejectsDifferentNonEmptyClientSets covers two blocks that are
+// each restricted, but to different clients — not the shared-vs-restricted
+// case TestMerge_rejectsDifferentClientSets already covers. Both are
+// "non-empty and different" sets, which is the case a naive "at least one
+// side is restricted" check could wrongly accept.
+func TestMerge_rejectsDifferentNonEmptyClientSets(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientA := seedDayWithBlocks(t, pool, "merge-mismatch2", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	clientB, trainerID := seedAssignedClient(t, pool, trainerUserID, "merge-mismatch2-client-b")
+	if _, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, clientB, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment clientB: %v", err)
+	}
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[0].ID,
+		[]uuid.UUID{clientA}); err != nil {
+		t.Fatalf("SetBlockClients block 0: %v", err)
+	}
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{clientB}); err != nil {
+		t.Fatalf("SetBlockClients block 1: %v", err)
+	}
+
+	_, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("MergeDayBlocks error = %v, want ErrValidation", err)
+	}
+}
+
+// TestMerge_preservesClientListOnMatchingSets guards against a refactor that
+// looks natural but is wrong: MergeDayBlocks reuses blocks[0]'s own row (and
+// block_key) as the merged group, so its existing visibility rule survives
+// automatically without any explicit copy. If that were changed to insert a
+// fresh group row instead — plausible, since the group is conceptually new —
+// every merge of restricted blocks would silently come out shared, and
+// TestMerge_rejectsDifferentClientSets alone would not catch it (both merged
+// blocks share the same client here, so the reject path never fires). This
+// also guards sameClientIDSet itself: a regression into an order- or
+// duplicate-sensitive comparison would not be exercised by the reject tests.
+func TestMerge_preservesClientListOnMatchingSets(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "merge-preserve", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[0].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients block 0: %v", err)
+	}
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients block 1: %v", err)
+	}
+
+	merged, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if err != nil {
+		t.Fatalf("MergeDayBlocks: %v", err)
+	}
+	group := groupBlock(t, merged.Weeks[0].Days[0])
+	if len(group.ClientUserIDs) != 1 || group.ClientUserIDs[0] != clientUserID {
+		t.Fatalf("merged group ClientUserIDs = %v, want [%s]", group.ClientUserIDs, clientUserID)
+	}
+}
+
+func TestUngroup_inheritsBlockClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "ungroup-inherit", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	merged, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if err != nil {
+		t.Fatalf("MergeDayBlocks: %v", err)
+	}
+	group := groupBlock(t, merged.Weeks[0].Days[0])
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, group.ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	after, err := store.UngroupDayBlock(ctx, trainerUserID, programID, weekID, group.ID)
+	if err != nil {
+		t.Fatalf("UngroupDayBlock: %v", err)
+	}
+
+	restricted := 0
+	for _, b := range after.Weeks[0].Days[0].Blocks {
+		if len(b.ClientUserIDs) == 1 && b.ClientUserIDs[0] == clientUserID {
+			restricted++
+		}
+	}
+	if restricted != 2 {
+		t.Fatalf("blocks inheriting the client list = %d, want 2", restricted)
+	}
+}
+
+func TestExtract_inheritsBlockClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "extract-inherit", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	merged, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if err != nil {
+		t.Fatalf("MergeDayBlocks: %v", err)
+	}
+	group := groupBlock(t, merged.Weeks[0].Days[0])
+	itemID := group.Exercises[0].ID
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, group.ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	after, err := store.ExtractBlockExercise(ctx, trainerUserID, programID, weekID, group.ID, itemID, 1)
+	if err != nil {
+		t.Fatalf("ExtractBlockExercise: %v", err)
+	}
+
+	extracted := false
+	for _, b := range after.Weeks[0].Days[0].Blocks {
+		if b.BlockType == program.BlockTypeSingle && len(b.ClientUserIDs) == 1 &&
+			b.ClientUserIDs[0] == clientUserID {
+			extracted = true
+		}
+	}
+	if !extracted {
+		t.Fatal("extracted single block did not inherit the client list")
+	}
+}
+
+func TestMove_keepsBlockClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "move-keeps", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	targetDayID := secondDayID(t, pool, weekID)
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[0].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	after, err := store.MoveDayBlock(ctx, trainerUserID, programID, weekID, blocks[0].ID, targetDayID, 1)
+	if err != nil {
+		t.Fatalf("MoveDayBlock: %v", err)
+	}
+
+	found := false
+	for _, day := range after.Weeks[0].Days {
+		for _, b := range day.Blocks {
+			if b.ID == blocks[0].ID {
+				found = true
+				if len(b.ClientUserIDs) != 1 || b.ClientUserIDs[0] != clientUserID {
+					t.Fatalf("moved block ClientUserIDs = %v, want [%s]", b.ClientUserIDs, clientUserID)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("moved block not found after move")
+	}
+}
+
+// assignedVersionID returns the frozen version a client is currently assigned to.
+func assignedVersionID(t *testing.T, pool *pgxpool.Pool, programID, clientUserID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var versionID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT program_version_id FROM mentorix.program_assignments
+		 WHERE program_id = $1 AND client_user_id = $2`,
+		programID, clientUserID).Scan(&versionID); err != nil {
+		t.Fatalf("select assigned version id: %v", err)
+	}
+	return versionID
+}
+
+// TestGetVersionDetailForClient_hidesForeignBlocks proves the client-facing
+// read filters out blocks restricted to someone else, while the client the
+// block is restricted to keeps seeing everything. Checking only one client
+// would not catch an implementation that ignores clientUserID entirely.
+func TestGetVersionDetailForClient_hidesForeignBlocks(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, petya := seedDayWithBlocks(t, pool, "client-filter", 2)
+	trainerUserID := ownerUserID(t, pool, programID)
+
+	vasya, trainerID := seedAssignedClient(t, pool, trainerUserID, "client-filter-vasya")
+	pid := programID
+	if _, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, vasya, &pid); err != nil {
+		t.Fatalf("SetClientProgramAssignment(vasya): %v", err)
+	}
+
+	// blocks[1] becomes personal to Petya; blocks[0] stays shared.
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{petya}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	versionID := assignedVersionID(t, pool, programID, petya)
+
+	forPetya, err := store.GetVersionDetailForClient(ctx, versionID, petya)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient(petya): %v", err)
+	}
+	if got := len(forPetya.Weeks[0].Days[0].Blocks); got != 2 {
+		t.Fatalf("blocks for listed client = %d, want 2", got)
+	}
+
+	forVasya, err := store.GetVersionDetailForClient(ctx, versionID, vasya)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient(vasya): %v", err)
+	}
+	if got := len(forVasya.Weeks[0].Days[0].Blocks); got != 1 {
+		t.Fatalf("blocks for unlisted client = %d, want 1", got)
+	}
+	if len(forVasya.Weeks[0].Days[0].Blocks[0].ClientUserIDs) != 0 {
+		t.Fatal("unlisted client kept a restricted block")
+	}
+}
+
+// TestDaySnapshot_containsOnlyVisibleBlocks proves the workout-completion
+// snapshot inherits the client filter automatically: buildDaySnapshot builds
+// from the program.Day it is handed, so passing it a day already filtered by
+// GetVersionDetailForClient is sufficient — no separate filtering logic is
+// needed inside workoutcompletion.
+func TestDaySnapshot_containsOnlyVisibleBlocks(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, petya := seedDayWithBlocks(t, pool, "snapshot-filter", 2)
+	trainerUserID := ownerUserID(t, pool, programID)
+	vasya, trainerID := seedAssignedClient(t, pool, trainerUserID, "snapshot-vasya")
+	pid := programID
+	assignment, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, vasya, &pid)
+	if err != nil {
+		t.Fatalf("SetClientProgramAssignment(vasya): %v", err)
+	}
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{petya}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	detail, err := store.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, vasya)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient: %v", err)
+	}
+	day := detail.Weeks[0].Days[0]
+
+	completion, err := workoutcompletion.NewService(pool).Complete(ctx, workoutcompletion.CompleteInput{
+		ClientUserID:        vasya,
+		TrainerID:           trainerID,
+		ProgramID:           programID,
+		ProgramVersionID:    assignment.ProgramVersionID,
+		ProgramAssignmentID: assignment.ID,
+		CompletionCycleID:   assignment.CompletionCycleID,
+		DayKey:              day.DayKey,
+		WeekNumber:          detail.Weeks[0].WeekNumber,
+		DayNumber:           day.DayNumber,
+		ProgramName:         detail.Name,
+		Day:                 day,
+		ResultText:          "done",
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	var snapshot string
+	if err := pool.QueryRow(ctx,
+		`SELECT day_snapshot::text FROM mentorix.client_workout_completions WHERE id = $1`,
+		completion.ID).Scan(&snapshot); err != nil {
+		t.Fatalf("select day_snapshot: %v", err)
+	}
+	var parsed struct {
+		Blocks []struct {
+			BlockType string `json:"block_type"`
+		} `json:"blocks"`
+	}
+	if err := json.Unmarshal([]byte(snapshot), &parsed); err != nil {
+		t.Fatalf("unmarshal day_snapshot: %v", err)
+	}
+	if len(parsed.Blocks) != 1 {
+		t.Fatalf("blocks in day_snapshot = %d, want 1", len(parsed.Blocks))
+	}
+}
+
+// TestSetBlockClients_refusesLastSharedBlockInLatestUnassignedVersion proves
+// ensureDaysKeepSharedBlock also checks the latest program version even when
+// nobody is assigned to it yet. Both SetClientProgramAssignment and
+// SyncProgramAssignments put a newly (re)assigned client on
+// GetLatestProgramVersionByProgramID, not on the working copy, so when the
+// working copy has unpublished changes, the latest version is exactly where
+// the next assignment lands — and it must already satisfy the invariant.
+//
+// Sequence: v1 day 1 = [A, B], both shared, client is assigned to v1. Trainer
+// deletes B and publishes v2 (day 1 = [A]); the client stays on v1. Trainer
+// adds B' to the working copy. Restricting A: the working copy passes (B' is
+// shared), v1 passes (B is shared) — but v2, which nobody is assigned to yet,
+// would be skipped entirely by a check that only looks at
+// ListAssignedProgramVersionIDs, even though v2's day 1 only ever had A and
+// would end up with zero shared blocks, and it is exactly where the next
+// assignment lands. Only checking the latest version unconditionally catches
+// this before any client ever sees it.
+func TestSetBlockClients_refusesLastSharedBlockInLatestUnassignedVersion(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "latest-unassigned")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	// Blocks A and B exist at v1 publish time.
+	for i := 0; i < 2; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	blocks := detail.Weeks[0].Days[0].Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("blocks before v1 publish = %d, want 2", len(blocks))
+	}
+	blockA, blockB := blocks[0], blocks[1]
+
+	v1, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft (v1): %v", err)
+	}
+	programID := v1.ID
+
+	clientID, trainerID := seedAssignedClient(t, pool, userID, "latest-unassigned-client")
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+	// The client lands on v1, the only version that exists right now.
+
+	// Delete B, then publish v2: day 1 in v2 is [A] alone. The client stays
+	// on v1 — publish never touches assignments. B is a single block, so
+	// deleting its one exercise deletes the block itself.
+	if len(blockB.Exercises) == 0 {
+		t.Fatal("block B has no exercises to delete")
+	}
+	afterDelete, err := store.DeleteBlockExercise(ctx, programID, week.ID, blockB.ID, blockB.Exercises[0].ID)
+	if err != nil {
+		t.Fatalf("DeleteBlockExercise: %v", err)
+	}
+	if _, err := store.PublishFromDraft(ctx, programID, userID, afterDelete); err != nil {
+		t.Fatalf("PublishFromDraft (v2): %v", err)
+	}
+
+	// Add B' to the working copy after v2 was published: the working copy
+	// now has A and B', neither of which is v2's B.
+	withBPrime, err := createSingleBlockStore(ctx, store, userID, programID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore (B'): %v", err)
+	}
+	if got := len(withBPrime.Weeks[0].Days[0].Blocks); got != 2 {
+		t.Fatalf("working copy blocks after adding B' = %d, want 2 (A, B')", got)
+	}
+
+	// Restrict A: the working copy keeps B' shared and v1 keeps B shared, so
+	// only the unassigned v2 would end up with zero shared blocks.
+	_, err = store.SetBlockClients(ctx, userID, programID, week.ID, blockA.ID,
+		[]uuid.UUID{clientID})
+	if !errors.Is(err, program.ErrLastSharedBlock) {
+		t.Fatalf("SetBlockClients on A error = %v, want ErrLastSharedBlock", err)
+	}
+}
+
+// TestExtractBlockExercise_concurrentWithRestrictInheritsGroupClients is a
+// regression test for the fourth site that read program_block_clients
+// without the program lock: ExtractBlockExercise copies the source group's
+// visibility rules into the new single block the same way SetBlockClients
+// writes them. Without the same lock, a SetBlockClients call restricting the
+// group can commit while an in-flight extract is still mid-copy: the
+// extract's read happened before that commit and saw no rules, so it creates
+// the new single block shared, even though the group it was just pulled out
+// of is now restricted — the exercise the trainer just restricted ends up
+// visible to everyone.
+//
+// A single race attempt does not reliably land the read inside that window,
+// so — like TestSetBlockClients_concurrentRestrictKeepsSharedBlock — this
+// repeats the experiment, each time against a fresh program (extraction
+// consumes the group's second exercise, so the fixture cannot simply be
+// reset like a client list can). restrict is given a very small head start:
+// it has fewer pre-lock reads than extract, so with the lock in place it
+// reliably wins the race for it anyway, but the explicit head start also
+// reliably lands extract's copy read squarely inside restrict's own
+// (comparatively slow, tree-walking) transaction when the lock is missing —
+// exactly the window the bug needs.
+func TestExtractBlockExercise_concurrentWithRestrictInheritsGroupClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	const attempts = 12
+	for attempt := 0; attempt < attempts; attempt++ {
+		programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool,
+			fmt.Sprintf("extract-race-%d", attempt), 4)
+		trainerUserID := ownerUserID(t, pool, programID)
+		dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+		// Merge two of the four blocks into a group; the other two stay
+		// shared single blocks, so restricting the group can never trip the
+		// day invariant — this test only exercises the copy race.
+		merged, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+			[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+		if err != nil {
+			t.Fatalf("attempt %d: MergeDayBlocks: %v", attempt, err)
+		}
+		group := groupBlock(t, merged.Weeks[0].Days[0])
+		itemID := group.Exercises[0].ID
+
+		var restrictErr, extractErr error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, restrictErr = store.SetBlockClients(ctx, trainerUserID, programID, weekID, group.ID,
+				[]uuid.UUID{clientUserID})
+		}()
+		time.Sleep(time.Millisecond)
+		go func() {
+			defer wg.Done()
+			_, extractErr = store.ExtractBlockExercise(ctx, trainerUserID, programID, weekID, group.ID, itemID, 1)
+		}()
+		wg.Wait()
+
+		if restrictErr != nil {
+			t.Fatalf("attempt %d: SetBlockClients: %v", attempt, restrictErr)
+		}
+		if extractErr != nil {
+			t.Fatalf("attempt %d: ExtractBlockExercise: %v", attempt, extractErr)
+		}
+
+		final, err := store.GetDetail(ctx, programID)
+		if err != nil {
+			t.Fatalf("attempt %d: GetDetail: %v", attempt, err)
+		}
+		day := final.Weeks[0].Days[0]
+
+		var groupFinal, extracted program.DayBlock
+		foundGroup, foundExtracted := false, false
+		for _, b := range day.Blocks {
+			if b.ID == group.ID {
+				groupFinal = b
+				foundGroup = true
+			}
+			for _, ex := range b.Exercises {
+				if ex.ID == itemID {
+					extracted = b
+					foundExtracted = true
+				}
+			}
+		}
+		if !foundGroup {
+			t.Fatalf("attempt %d: group block not found after race", attempt)
+		}
+		if !foundExtracted {
+			t.Fatalf("attempt %d: extracted exercise not found after race", attempt)
+		}
+		if len(groupFinal.ClientUserIDs) != 1 || groupFinal.ClientUserIDs[0] != clientUserID {
+			t.Fatalf("attempt %d: group ClientUserIDs = %v, want [%s]",
+				attempt, groupFinal.ClientUserIDs, clientUserID)
+		}
+		if len(extracted.ClientUserIDs) != 1 || extracted.ClientUserIDs[0] != clientUserID {
+			t.Fatalf("attempt %d: extracted block ClientUserIDs = %v, want [%s] (never shared)",
+				attempt, extracted.ClientUserIDs, clientUserID)
+		}
+	}
+}

@@ -29,6 +29,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | `created_at` | timestamptz | |
 | `modified_at` | timestamptz | |
 | `modified_by` | uuid FK → `users` | nullable |
+| `block_key` | uuid NOT NULL DEFAULT `gen_random_uuid()` | стабильная идентичность блока между publish и discard |
 
 `block_type`: `single`, `emom`, `amrap`, `for_time`, `intervals`, `chipper`, `ladder`, `death_by`, `superset`, `complex`, `skill_work`, `strength`, `conditioning`, `gymnastics`, `weightlifting`.
 
@@ -38,6 +39,11 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 - Поля: `exercise_id`, `sort_order`, `sets`, `reps`, `instruction`, `created_at`.
 
 Зеркало для version-дерева (см. naming rule).
+
+### `program_block_clients` — видимость блока
+
+Кто видит блок; схема таблицы, `block_key`, инвариант дня и наследование при
+merge/ungroup/extract — [program-block-visibility.md](program-block-visibility.md).
 
 **`sort_order`:** после любой операции, затрагивающей порядок (create, move, reorder, delete, merge, ungroup, extract), store нормализует siblings к уникальным `1..N` без дублей. Ответ `GET /programs/{id}` — дерево уже отсортировано по `sort_order`.
 
@@ -51,14 +57,14 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | -------- | --------- |
 | + упражнение в день (каталог, мультивыбор) | N блоков `single` (`POST .../blocks`) |
 | + упражнение в группу | `POST .../blocks/{block_id}/exercises` (группа уже есть после merge) |
-| Создать группу | только `POST .../blocks/merge` (2+ блока); default `complex`; instruction — склейка instruction участвующих **групп** (`\n\n`, пустые skip); только singles → `""` |
-| Разгруппировать | каждое упражнение → `single` |
+| Создать группу | только `POST .../blocks/merge` (2+ блока); default `complex`; instruction — склейка instruction участвующих **групп** (`\n\n`, пустые skip); только singles → `""`; **400** (`ErrValidation`), если у участников разные наборы клиентов (в т.ч. «все общие» ≠ «один ограничен») — единственно верного результата нет, склейка отклоняется |
+| Разгруппировать | каждое упражнение → `single`, наследует список клиентов группы |
 | Удалить упражнение из `single` | блок удаляется |
 | Удалить из группы | группа остаётся (0/1/2+); **не** становится `single` |
 | Перенос в другой день | только целый `single` или целая группа (⋮ → день) |
 | DnD внутри дня | блоки; упражнения в группе; extract / в группу / между группами |
 
-Упражнение в группе в другой день: сначала extract → `single`, потом перенос.
+Упражнение в группе в другой день: сначала extract → `single` (наследует список клиентов группы), потом перенос.
 
 ## Publish
 
@@ -120,6 +126,7 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | Удалить упражнение | `DELETE .../blocks/{block_id}/exercises/{item_id}` |
 | Добавить в группу | `POST .../blocks/{block_id}/exercises` |
 | merge / ungroup / move / reorder | см. [api-endpoints.md](../../.claude/rules/api-endpoints.md) § Program week subtree; reorder — полный список id siblings |
+| Видимость блока | `PUT .../blocks/{block_id}/clients` — [program-block-visibility.md](program-block-visibility.md) |
 
 ## Вне MVP
 
@@ -128,3 +135,5 @@ Structured `settings` по `block_type`; таймеры клиента; `weight_
 ## См. также
 
 - [programs.md](programs.md) — программы, publish, версии
+- [program-block-visibility.md](program-block-visibility.md) — видимость блока по клиентам
+- [garbage-cleanup.md](garbage-cleanup.md) — автоочистка `program_block_clients`

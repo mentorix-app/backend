@@ -118,11 +118,6 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 		return Detail{}, pgx.ErrNoRows
 	}
 
-	blocks, err := s.loadMergeBlocks(ctx, dayID, blockIDs)
-	if err != nil {
-		return Detail{}, err
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -130,6 +125,26 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+
+	// Lock the program row before reading the blocks and their client rules:
+	// this serializes against SetBlockClients, which takes the same lock. A
+	// concurrent restrict that lands between an unlocked read and our commit
+	// could leave its rule pointing at a block_key no block still carries
+	// (the exercise now sits inside the merged group), silently widening who
+	// sees it. See SetBlockClients for why a plain read after the lock is
+	// granted is already correctly serialized under READ COMMITTED.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	blocks, err := s.loadMergeBlocks(ctx, qtx, dayID, blockIDs)
+	if err != nil {
+		return Detail{}, err
+	}
+	if err := s.ensureMergeableClientSets(ctx, qtx, programID, blocks); err != nil {
+		return Detail{}, err
+	}
+
 	primary := blocks[0]
 	mergedInstruction := mergeBlockInstructions(blocks)
 
@@ -224,6 +239,20 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+
+	// Lock the program row before copying the group's visibility rules onto
+	// the new singles below: this serializes against SetBlockClients, which
+	// takes the same lock. Without it, a concurrent restrict on this group
+	// that commits after our copy but before our own commit would leave its
+	// rule pointing at a block_key we are about to delete, while the new
+	// singles come out shared — the trainer was told the restrict succeeded,
+	// but nothing ends up restricted. See SetBlockClients for why a plain
+	// read after the lock is granted is already correctly serialized under
+	// READ COMMITTED.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
 	dayPG := pgconv.ToPGUUID(dayID)
 
 	ids, err := listDayBlockUUIDs(ctx, qtx, dayID)
@@ -243,19 +272,29 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 
 	newBlockIDs := make([]uuid.UUID, 0, len(exercises))
 	for _, ex := range exercises {
-		newBlockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
+		newBlockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
 		if err != nil {
 			return Detail{}, fmt.Errorf("insert single block: %w", err)
 		}
-		newBlockIDs = append(newBlockIDs, pgconv.FromPGUUID(newBlockID))
+		newBlockIDs = append(newBlockIDs, pgconv.FromPGUUID(newBlockRow.ID))
 		if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
 			ID:                    ex.ID,
-			ProgramWeekDayBlockID: newBlockID,
+			ProgramWeekDayBlockID: newBlockRow.ID,
 			SortOrder:             1,
 			ModifiedAt:            time.Now().UTC(),
 			ModifiedBy:            pgtype.UUID{},
 		}); err != nil {
 			return Detail{}, fmt.Errorf("move exercise to single block: %w", err)
+		}
+		// Inherit the group's visibility rules: without this, ungrouping a
+		// restricted group would silently make every resulting single block
+		// visible to all clients.
+		if err := qtx.CopyProgramBlockClients(ctx, sqlc.CopyProgramBlockClientsParams{
+			ProgramID:      pgconv.ToPGUUID(programID),
+			TargetBlockKey: newBlockRow.BlockKey,
+			SourceBlockKey: block.BlockKey,
+		}); err != nil {
+			return Detail{}, fmt.Errorf("copy block clients: %w", err)
 		}
 	}
 
@@ -358,6 +397,16 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 	}
 	dayID := pgconv.FromPGUUID(meta.ProgramWeekDayID)
 
+	// blockID already equals meta.ProgramWeekDayBlockID (checked above), so
+	// this is the source group's own row — needed for its block_key.
+	sourceBlock, err := s.q.GetDayBlockByID(ctx, pgconv.ToPGUUID(blockID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, pgx.ErrNoRows
+		}
+		return Detail{}, fmt.Errorf("get day block: %w", err)
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -365,16 +414,41 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+
+	// Lock the program row before copying the source group's visibility rules
+	// onto the new single below: this serializes against SetBlockClients,
+	// which takes the same lock. Without it, a concurrent restrict on the
+	// source group that commits after our copy read but before our own
+	// commit would leave the group correctly restricted while the extracted
+	// exercise comes out in a single block with no rules — the trainer just
+	// restricted the group, but the exercise they extracted from it is
+	// visible to everyone. See SetBlockClients for why a plain read after
+	// the lock is granted is already correctly serialized under READ
+	// COMMITTED.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
 	dayPG := pgconv.ToPGUUID(dayID)
-	newBlockID, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
+	newBlockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("insert single block: %w", err)
+	}
+	// Inherit the group's visibility rules: without this, extracting an
+	// exercise out of a restricted group would silently make the new single
+	// block visible to all clients.
+	if err := qtx.CopyProgramBlockClients(ctx, sqlc.CopyProgramBlockClientsParams{
+		ProgramID:      pgconv.ToPGUUID(programID),
+		TargetBlockKey: newBlockRow.BlockKey,
+		SourceBlockKey: sourceBlock.BlockKey,
+	}); err != nil {
+		return Detail{}, fmt.Errorf("copy block clients: %w", err)
 	}
 
 	now := time.Now().UTC()
 	if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
 		ID:                    pgconv.ToPGUUID(itemID),
-		ProgramWeekDayBlockID: newBlockID,
+		ProgramWeekDayBlockID: newBlockRow.ID,
 		SortOrder:             1,
 		ModifiedAt:            now,
 		ModifiedBy:            pgconv.ToPGUUID(userID),
@@ -382,7 +456,7 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 		return Detail{}, fmt.Errorf("extract exercise: %w", err)
 	}
 
-	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, pgconv.FromPGUUID(newBlockID), insertSort, userID); err != nil {
+	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, pgconv.FromPGUUID(newBlockRow.ID), insertSort, userID); err != nil {
 		return Detail{}, err
 	}
 	if err := normalizeBlockExerciseSort(ctx, qtx, pgconv.FromPGUUID(meta.ProgramWeekDayBlockID)); err != nil {
@@ -525,13 +599,17 @@ func (s *Store) DeleteDayBlock(ctx context.Context, programID, weekID, blockID u
 
 type mergeBlock struct {
 	ID          uuid.UUID
+	BlockKey    uuid.UUID
 	BlockType   BlockType
 	Instruction string
 	SortOrder   int
 }
 
-func (s *Store) loadMergeBlocks(ctx context.Context, dayID uuid.UUID, blockIDs []uuid.UUID) ([]mergeBlock, error) {
-	rows, err := s.q.ListDayBlocks(ctx, pgconv.ToPGUUID(dayID))
+// loadMergeBlocks takes the queries object explicitly: MergeDayBlocks calls it
+// on qtx, after locking the program row, so this read is part of the same
+// serialized view as the client-set check that follows it.
+func (s *Store) loadMergeBlocks(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID, blockIDs []uuid.UUID) ([]mergeBlock, error) {
+	rows, err := q.ListDayBlocks(ctx, pgconv.ToPGUUID(dayID))
 	if err != nil {
 		return nil, fmt.Errorf("list day blocks: %w", err)
 	}
@@ -541,6 +619,7 @@ func (s *Store) loadMergeBlocks(ctx context.Context, dayID uuid.UUID, blockIDs [
 		id := pgconv.FromPGUUID(row.ID)
 		byID[id] = mergeBlock{
 			ID:          id,
+			BlockKey:    pgconv.FromPGUUID(row.BlockKey),
 			BlockType:   BlockType(row.BlockType),
 			Instruction: row.Instruction,
 			SortOrder:   int(row.SortOrder),
@@ -562,6 +641,53 @@ func (s *Store) loadMergeBlocks(ctx context.Context, dayID uuid.UUID, blockIDs [
 		return out[i].SortOrder < out[j].SortOrder
 	})
 	return out, nil
+}
+
+// ensureMergeableClientSets refuses a merge whose participating blocks do not
+// all share the exact same client visibility rules ("same set" includes
+// "all of them shared"). Merging blocks with different client sets has no
+// single correct outcome for the resulting group, so it is rejected outright
+// rather than guessed at. Takes the queries object explicitly for the same
+// reason as loadMergeBlocks: it must read through qtx, after the program
+// lock, not through the unlocked s.q.
+func (s *Store) ensureMergeableClientSets(ctx context.Context, q *sqlc.Queries, programID uuid.UUID, blocks []mergeBlock) error {
+	rules, err := s.listProgramBlockClients(ctx, q, programID)
+	if err != nil {
+		return err
+	}
+
+	var want map[uuid.UUID]struct{}
+	for i, b := range blocks {
+		got := clientIDSet(rules[b.BlockKey])
+		if i == 0 {
+			want = got
+			continue
+		}
+		if !sameClientIDSet(want, got) {
+			return fmt.Errorf("%w: blocks to merge must have the same client list", ErrValidation)
+		}
+	}
+	return nil
+}
+
+func clientIDSet(ids []uuid.UUID) map[uuid.UUID]struct{} {
+	set := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		set[id] = struct{}{}
+	}
+	return set
+}
+
+func sameClientIDSet(a, b map[uuid.UUID]struct{}) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for id := range a {
+		if _, ok := b[id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func mergeBlockInstructions(blocks []mergeBlock) string {

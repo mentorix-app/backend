@@ -86,10 +86,11 @@ RETURNING *;
 -- name: InsertProgramVersionDayBlock :one
 INSERT INTO mentorix.program_version_week_day_blocks (
   program_version_week_day_id,
+  block_key,
   block_type,
   instruction,
   sort_order
-) VALUES ($1, $2, $3, $4)
+) VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 
 -- name: InsertProgramVersionDayExercise :one

@@ -1309,6 +1309,35 @@
           "response": []
         },
         {
+          "name": "PUT /programs/:id/weeks/:week_id/blocks/:block_id/clients",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"client_user_ids\": [\"{{client_user_id}}\"]\n}"
+            },
+            "url": "{{base_url}}/programs/{{program_id}}/weeks/{{program_week_id}}/blocks/{{program_week_day_block_id}}/clients",
+            "description": "Ограничить видимость блока списком клиентов (`client_user_id` — вручную). Полная замена; пустой список снова делает блок общим."
+          },
+          "response": []
+        },
+        {
           "name": "DELETE /programs/:id/weeks/:week_id",
           "event": [
             {

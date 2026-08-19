@@ -152,8 +152,13 @@ func (s *Store) RestoreWorkingTreeFromLatestVersion(ctx context.Context, id, use
 				return Detail{}, fmt.Errorf("insert program day: %w", err)
 			}
 			for _, block := range day.Blocks {
-				blockID, err := qtx.InsertDayBlock(ctx, sqlc.InsertDayBlockParams{
+				blockKey := block.BlockKey
+				if blockKey == uuid.Nil {
+					blockKey = uuid.New()
+				}
+				blockRow, err := qtx.InsertDayBlockWithKey(ctx, sqlc.InsertDayBlockWithKeyParams{
 					ProgramWeekDayID: dayRow.ID,
+					BlockKey:         pgconv.ToPGUUID(blockKey),
 					BlockType:        string(block.BlockType),
 					Instruction:      block.Instruction,
 					SortOrder:        int32(block.SortOrder),
@@ -165,7 +170,7 @@ func (s *Store) RestoreWorkingTreeFromLatestVersion(ctx context.Context, id, use
 				}
 				for _, ex := range block.Exercises {
 					if err := qtx.InsertBlockExercise(ctx, sqlc.InsertBlockExerciseParams{
-						ProgramWeekDayBlockID: blockID,
+						ProgramWeekDayBlockID: blockRow.ID,
 						ExerciseID:            pgconv.ToPGUUID(ex.ExerciseID),
 						SortOrder:             int32(ex.SortOrder),
 						Sets:                  ex.Sets,
@@ -253,8 +258,13 @@ func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, us
 				return fmt.Errorf("insert program version day: %w", err)
 			}
 			for _, block := range day.Blocks {
+				blockKey := block.BlockKey
+				if blockKey == uuid.Nil {
+					blockKey = uuid.New()
+				}
 				blockRow, err := q.InsertProgramVersionDayBlock(ctx, sqlc.InsertProgramVersionDayBlockParams{
 					ProgramVersionWeekDayID: dayRow.ID,
+					BlockKey:                pgconv.ToPGUUID(blockKey),
 					BlockType:               string(block.BlockType),
 					Instruction:             block.Instruction,
 					SortOrder:               int32(block.SortOrder),
@@ -284,8 +294,11 @@ func (s *Store) enrichedDetail(ctx context.Context, id uuid.UUID) (Detail, error
 	return s.GetDetail(ctx, id)
 }
 
-func (s *Store) enrichProgram(ctx context.Context, p Program, detail *Detail) (Program, error) {
-	count, err := s.q.CountActiveProgramAssignmentsByProgramID(ctx, pgconv.ToPGUUID(p.ID))
+// enrichProgram takes the queries object explicitly for the same reason as
+// listProgramBlockClients: a caller inside a locked transaction passes qtx to
+// read a serialized view instead of reaching back into the pool.
+func (s *Store) enrichProgram(ctx context.Context, q *sqlc.Queries, p Program, detail *Detail) (Program, error) {
+	count, err := q.CountActiveProgramAssignmentsByProgramID(ctx, pgconv.ToPGUUID(p.ID))
 	if err != nil {
 		return Program{}, fmt.Errorf("count assignments: %w", err)
 	}
@@ -295,7 +308,7 @@ func (s *Store) enrichProgram(ctx context.Context, p Program, detail *Detail) (P
 		p.TrainingDaysCount = CountTrainingDays(detail.Weeks)
 	}
 
-	latest, err := s.q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(p.ID))
+	latest, err := q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(p.ID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, nil
@@ -311,7 +324,7 @@ func (s *Store) enrichProgram(ctx context.Context, p Program, detail *Detail) (P
 	if p.Status == StatusPublished {
 		d := detail
 		if d == nil {
-			loaded, loadErr := s.loadDetail(ctx, p.ID)
+			loaded, loadErr := s.loadDetail(ctx, q, p.ID)
 			if loadErr != nil {
 				return Program{}, loadErr
 			}
@@ -403,29 +416,46 @@ func (s *Store) CleanupProgramVersions(ctx context.Context, programID uuid.UUID)
 				Reason:    "sole_version",
 			})
 		}
-		return result, nil
-	}
-
-	for _, row := range rows {
-		versionID := pgconv.FromPGUUID(row.ID)
-		if row.AssignmentCount > 0 {
-			result.Skipped = append(result.Skipped, VersionCleanupSkipped{
-				VersionID: versionID,
-				Reason:    "has_assignments",
-			})
-			continue
-		}
-		if err := s.DeleteProgramVersion(ctx, programID, versionID); err != nil {
-			if errors.Is(err, ErrSoleProgramVersion) {
+	} else {
+		for _, row := range rows {
+			versionID := pgconv.FromPGUUID(row.ID)
+			if row.AssignmentCount > 0 {
 				result.Skipped = append(result.Skipped, VersionCleanupSkipped{
 					VersionID: versionID,
-					Reason:    "sole_version",
+					Reason:    "has_assignments",
 				})
 				continue
 			}
-			return VersionCleanupResult{}, err
+			if err := s.DeleteProgramVersion(ctx, programID, versionID); err != nil {
+				if errors.Is(err, ErrSoleProgramVersion) {
+					result.Skipped = append(result.Skipped, VersionCleanupSkipped{
+						VersionID: versionID,
+						Reason:    "sole_version",
+					})
+					continue
+				}
+				return VersionCleanupResult{}, err
+			}
+			result.DeletedVersionIDs = append(result.DeletedVersionIDs, versionID)
 		}
-		result.DeletedVersionIDs = append(result.DeletedVersionIDs, versionID)
+	}
+
+	// A version deleted just above can be the last surviving place a block_key
+	// lived outside the working copy, so this is exactly the moment an orphan
+	// rule can appear. Purge unconditionally: even the "nothing deleted" path
+	// above can follow a working-copy-only block deletion that already
+	// orphaned a rule on its own.
+	//
+	// Swallow the error rather than returning it: this function's callers
+	// include DELETE /programs/{id} (service.go), which already committed the
+	// assignment delete before reaching here — a transient purge failure must
+	// not leave that request stuck with assignments gone but the program still
+	// active. Failing to purge on time is harmless (the rule just survives
+	// longer, cleaned up by the next best-effort pass or the janitor);
+	// over-deleting on a false purge is not, which is why the version-deletion
+	// errors above still propagate untouched.
+	if _, err := s.q.PurgeOrphanProgramBlockClientsForProgram(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		_ = err
 	}
 	return result, nil
 }
@@ -434,5 +464,15 @@ func (s *Store) cleanupUnusedVersionsBestEffort(ctx context.Context, programID u
 	if _, err := s.CleanupProgramVersions(ctx, programID); err != nil {
 		// Best-effort: assignment change already committed; log would need a logger on Store.
 		_ = err
+		// CleanupProgramVersions swallows its own purge error, so on success it
+		// already attempted the purge — a second call here would be pure
+		// redundancy. Retry only on error: CleanupProgramVersions can fail
+		// before it ever reaches its internal purge call (e.g.
+		// ListProgramVersionsByProgramID or a hard DeleteProgramVersion error),
+		// and this is the only path that still gives the purge a chance in
+		// that case.
+		if _, err := s.q.PurgeOrphanProgramBlockClientsForProgram(ctx, pgconv.ToPGUUID(programID)); err != nil {
+			_ = err
+		}
 	}
 }

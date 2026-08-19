@@ -31,6 +31,9 @@ var (
 	ErrLastDay                 = errors.New("cannot delete the last day in week")
 	ErrMaxDaysPerWeek          = errors.New("week cannot have more than 7 days")
 	ErrInvalidReorder          = errors.New("invalid reorder")
+
+	ErrLastSharedBlock            = errors.New("day would have no shared block")
+	ErrClientNotAssignedToProgram = errors.New("client is not assigned to this program")
 )
 
 var volumePattern = regexp.MustCompile(`^[0-9]+([/-][0-9]+)?$`)
@@ -93,12 +96,14 @@ type DayExercise struct {
 }
 
 type DayBlock struct {
-	ID          uuid.UUID     `json:"id"`
-	BlockType   BlockType     `json:"block_type"`
-	Instruction string        `json:"instruction"`
-	SortOrder   int           `json:"sort_order"`
-	Exercises   []DayExercise `json:"exercises"`
-	CreatedAt   time.Time     `json:"created_at"`
+	ID            uuid.UUID     `json:"id"`
+	BlockKey      uuid.UUID     `json:"-"`
+	BlockType     BlockType     `json:"block_type"`
+	Instruction   string        `json:"instruction"`
+	SortOrder     int           `json:"sort_order"`
+	ClientUserIDs []uuid.UUID   `json:"client_user_ids"`
+	Exercises     []DayExercise `json:"exercises"`
+	CreatedAt     time.Time     `json:"created_at"`
 }
 
 type Week struct {
@@ -298,6 +303,10 @@ func validatePublishDetail(d Detail) error {
 						return err
 					}
 				}
+			}
+			if dayHasExercises && !dayHasSharedBlock(day) {
+				return fmt.Errorf("%w: week %d day %d has no shared block",
+					ErrLastSharedBlock, week.WeekNumber, day.DayNumber)
 			}
 			if dayHasExercises {
 				hasTrainingDay = true

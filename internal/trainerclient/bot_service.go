@@ -11,7 +11,7 @@ import (
 
 type ClientProgramReader interface {
 	GetAssignmentByTrainerID(ctx context.Context, trainerID, clientUserID uuid.UUID) (*program.Assignment, error)
-	GetVersionDetail(ctx context.Context, versionID uuid.UUID) (program.Detail, error)
+	GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (program.Detail, error)
 }
 
 func (s *Service) ListTelegramTrainers(ctx context.Context, telegramUserID string) (TelegramTrainerList, error) {
@@ -162,7 +162,7 @@ func (s *Service) clientProgramView(ctx context.Context, telegramUserID string, 
 		return resolvedTrainerID, name, nil, program.Detail{}, nil
 	}
 
-	detail, err := reader.GetVersionDetail(ctx, assignment.ProgramVersionID)
+	detail, err := reader.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, clientUserID)
 	if err != nil {
 		return uuid.Nil, "", nil, program.Detail{}, err
 	}
