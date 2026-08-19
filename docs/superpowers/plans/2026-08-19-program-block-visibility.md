@@ -1112,6 +1112,31 @@ func (f *fakeProgramStore) SetBlockClients(context.Context, uuid.UUID, uuid.UUID
 }
 ```
 
+- [ ] **Step 1a: Укрепить тест `daySharedAfterRestrict`**
+
+`ensureDaysKeepSharedBlock` (Step 6) вызывает `daySharedAfterRestrict` для
+**каждого** дня каждого дерева, включая дни, где ограничиваемого блока нет. Для
+них корректный ответ — `true` независимо от того, есть ли в дне общий блок; за
+это отвечает короткое замыкание по `holdsKey`. Существующий тест это не
+различает: в его фикстуре день без ключа состоит из уже общего блока, поэтому
+наивная реализация без короткого замыкания прошла бы тоже.
+
+Дописать кейс в `TestDaySharedAfterRestrict` в `internal/program/block_visibility_test.go`:
+
+```go
+{
+	name: "day of only restricted blocks is unaffected by a key it does not hold",
+	day: Day{Blocks: []DayBlock{
+		{BlockKey: keyA, ClientUserIDs: []uuid.UUID{petya}},
+	}},
+	restrict: keyC,
+	want:     true,
+},
+```
+
+Без него рефакторинг, схлопывающий два цикла в один, прошёл бы тесты и сломал
+проверку инварианта для всех остальных дней программы.
+
 - [ ] **Step 2: Запустить тесты, убедиться что падают**
 
 Run: `go test ./internal/program/ -run TestSetBlockClients -count=1`
