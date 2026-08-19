@@ -138,7 +138,7 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 	// version carrying that key, so a trainer browsing an old version sees the
 	// real client lists rather than a uniformly empty one. This also guarantees
 	// client_user_ids serializes as [] rather than null on every block.
-	rules, err := s.listProgramBlockClients(ctx, pgconv.FromPGUUID(version.ProgramID))
+	rules, err := s.listProgramBlockClients(ctx, s.q, pgconv.FromPGUUID(version.ProgramID))
 	if err != nil {
 		return Detail{}, err
 	}

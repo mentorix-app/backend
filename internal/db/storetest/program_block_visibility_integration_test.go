@@ -742,6 +742,80 @@ func TestMerge_rejectsDifferentClientSets(t *testing.T) {
 	}
 }
 
+// TestMerge_rejectsDifferentNonEmptyClientSets covers two blocks that are
+// each restricted, but to different clients — not the shared-vs-restricted
+// case TestMerge_rejectsDifferentClientSets already covers. Both are
+// "non-empty and different" sets, which is the case a naive "at least one
+// side is restricted" check could wrongly accept.
+func TestMerge_rejectsDifferentNonEmptyClientSets(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientA := seedDayWithBlocks(t, pool, "merge-mismatch2", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	clientB, trainerID := seedAssignedClient(t, pool, trainerUserID, "merge-mismatch2-client-b")
+	if _, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, clientB, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment clientB: %v", err)
+	}
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[0].ID,
+		[]uuid.UUID{clientA}); err != nil {
+		t.Fatalf("SetBlockClients block 0: %v", err)
+	}
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{clientB}); err != nil {
+		t.Fatalf("SetBlockClients block 1: %v", err)
+	}
+
+	_, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("MergeDayBlocks error = %v, want ErrValidation", err)
+	}
+}
+
+// TestMerge_preservesClientListOnMatchingSets guards against a refactor that
+// looks natural but is wrong: MergeDayBlocks reuses blocks[0]'s own row (and
+// block_key) as the merged group, so its existing visibility rule survives
+// automatically without any explicit copy. If that were changed to insert a
+// fresh group row instead — plausible, since the group is conceptually new —
+// every merge of restricted blocks would silently come out shared, and
+// TestMerge_rejectsDifferentClientSets alone would not catch it (both merged
+// blocks share the same client here, so the reject path never fires). This
+// also guards sameClientIDSet itself: a regression into an order- or
+// duplicate-sensitive comparison would not be exercised by the reject tests.
+func TestMerge_preservesClientListOnMatchingSets(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "merge-preserve", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[0].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients block 0: %v", err)
+	}
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients block 1: %v", err)
+	}
+
+	merged, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if err != nil {
+		t.Fatalf("MergeDayBlocks: %v", err)
+	}
+	group := groupBlock(t, merged.Weeks[0].Days[0])
+	if len(group.ClientUserIDs) != 1 || group.ClientUserIDs[0] != clientUserID {
+		t.Fatalf("merged group ClientUserIDs = %v, want [%s]", group.ClientUserIDs, clientUserID)
+	}
+}
+
 func TestUngroup_inheritsBlockClients(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()

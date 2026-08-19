@@ -173,7 +173,7 @@ func (s *Store) loadDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
 	d := Detail{Program: p, Weeks: weeks}
 	sortProgramDetail(&d)
 
-	rules, err := s.listProgramBlockClients(ctx, id)
+	rules, err := s.listProgramBlockClients(ctx, s.q, id)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -184,8 +184,11 @@ func (s *Store) loadDetail(ctx context.Context, id uuid.UUID) (Detail, error) {
 
 // listProgramBlockClients returns visibility rules of a program keyed by block_key.
 // A block_key absent from the map has no rules and is visible to every client.
-func (s *Store) listProgramBlockClients(ctx context.Context, programID uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
-	rows, err := s.q.ListProgramBlockClients(ctx, pgconv.ToPGUUID(programID))
+// Takes the queries object explicitly so a caller holding the program lock
+// (LockProgramForUpdate, via qtx) can read a serialized view instead of an
+// unlocked one through s.q.
+func (s *Store) listProgramBlockClients(ctx context.Context, q *sqlc.Queries, programID uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
+	rows, err := q.ListProgramBlockClients(ctx, pgconv.ToPGUUID(programID))
 	if err != nil {
 		return nil, fmt.Errorf("list program block clients: %w", err)
 	}

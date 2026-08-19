@@ -118,14 +118,6 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 		return Detail{}, pgx.ErrNoRows
 	}
 
-	blocks, err := s.loadMergeBlocks(ctx, dayID, blockIDs)
-	if err != nil {
-		return Detail{}, err
-	}
-	if err := s.ensureMergeableClientSets(ctx, programID, blocks); err != nil {
-		return Detail{}, err
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -133,6 +125,26 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+
+	// Lock the program row before reading the blocks and their client rules:
+	// this serializes against SetBlockClients, which takes the same lock. A
+	// concurrent restrict that lands between an unlocked read and our commit
+	// could leave its rule pointing at a block_key no block still carries
+	// (the exercise now sits inside the merged group), silently widening who
+	// sees it. See SetBlockClients for why a plain read after the lock is
+	// granted is already correctly serialized under READ COMMITTED.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	blocks, err := s.loadMergeBlocks(ctx, qtx, dayID, blockIDs)
+	if err != nil {
+		return Detail{}, err
+	}
+	if err := s.ensureMergeableClientSets(ctx, qtx, programID, blocks); err != nil {
+		return Detail{}, err
+	}
+
 	primary := blocks[0]
 	mergedInstruction := mergeBlockInstructions(blocks)
 
@@ -227,6 +239,20 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+
+	// Lock the program row before copying the group's visibility rules onto
+	// the new singles below: this serializes against SetBlockClients, which
+	// takes the same lock. Without it, a concurrent restrict on this group
+	// that commits after our copy but before our own commit would leave its
+	// rule pointing at a block_key we are about to delete, while the new
+	// singles come out shared — the trainer was told the restrict succeeded,
+	// but nothing ends up restricted. See SetBlockClients for why a plain
+	// read after the lock is granted is already correctly serialized under
+	// READ COMMITTED.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
 	dayPG := pgconv.ToPGUUID(dayID)
 
 	ids, err := listDayBlockUUIDs(ctx, qtx, dayID)
@@ -260,7 +286,7 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 		}); err != nil {
 			return Detail{}, fmt.Errorf("move exercise to single block: %w", err)
 		}
-		// Inherit the group's visibility rules: without this, discarding a
+		// Inherit the group's visibility rules: without this, ungrouping a
 		// restricted group would silently make every resulting single block
 		// visible to all clients.
 		if err := qtx.CopyProgramBlockClients(ctx, sqlc.CopyProgramBlockClientsParams{
@@ -564,8 +590,11 @@ type mergeBlock struct {
 	SortOrder   int
 }
 
-func (s *Store) loadMergeBlocks(ctx context.Context, dayID uuid.UUID, blockIDs []uuid.UUID) ([]mergeBlock, error) {
-	rows, err := s.q.ListDayBlocks(ctx, pgconv.ToPGUUID(dayID))
+// loadMergeBlocks takes the queries object explicitly: MergeDayBlocks calls it
+// on qtx, after locking the program row, so this read is part of the same
+// serialized view as the client-set check that follows it.
+func (s *Store) loadMergeBlocks(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID, blockIDs []uuid.UUID) ([]mergeBlock, error) {
+	rows, err := q.ListDayBlocks(ctx, pgconv.ToPGUUID(dayID))
 	if err != nil {
 		return nil, fmt.Errorf("list day blocks: %w", err)
 	}
@@ -603,9 +632,11 @@ func (s *Store) loadMergeBlocks(ctx context.Context, dayID uuid.UUID, blockIDs [
 // all share the exact same client visibility rules ("same set" includes
 // "all of them shared"). Merging blocks with different client sets has no
 // single correct outcome for the resulting group, so it is rejected outright
-// rather than guessed at.
-func (s *Store) ensureMergeableClientSets(ctx context.Context, programID uuid.UUID, blocks []mergeBlock) error {
-	rules, err := s.listProgramBlockClients(ctx, programID)
+// rather than guessed at. Takes the queries object explicitly for the same
+// reason as loadMergeBlocks: it must read through qtx, after the program
+// lock, not through the unlocked s.q.
+func (s *Store) ensureMergeableClientSets(ctx context.Context, q *sqlc.Queries, programID uuid.UUID, blocks []mergeBlock) error {
+	rules, err := s.listProgramBlockClients(ctx, q, programID)
 	if err != nil {
 		return err
 	}
