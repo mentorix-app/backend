@@ -258,9 +258,13 @@ func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, us
 				return fmt.Errorf("insert program version day: %w", err)
 			}
 			for _, block := range day.Blocks {
+				blockKey := block.BlockKey
+				if blockKey == uuid.Nil {
+					blockKey = uuid.New()
+				}
 				blockRow, err := q.InsertProgramVersionDayBlock(ctx, sqlc.InsertProgramVersionDayBlockParams{
 					ProgramVersionWeekDayID: dayRow.ID,
-					BlockKey:                pgconv.ToPGUUID(block.BlockKey),
+					BlockKey:                pgconv.ToPGUUID(blockKey),
 					BlockType:               string(block.BlockType),
 					Instruction:             block.Instruction,
 					SortOrder:               int32(block.SortOrder),
@@ -290,8 +294,11 @@ func (s *Store) enrichedDetail(ctx context.Context, id uuid.UUID) (Detail, error
 	return s.GetDetail(ctx, id)
 }
 
-func (s *Store) enrichProgram(ctx context.Context, p Program, detail *Detail) (Program, error) {
-	count, err := s.q.CountActiveProgramAssignmentsByProgramID(ctx, pgconv.ToPGUUID(p.ID))
+// enrichProgram takes the queries object explicitly for the same reason as
+// listProgramBlockClients: a caller inside a locked transaction passes qtx to
+// read a serialized view instead of reaching back into the pool.
+func (s *Store) enrichProgram(ctx context.Context, q *sqlc.Queries, p Program, detail *Detail) (Program, error) {
+	count, err := q.CountActiveProgramAssignmentsByProgramID(ctx, pgconv.ToPGUUID(p.ID))
 	if err != nil {
 		return Program{}, fmt.Errorf("count assignments: %w", err)
 	}
@@ -301,7 +308,7 @@ func (s *Store) enrichProgram(ctx context.Context, p Program, detail *Detail) (P
 		p.TrainingDaysCount = CountTrainingDays(detail.Weeks)
 	}
 
-	latest, err := s.q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(p.ID))
+	latest, err := q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(p.ID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, nil
@@ -317,7 +324,7 @@ func (s *Store) enrichProgram(ctx context.Context, p Program, detail *Detail) (P
 	if p.Status == StatusPublished {
 		d := detail
 		if d == nil {
-			loaded, loadErr := s.loadDetail(ctx, p.ID)
+			loaded, loadErr := s.loadDetail(ctx, q, p.ID)
 			if loadErr != nil {
 				return Program{}, loadErr
 			}

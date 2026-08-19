@@ -53,19 +53,23 @@ func (s *Store) SetBlockClients(ctx context.Context, userID, programID, weekID, 
 	// day with zero shared blocks. This row lock is what makes the two calls
 	// serialize instead of racing.
 	//
-	// GetDetail and ensureDaysKeepSharedBlock below read through s.q — the
-	// pool, not qtx/this transaction — on purpose, not by oversight. Under
-	// READ COMMITTED, a plain read after the lock is granted already sees
-	// everything a competing transaction committed before releasing the lock
-	// (PostgreSQL blocks our FOR UPDATE until it does), so the reads are
-	// correctly serialized by the lock even though they don't run inside qtx.
-	// Do not "fix" this by moving them onto qtx: that would just make an
-	// already-correct read part of the same transaction for no benefit.
+	// current and ensureDaysKeepSharedBlock below read through qtx — this
+	// transaction's own connection — rather than the pool. That is required,
+	// not just correct: under READ COMMITTED a plain pool read after the lock
+	// is granted would already see everything a competing transaction
+	// committed before releasing the lock, so a second connection would still
+	// be correct, but every concurrent PUT on this program would then hold two
+	// connections at once (one blocked on FOR UPDATE, one for the read) for as
+	// long as it holds the lock. With MaxConns capped at max(4, NumCPU), a
+	// handful of concurrent requests on the same program exhausts the pool and
+	// everything stalls on a fifth connection that never comes, while the
+	// program row stays locked the whole time. Reading in-transaction keeps
+	// each request to a single connection.
 	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
 		return Detail{}, fmt.Errorf("lock program: %w", err)
 	}
 
-	current, err := s.GetDetail(ctx, programID)
+	current, err := s.getDetail(ctx, qtx, programID)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -74,7 +78,7 @@ func (s *Store) SetBlockClients(ctx context.Context, userID, programID, weekID, 
 
 	// Only the shared → restricted transition can break the day invariant.
 	if wasShared && becomesRestricted {
-		if err := s.ensureDaysKeepSharedBlock(ctx, programID, blockKey, current); err != nil {
+		if err := s.ensureDaysKeepSharedBlock(ctx, qtx, programID, blockKey, current); err != nil {
 			return Detail{}, err
 		}
 	}
@@ -134,25 +138,58 @@ func (s *Store) ensureClientsAssigned(ctx context.Context, programID uuid.UUID, 
 	return nil
 }
 
-// ensureDaysKeepSharedBlock checks the day invariant in the working copy and in
-// every version an active assignment still points at.
-func (s *Store) ensureDaysKeepSharedBlock(ctx context.Context, programID, blockKey uuid.UUID, working Detail) error {
+// ensureDaysKeepSharedBlock checks the day invariant in the working copy and
+// in every version that matters for who could see this block next: every
+// version an active assignment still points at, plus the latest version,
+// deduplicated. The latest version is included even with no assignment on it
+// yet — SetClientProgramAssignment and SyncProgramAssignments both put a
+// newly (re)assigned client on GetLatestProgramVersionByProgramID, not on the
+// working copy, so when the working copy has unpublished changes, the latest
+// version is exactly where the next assignment lands, and it must already
+// satisfy the invariant. Takes the queries object explicitly so it reads
+// through qtx, after the program lock, not through the unlocked pool.
+func (s *Store) ensureDaysKeepSharedBlock(ctx context.Context, q *sqlc.Queries, programID, blockKey uuid.UUID, working Detail) error {
 	trees := []struct {
 		label  string
 		detail Detail
 	}{{label: "working copy", detail: working}}
 
-	versionIDs, err := s.q.ListAssignedProgramVersionIDs(ctx, pgconv.ToPGUUID(programID))
+	// ListAssignedProgramVersionIDs is a SELECT DISTINCT, so assignedRows never
+	// contains duplicates on its own; seen only needs to catch the latest
+	// version below when it coincides with one already in this list.
+	assignedRows, err := q.ListAssignedProgramVersionIDs(ctx, pgconv.ToPGUUID(programID))
 	if err != nil {
 		return fmt.Errorf("list assigned versions: %w", err)
 	}
-	for _, versionPG := range versionIDs {
-		versionID := pgconv.FromPGUUID(versionPG)
-		detail, err := s.GetVersionDetail(ctx, versionID)
+	versionIDs := make([]uuid.UUID, 0, len(assignedRows)+1)
+	seen := make(map[uuid.UUID]struct{}, len(assignedRows)+1)
+	for _, row := range assignedRows {
+		id := pgconv.FromPGUUID(row)
+		seen[id] = struct{}{}
+		versionIDs = append(versionIDs, id)
+	}
+
+	// A draft program with no published version yet has nothing more to
+	// check: GetLatestProgramVersionByProgramID's ErrNoRows is expected, not
+	// a failure.
+	latest, err := q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(programID))
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("latest program version: %w", err)
+	}
+	if err == nil {
+		id := pgconv.FromPGUUID(latest.ID)
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			versionIDs = append(versionIDs, id)
+		}
+	}
+
+	for _, versionID := range versionIDs {
+		detail, err := s.getVersionDetail(ctx, q, versionID)
 		if err != nil {
 			return err
 		}
-		// GetVersionDetail already applies the program's rules (Task 3).
+		// getVersionDetail already applies the program's rules (Task 3).
 		trees = append(trees, struct {
 			label  string
 			detail Detail

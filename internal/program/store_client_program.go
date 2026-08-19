@@ -9,11 +9,20 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"mentorix-backend/internal/db/pgconv"
+	"mentorix-backend/internal/db/sqlc"
 )
 
 func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Detail, error) {
+	return s.getVersionDetail(ctx, s.q, versionID)
+}
+
+// getVersionDetail takes the queries object explicitly so a caller already
+// holding the program lock (LockProgramForUpdate, via qtx) can run the whole
+// read in-transaction on its own connection instead of reaching back into the
+// pool for a second one (see ensureDaysKeepSharedBlock).
+func (s *Store) getVersionDetail(ctx context.Context, q *sqlc.Queries, versionID uuid.UUID) (Detail, error) {
 	versionPG := pgconv.ToPGUUID(versionID)
-	version, err := s.q.GetProgramVersionByID(ctx, versionPG)
+	version, err := q.GetProgramVersionByID(ctx, versionPG)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound
@@ -21,19 +30,19 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 		return Detail{}, fmt.Errorf("get program version: %w", err)
 	}
 
-	weekRows, err := s.q.ListProgramVersionWeeksByVersionID(ctx, versionPG)
+	weekRows, err := q.ListProgramVersionWeeksByVersionID(ctx, versionPG)
 	if err != nil {
 		return Detail{}, fmt.Errorf("list version weeks: %w", err)
 	}
-	dayRows, err := s.q.ListProgramVersionDaysByVersionID(ctx, versionPG)
+	dayRows, err := q.ListProgramVersionDaysByVersionID(ctx, versionPG)
 	if err != nil {
 		return Detail{}, fmt.Errorf("list version days: %w", err)
 	}
-	blockRows, err := s.q.ListProgramVersionDayBlocksByVersionID(ctx, versionPG)
+	blockRows, err := q.ListProgramVersionDayBlocksByVersionID(ctx, versionPG)
 	if err != nil {
 		return Detail{}, fmt.Errorf("list version blocks: %w", err)
 	}
-	exerciseRows, err := s.q.ListProgramVersionDayExercisesWithNamesByVersionID(ctx, versionPG)
+	exerciseRows, err := q.ListProgramVersionDayExercisesWithNamesByVersionID(ctx, versionPG)
 	if err != nil {
 		return Detail{}, fmt.Errorf("list version exercises: %w", err)
 	}
@@ -138,7 +147,7 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 	// version carrying that key, so a trainer browsing an old version sees the
 	// real client lists rather than a uniformly empty one. This also guarantees
 	// client_user_ids serializes as [] rather than null on every block.
-	rules, err := s.listProgramBlockClients(ctx, s.q, pgconv.FromPGUUID(version.ProgramID))
+	rules, err := s.listProgramBlockClients(ctx, q, pgconv.FromPGUUID(version.ProgramID))
 	if err != nil {
 		return Detail{}, err
 	}

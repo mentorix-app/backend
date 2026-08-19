@@ -414,6 +414,21 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+
+	// Lock the program row before copying the source group's visibility rules
+	// onto the new single below: this serializes against SetBlockClients,
+	// which takes the same lock. Without it, a concurrent restrict on the
+	// source group that commits after our copy read but before our own
+	// commit would leave the group correctly restricted while the extracted
+	// exercise comes out in a single block with no rules — the trainer just
+	// restricted the group, but the exercise they extracted from it is
+	// visible to everyone. See SetBlockClients for why a plain read after
+	// the lock is granted is already correctly serialized under READ
+	// COMMITTED.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
 	dayPG := pgconv.ToPGUUID(dayID)
 	newBlockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
 	if err != nil {

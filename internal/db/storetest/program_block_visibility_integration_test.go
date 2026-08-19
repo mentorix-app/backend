@@ -6,9 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -1090,5 +1092,198 @@ func TestDaySnapshot_containsOnlyVisibleBlocks(t *testing.T) {
 	}
 	if len(parsed.Blocks) != 1 {
 		t.Fatalf("blocks in day_snapshot = %d, want 1", len(parsed.Blocks))
+	}
+}
+
+// TestSetBlockClients_refusesLastSharedBlockInLatestUnassignedVersion proves
+// ensureDaysKeepSharedBlock also checks the latest program version even when
+// nobody is assigned to it yet. Both SetClientProgramAssignment and
+// SyncProgramAssignments put a newly (re)assigned client on
+// GetLatestProgramVersionByProgramID, not on the working copy, so when the
+// working copy has unpublished changes, the latest version is exactly where
+// the next assignment lands — and it must already satisfy the invariant.
+//
+// Sequence: v1 day 1 = [A, B], both shared, client is assigned to v1. Trainer
+// deletes B and publishes v2 (day 1 = [A]); the client stays on v1. Trainer
+// adds B' to the working copy. Restricting A: the working copy passes (B' is
+// shared), v1 passes (B is shared) — but v2, which nobody is assigned to yet,
+// would be skipped entirely by a check that only looks at
+// ListAssignedProgramVersionIDs, even though v2's day 1 only ever had A and
+// would end up with zero shared blocks, and it is exactly where the next
+// assignment lands. Only checking the latest version unconditionally catches
+// this before any client ever sees it.
+func TestSetBlockClients_refusesLastSharedBlockInLatestUnassignedVersion(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "latest-unassigned")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	// Blocks A and B exist at v1 publish time.
+	for i := 0; i < 2; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	blocks := detail.Weeks[0].Days[0].Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("blocks before v1 publish = %d, want 2", len(blocks))
+	}
+	blockA, blockB := blocks[0], blocks[1]
+
+	v1, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft (v1): %v", err)
+	}
+	programID := v1.ID
+
+	clientID, trainerID := seedAssignedClient(t, pool, userID, "latest-unassigned-client")
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+	// The client lands on v1, the only version that exists right now.
+
+	// Delete B, then publish v2: day 1 in v2 is [A] alone. The client stays
+	// on v1 — publish never touches assignments. B is a single block, so
+	// deleting its one exercise deletes the block itself.
+	if len(blockB.Exercises) == 0 {
+		t.Fatal("block B has no exercises to delete")
+	}
+	afterDelete, err := store.DeleteBlockExercise(ctx, programID, week.ID, blockB.ID, blockB.Exercises[0].ID)
+	if err != nil {
+		t.Fatalf("DeleteBlockExercise: %v", err)
+	}
+	if _, err := store.PublishFromDraft(ctx, programID, userID, afterDelete); err != nil {
+		t.Fatalf("PublishFromDraft (v2): %v", err)
+	}
+
+	// Add B' to the working copy after v2 was published: the working copy
+	// now has A and B', neither of which is v2's B.
+	withBPrime, err := createSingleBlockStore(ctx, store, userID, programID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore (B'): %v", err)
+	}
+	if got := len(withBPrime.Weeks[0].Days[0].Blocks); got != 2 {
+		t.Fatalf("working copy blocks after adding B' = %d, want 2 (A, B')", got)
+	}
+
+	// Restrict A: the working copy keeps B' shared and v1 keeps B shared, so
+	// only the unassigned v2 would end up with zero shared blocks.
+	_, err = store.SetBlockClients(ctx, userID, programID, week.ID, blockA.ID,
+		[]uuid.UUID{clientID})
+	if !errors.Is(err, program.ErrLastSharedBlock) {
+		t.Fatalf("SetBlockClients on A error = %v, want ErrLastSharedBlock", err)
+	}
+}
+
+// TestExtractBlockExercise_concurrentWithRestrictInheritsGroupClients is a
+// regression test for the fourth site that read program_block_clients
+// without the program lock: ExtractBlockExercise copies the source group's
+// visibility rules into the new single block the same way SetBlockClients
+// writes them. Without the same lock, a SetBlockClients call restricting the
+// group can commit while an in-flight extract is still mid-copy: the
+// extract's read happened before that commit and saw no rules, so it creates
+// the new single block shared, even though the group it was just pulled out
+// of is now restricted — the exercise the trainer just restricted ends up
+// visible to everyone.
+//
+// A single race attempt does not reliably land the read inside that window,
+// so — like TestSetBlockClients_concurrentRestrictKeepsSharedBlock — this
+// repeats the experiment, each time against a fresh program (extraction
+// consumes the group's second exercise, so the fixture cannot simply be
+// reset like a client list can). restrict is given a very small head start:
+// it has fewer pre-lock reads than extract, so with the lock in place it
+// reliably wins the race for it anyway, but the explicit head start also
+// reliably lands extract's copy read squarely inside restrict's own
+// (comparatively slow, tree-walking) transaction when the lock is missing —
+// exactly the window the bug needs.
+func TestExtractBlockExercise_concurrentWithRestrictInheritsGroupClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	const attempts = 12
+	for attempt := 0; attempt < attempts; attempt++ {
+		programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool,
+			fmt.Sprintf("extract-race-%d", attempt), 4)
+		trainerUserID := ownerUserID(t, pool, programID)
+		dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+		// Merge two of the four blocks into a group; the other two stay
+		// shared single blocks, so restricting the group can never trip the
+		// day invariant — this test only exercises the copy race.
+		merged, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+			[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+		if err != nil {
+			t.Fatalf("attempt %d: MergeDayBlocks: %v", attempt, err)
+		}
+		group := groupBlock(t, merged.Weeks[0].Days[0])
+		itemID := group.Exercises[0].ID
+
+		var restrictErr, extractErr error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, restrictErr = store.SetBlockClients(ctx, trainerUserID, programID, weekID, group.ID,
+				[]uuid.UUID{clientUserID})
+		}()
+		time.Sleep(time.Millisecond)
+		go func() {
+			defer wg.Done()
+			_, extractErr = store.ExtractBlockExercise(ctx, trainerUserID, programID, weekID, group.ID, itemID, 1)
+		}()
+		wg.Wait()
+
+		if restrictErr != nil {
+			t.Fatalf("attempt %d: SetBlockClients: %v", attempt, restrictErr)
+		}
+		if extractErr != nil {
+			t.Fatalf("attempt %d: ExtractBlockExercise: %v", attempt, extractErr)
+		}
+
+		final, err := store.GetDetail(ctx, programID)
+		if err != nil {
+			t.Fatalf("attempt %d: GetDetail: %v", attempt, err)
+		}
+		day := final.Weeks[0].Days[0]
+
+		var groupFinal, extracted program.DayBlock
+		foundGroup, foundExtracted := false, false
+		for _, b := range day.Blocks {
+			if b.ID == group.ID {
+				groupFinal = b
+				foundGroup = true
+			}
+			for _, ex := range b.Exercises {
+				if ex.ID == itemID {
+					extracted = b
+					foundExtracted = true
+				}
+			}
+		}
+		if !foundGroup {
+			t.Fatalf("attempt %d: group block not found after race", attempt)
+		}
+		if !foundExtracted {
+			t.Fatalf("attempt %d: extracted exercise not found after race", attempt)
+		}
+		if len(groupFinal.ClientUserIDs) != 1 || groupFinal.ClientUserIDs[0] != clientUserID {
+			t.Fatalf("attempt %d: group ClientUserIDs = %v, want [%s]",
+				attempt, groupFinal.ClientUserIDs, clientUserID)
+		}
+		if len(extracted.ClientUserIDs) != 1 || extracted.ClientUserIDs[0] != clientUserID {
+			t.Fatalf("attempt %d: extracted block ClientUserIDs = %v, want [%s] (never shared)",
+				attempt, extracted.ClientUserIDs, clientUserID)
+		}
 	}
 }
