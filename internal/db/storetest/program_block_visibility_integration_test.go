@@ -635,3 +635,220 @@ func TestSetBlockClients_refusesLastSharedBlockInAssignedVersionOnly(t *testing.
 		t.Fatalf("SetBlockClients on A error = %v, want ErrLastSharedBlock", err)
 	}
 }
+
+// ownerUserID returns the trainer user id that created the program.
+func ownerUserID(t *testing.T, pool *pgxpool.Pool, programID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var userID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT created_by FROM mentorix.programs WHERE id = $1`, programID).Scan(&userID); err != nil {
+		t.Fatalf("select program owner: %v", err)
+	}
+	return userID
+}
+
+// dayIDOfBlock returns the day a block currently belongs to.
+func dayIDOfBlock(t *testing.T, pool *pgxpool.Pool, blockID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var dayID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT program_week_day_id FROM mentorix.program_week_day_blocks WHERE id = $1`,
+		blockID).Scan(&dayID); err != nil {
+		t.Fatalf("select block day: %v", err)
+	}
+	return dayID
+}
+
+// groupBlock returns the first non-single block in a day. Fails the test if
+// the day has no group block.
+func groupBlock(t *testing.T, day program.Day) program.DayBlock {
+	t.Helper()
+	for _, b := range day.Blocks {
+		if b.BlockType != program.BlockTypeSingle {
+			return b
+		}
+	}
+	t.Fatal("no group block found in day")
+	return program.DayBlock{}
+}
+
+// secondDayID returns the id of the second day (by day_number) in a week.
+func secondDayID(t *testing.T, pool *pgxpool.Pool, weekID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var dayID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		SELECT id FROM mentorix.program_week_days
+		WHERE week_id = $1
+		ORDER BY day_number OFFSET 1 LIMIT 1`, weekID).Scan(&dayID); err != nil {
+		t.Fatalf("select second day: %v", err)
+	}
+	return dayID
+}
+
+// seedDayWithBlocks publishes a program with n single blocks in week 1 day 1 and
+// assigns it to one client. Returns program id, week id, the blocks and the client.
+func seedDayWithBlocks(t *testing.T, pool *pgxpool.Pool, emailPrefix string, n int) (uuid.UUID, uuid.UUID, []program.DayBlock, uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, emailPrefix)
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+	for i := 0; i < n; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	clientUserID, trainerID := seedAssignedClient(t, pool, userID, emailPrefix+"-client")
+	programID := published.ID
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientUserID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+	return programID, week.ID, published.Weeks[0].Days[0].Blocks, clientUserID
+}
+
+func TestMerge_rejectsDifferentClientSets(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "merge-mismatch", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[0].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	_, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if !errors.Is(err, program.ErrValidation) {
+		t.Fatalf("MergeDayBlocks error = %v, want ErrValidation", err)
+	}
+}
+
+func TestUngroup_inheritsBlockClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "ungroup-inherit", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	merged, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if err != nil {
+		t.Fatalf("MergeDayBlocks: %v", err)
+	}
+	group := groupBlock(t, merged.Weeks[0].Days[0])
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, group.ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	after, err := store.UngroupDayBlock(ctx, trainerUserID, programID, weekID, group.ID)
+	if err != nil {
+		t.Fatalf("UngroupDayBlock: %v", err)
+	}
+
+	restricted := 0
+	for _, b := range after.Weeks[0].Days[0].Blocks {
+		if len(b.ClientUserIDs) == 1 && b.ClientUserIDs[0] == clientUserID {
+			restricted++
+		}
+	}
+	if restricted != 2 {
+		t.Fatalf("blocks inheriting the client list = %d, want 2", restricted)
+	}
+}
+
+func TestExtract_inheritsBlockClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "extract-inherit", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	dayID := dayIDOfBlock(t, pool, blocks[0].ID)
+
+	merged, err := store.MergeDayBlocks(ctx, trainerUserID, programID, weekID, dayID,
+		[]uuid.UUID{blocks[0].ID, blocks[1].ID})
+	if err != nil {
+		t.Fatalf("MergeDayBlocks: %v", err)
+	}
+	group := groupBlock(t, merged.Weeks[0].Days[0])
+	itemID := group.Exercises[0].ID
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, group.ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	after, err := store.ExtractBlockExercise(ctx, trainerUserID, programID, weekID, group.ID, itemID, 1)
+	if err != nil {
+		t.Fatalf("ExtractBlockExercise: %v", err)
+	}
+
+	extracted := false
+	for _, b := range after.Weeks[0].Days[0].Blocks {
+		if b.BlockType == program.BlockTypeSingle && len(b.ClientUserIDs) == 1 &&
+			b.ClientUserIDs[0] == clientUserID {
+			extracted = true
+		}
+	}
+	if !extracted {
+		t.Fatal("extracted single block did not inherit the client list")
+	}
+}
+
+func TestMove_keepsBlockClients(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "move-keeps", 4)
+	trainerUserID := ownerUserID(t, pool, programID)
+	targetDayID := secondDayID(t, pool, weekID)
+
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[0].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	after, err := store.MoveDayBlock(ctx, trainerUserID, programID, weekID, blocks[0].ID, targetDayID, 1)
+	if err != nil {
+		t.Fatalf("MoveDayBlock: %v", err)
+	}
+
+	found := false
+	for _, day := range after.Weeks[0].Days {
+		for _, b := range day.Blocks {
+			if b.ID == blocks[0].ID {
+				found = true
+				if len(b.ClientUserIDs) != 1 || b.ClientUserIDs[0] != clientUserID {
+					t.Fatalf("moved block ClientUserIDs = %v, want [%s]", b.ClientUserIDs, clientUserID)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("moved block not found after move")
+	}
+}

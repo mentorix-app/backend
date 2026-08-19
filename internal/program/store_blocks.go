@@ -122,6 +122,9 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 	if err != nil {
 		return Detail{}, err
 	}
+	if err := s.ensureMergeableClientSets(ctx, programID, blocks); err != nil {
+		return Detail{}, err
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -257,6 +260,16 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 		}); err != nil {
 			return Detail{}, fmt.Errorf("move exercise to single block: %w", err)
 		}
+		// Inherit the group's visibility rules: without this, discarding a
+		// restricted group would silently make every resulting single block
+		// visible to all clients.
+		if err := qtx.CopyProgramBlockClients(ctx, sqlc.CopyProgramBlockClientsParams{
+			ProgramID:      pgconv.ToPGUUID(programID),
+			TargetBlockKey: newBlockRow.BlockKey,
+			SourceBlockKey: block.BlockKey,
+		}); err != nil {
+			return Detail{}, fmt.Errorf("copy block clients: %w", err)
+		}
 	}
 
 	ids = append(ids[:groupIdx], append(newBlockIDs, ids[groupIdx+1:]...)...)
@@ -358,6 +371,16 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 	}
 	dayID := pgconv.FromPGUUID(meta.ProgramWeekDayID)
 
+	// blockID already equals meta.ProgramWeekDayBlockID (checked above), so
+	// this is the source group's own row — needed for its block_key.
+	sourceBlock, err := s.q.GetDayBlockByID(ctx, pgconv.ToPGUUID(blockID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, pgx.ErrNoRows
+		}
+		return Detail{}, fmt.Errorf("get day block: %w", err)
+	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -369,6 +392,16 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 	newBlockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(BlockTypeSingle), "", 1, userID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("insert single block: %w", err)
+	}
+	// Inherit the group's visibility rules: without this, extracting an
+	// exercise out of a restricted group would silently make the new single
+	// block visible to all clients.
+	if err := qtx.CopyProgramBlockClients(ctx, sqlc.CopyProgramBlockClientsParams{
+		ProgramID:      pgconv.ToPGUUID(programID),
+		TargetBlockKey: newBlockRow.BlockKey,
+		SourceBlockKey: sourceBlock.BlockKey,
+	}); err != nil {
+		return Detail{}, fmt.Errorf("copy block clients: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -525,6 +558,7 @@ func (s *Store) DeleteDayBlock(ctx context.Context, programID, weekID, blockID u
 
 type mergeBlock struct {
 	ID          uuid.UUID
+	BlockKey    uuid.UUID
 	BlockType   BlockType
 	Instruction string
 	SortOrder   int
@@ -541,6 +575,7 @@ func (s *Store) loadMergeBlocks(ctx context.Context, dayID uuid.UUID, blockIDs [
 		id := pgconv.FromPGUUID(row.ID)
 		byID[id] = mergeBlock{
 			ID:          id,
+			BlockKey:    pgconv.FromPGUUID(row.BlockKey),
 			BlockType:   BlockType(row.BlockType),
 			Instruction: row.Instruction,
 			SortOrder:   int(row.SortOrder),
@@ -562,6 +597,51 @@ func (s *Store) loadMergeBlocks(ctx context.Context, dayID uuid.UUID, blockIDs [
 		return out[i].SortOrder < out[j].SortOrder
 	})
 	return out, nil
+}
+
+// ensureMergeableClientSets refuses a merge whose participating blocks do not
+// all share the exact same client visibility rules ("same set" includes
+// "all of them shared"). Merging blocks with different client sets has no
+// single correct outcome for the resulting group, so it is rejected outright
+// rather than guessed at.
+func (s *Store) ensureMergeableClientSets(ctx context.Context, programID uuid.UUID, blocks []mergeBlock) error {
+	rules, err := s.listProgramBlockClients(ctx, programID)
+	if err != nil {
+		return err
+	}
+
+	var want map[uuid.UUID]struct{}
+	for i, b := range blocks {
+		got := clientIDSet(rules[b.BlockKey])
+		if i == 0 {
+			want = got
+			continue
+		}
+		if !sameClientIDSet(want, got) {
+			return fmt.Errorf("%w: blocks to merge must have the same client list", ErrValidation)
+		}
+	}
+	return nil
+}
+
+func clientIDSet(ids []uuid.UUID) map[uuid.UUID]struct{} {
+	set := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		set[id] = struct{}{}
+	}
+	return set
+}
+
+func sameClientIDSet(a, b map[uuid.UUID]struct{}) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for id := range a {
+		if _, ok := b[id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func mergeBlockInstructions(blocks []mergeBlock) string {

@@ -32,3 +32,11 @@ SELECT id
 FROM mentorix.programs
 WHERE id = $1
 FOR UPDATE;
+
+-- name: CopyProgramBlockClients :exec
+INSERT INTO mentorix.program_block_clients (program_id, block_key, client_user_id, created_by)
+SELECT src.program_id, sqlc.arg('target_block_key'), src.client_user_id, src.created_by
+FROM mentorix.program_block_clients src
+WHERE src.program_id = sqlc.arg('program_id')
+  AND src.block_key = sqlc.arg('source_block_key')
+ON CONFLICT (program_id, block_key, client_user_id) DO NOTHING;

@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const copyProgramBlockClients = `-- name: CopyProgramBlockClients :exec
+INSERT INTO mentorix.program_block_clients (program_id, block_key, client_user_id, created_by)
+SELECT src.program_id, $1, src.client_user_id, src.created_by
+FROM mentorix.program_block_clients src
+WHERE src.program_id = $2
+  AND src.block_key = $3
+ON CONFLICT (program_id, block_key, client_user_id) DO NOTHING
+`
+
+type CopyProgramBlockClientsParams struct {
+	TargetBlockKey pgtype.UUID `json:"target_block_key"`
+	ProgramID      pgtype.UUID `json:"program_id"`
+	SourceBlockKey pgtype.UUID `json:"source_block_key"`
+}
+
+func (q *Queries) CopyProgramBlockClients(ctx context.Context, arg CopyProgramBlockClientsParams) error {
+	_, err := q.db.Exec(ctx, copyProgramBlockClients, arg.TargetBlockKey, arg.ProgramID, arg.SourceBlockKey)
+	return err
+}
+
 const deleteProgramBlockClients = `-- name: DeleteProgramBlockClients :exec
 DELETE FROM mentorix.program_block_clients
 WHERE program_id = $1 AND block_key = $2
