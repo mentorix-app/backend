@@ -653,8 +653,16 @@ blockID := blockRow.ID
 
 `GetVersionDetail` — третье место в коде, где собирается `DayBlock` (кроме
 `loadDetail` и будущего клиентского пути). Сейчас оно не заполняет ни `BlockKey`,
-ни `ClientUserIDs`, из-за чего `GET /programs/{id}/versions/{version_id}` отдаёт
-`client_user_ids: null`, нарушая гарантию «всегда массив».
+ни `ClientUserIDs`.
+
+Незаполненный `BlockKey` здесь — не косметика, а порча данных: этот метод читает
+`RestoreWorkingTreeFromLatestVersion`, и при `uuid.Nil` его фолбэк выдаст каждому
+блоку новый ключ, так что любой `discard-unpublished` молча порвёт привязку всех
+правил видимости. Пустой `ClientUserIDs` нарушает гарантию «всегда массив» на
+структурах, которые отдаёт бот, и понадобится Task 8 для фильтрации.
+
+Публичного GET на одну версию в API нет (только `DELETE`), так что HTTP-контракт
+здесь ни при чём.
 
 В `internal/program/store_client_program.go` в сборке `DayBlock` добавить:
 
