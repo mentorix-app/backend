@@ -1239,6 +1239,24 @@ func (s *Store) SetBlockClients(ctx context.Context, userID, programID, weekID, 
 		return Detail{}, err
 	}
 
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+
+	// Serialize rule writes for this program. Without the lock two concurrent
+	// requests restricting different blocks of the same day each read a snapshot
+	// where the other block is still shared, both pass the invariant check, and
+	// the day ends up with no shared block at all.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	// Read AFTER the lock: a fresh READ COMMITTED snapshot now sees whatever a
+	// competing request committed before releasing it.
 	current, err := s.GetDetail(ctx, programID)
 	if err != nil {
 		return Detail{}, err
@@ -1252,14 +1270,6 @@ func (s *Store) SetBlockClients(ctx context.Context, userID, programID, weekID, 
 			return Detail{}, err
 		}
 	}
-
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Detail{}, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	qtx := s.q.WithTx(tx)
 	if err := qtx.DeleteProgramBlockClients(ctx, sqlc.DeleteProgramBlockClientsParams{
 		ProgramID: pgconv.ToPGUUID(programID),
 		BlockKey:  pgconv.ToPGUUID(blockKey),
