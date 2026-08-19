@@ -129,3 +129,37 @@ func TestDaySharedAfterRestrict(t *testing.T) {
 		})
 	}
 }
+
+func TestDayHasSharedBlock(t *testing.T) {
+	petya := uuid.New()
+
+	tests := []struct {
+		name string
+		day  Day
+		want bool
+	}{
+		{
+			name: "day keeps one shared block",
+			day:  Day{Blocks: []DayBlock{{ClientUserIDs: []uuid.UUID{petya}}, {}}},
+			want: true,
+		},
+		{
+			name: "every block in the day is restricted",
+			day:  Day{Blocks: []DayBlock{{ClientUserIDs: []uuid.UUID{petya}}}},
+			want: false,
+		},
+		{
+			name: "day with no blocks at all",
+			day:  Day{},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := dayHasSharedBlock(tc.day); got != tc.want {
+				t.Fatalf("dayHasSharedBlock() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

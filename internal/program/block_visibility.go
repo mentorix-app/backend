@@ -40,8 +40,6 @@ func FilterDetailForClient(d Detail, clientUserID uuid.UUID) Detail {
 }
 
 // dayHasSharedBlock reports whether the day keeps at least one block without rules.
-//
-//nolint:unused
 func dayHasSharedBlock(day Day) bool {
 	for _, block := range day.Blocks {
 		if len(block.ClientUserIDs) == 0 {
