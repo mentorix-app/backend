@@ -1768,6 +1768,46 @@ paths:
         "404":
           description: Program, week, or block not found
 
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/clients:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+    put:
+      tags: [programs]
+      summary: Replace the visibility rules of a block
+      description: >
+        Full replace: the body carries the complete client list. An empty
+        list makes the block shared (visible to every client assigned to the
+        program) again. Restricting a block is refused with 400 when it would
+        leave a day without a shared block, checked against the working copy
+        and against every published version a client is currently assigned
+        to.
+      operationId: setProgramBlockClients
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramBlockClientsSet"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not owner and not admin)
+        "404":
+          description: Program, week, or block not found
+
   /programs/{id}/weeks/{week_id}/blocks/{block_id}/exercises/{item_id}/extract:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
@@ -2811,6 +2851,18 @@ components:
           description: >
             Optional 1-based position among blocks in the target day.
             Omit to append at the end.
+
+    ProgramBlockClientsSet:
+      type: object
+      required: [client_user_ids]
+      properties:
+        client_user_ids:
+          type: array
+          description: >-
+            Complete replacement list. Empty makes the block shared again.
+          items:
+            type: string
+            format: uuid
 
     ProgramBlockExerciseExtract:
       type: object

@@ -11,6 +11,111 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteProgramBlockClients = `-- name: DeleteProgramBlockClients :exec
+DELETE FROM mentorix.program_block_clients
+WHERE program_id = $1 AND block_key = $2
+`
+
+type DeleteProgramBlockClientsParams struct {
+	ProgramID pgtype.UUID `json:"program_id"`
+	BlockKey  pgtype.UUID `json:"block_key"`
+}
+
+func (q *Queries) DeleteProgramBlockClients(ctx context.Context, arg DeleteProgramBlockClientsParams) error {
+	_, err := q.db.Exec(ctx, deleteProgramBlockClients, arg.ProgramID, arg.BlockKey)
+	return err
+}
+
+const deleteProgramBlockClientsForClient = `-- name: DeleteProgramBlockClientsForClient :exec
+DELETE FROM mentorix.program_block_clients
+WHERE program_id = $1 AND client_user_id = $2
+`
+
+type DeleteProgramBlockClientsForClientParams struct {
+	ProgramID    pgtype.UUID `json:"program_id"`
+	ClientUserID pgtype.UUID `json:"client_user_id"`
+}
+
+func (q *Queries) DeleteProgramBlockClientsForClient(ctx context.Context, arg DeleteProgramBlockClientsForClientParams) error {
+	_, err := q.db.Exec(ctx, deleteProgramBlockClientsForClient, arg.ProgramID, arg.ClientUserID)
+	return err
+}
+
+const insertProgramBlockClient = `-- name: InsertProgramBlockClient :exec
+INSERT INTO mentorix.program_block_clients (program_id, block_key, client_user_id, created_by)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (program_id, block_key, client_user_id) DO NOTHING
+`
+
+type InsertProgramBlockClientParams struct {
+	ProgramID    pgtype.UUID `json:"program_id"`
+	BlockKey     pgtype.UUID `json:"block_key"`
+	ClientUserID pgtype.UUID `json:"client_user_id"`
+	CreatedBy    pgtype.UUID `json:"created_by"`
+}
+
+func (q *Queries) InsertProgramBlockClient(ctx context.Context, arg InsertProgramBlockClientParams) error {
+	_, err := q.db.Exec(ctx, insertProgramBlockClient,
+		arg.ProgramID,
+		arg.BlockKey,
+		arg.ClientUserID,
+		arg.CreatedBy,
+	)
+	return err
+}
+
+const listAssignedClientUserIDs = `-- name: ListAssignedClientUserIDs :many
+SELECT DISTINCT client_user_id
+FROM mentorix.program_assignments
+WHERE program_id = $1
+`
+
+func (q *Queries) ListAssignedClientUserIDs(ctx context.Context, programID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listAssignedClientUserIDs, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var client_user_id pgtype.UUID
+		if err := rows.Scan(&client_user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, client_user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAssignedProgramVersionIDs = `-- name: ListAssignedProgramVersionIDs :many
+SELECT DISTINCT program_version_id
+FROM mentorix.program_assignments
+WHERE program_id = $1
+`
+
+func (q *Queries) ListAssignedProgramVersionIDs(ctx context.Context, programID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listAssignedProgramVersionIDs, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var program_version_id pgtype.UUID
+		if err := rows.Scan(&program_version_id); err != nil {
+			return nil, err
+		}
+		items = append(items, program_version_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProgramBlockClients = `-- name: ListProgramBlockClients :many
 SELECT block_key, client_user_id
 FROM mentorix.program_block_clients

@@ -6,7 +6,7 @@
 
 | Область | Ссылка |
 | ------- | ------ |
-| Блоки упражнений в дне программы (single / группы, merge, move) | [features/program-blocks.md](features/program-blocks.md) |
+| Блоки упражнений в дне программы (single / группы, merge, move, видимость по клиентам) | [features/program-blocks.md](features/program-blocks.md) |
 | Инфра (health, config, slog, CORS, proxy) | [features/health.md](features/health.md), [architecture.md](architecture.md) |
 | Auth (register, login, refresh, logout, me, rate limit) | [features/auth.md](features/auth.md) |
 | Admin (роль отдельно от trainer; глобальные упражнения, тарифы, просмотр) | [features/admin.md](features/admin.md) |

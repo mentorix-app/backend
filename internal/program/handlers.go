@@ -64,6 +64,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.POST("/:id/weeks/:week_id/blocks/:block_id/move", h.MoveDayBlock)
 	g.POST("/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/extract", h.ExtractBlockExercise)
 	g.POST("/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/move", h.MoveExerciseToBlock)
+	g.PUT("/:id/weeks/:week_id/blocks/:block_id/clients", h.SetBlockClients)
 }
 
 type patchBody struct {
@@ -746,6 +747,8 @@ func mapProgramError(err error) *echo.HTTPError {
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
 	case errors.Is(err, ErrLastWeek), errors.Is(err, ErrLastDay), errors.Is(err, ErrMaxDaysPerWeek):
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
+	case errors.Is(err, ErrLastSharedBlock), errors.Is(err, ErrClientNotAssignedToProgram):
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	default:
 		return echo.NewHTTPError(http.StatusInternalServerError, "program operation failed")
 	}

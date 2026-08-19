@@ -31,6 +31,9 @@ var (
 	ErrLastDay                 = errors.New("cannot delete the last day in week")
 	ErrMaxDaysPerWeek          = errors.New("week cannot have more than 7 days")
 	ErrInvalidReorder          = errors.New("invalid reorder")
+
+	ErrLastSharedBlock            = errors.New("day would have no shared block")
+	ErrClientNotAssignedToProgram = errors.New("client is not assigned to this program")
 )
 
 var volumePattern = regexp.MustCompile(`^[0-9]+([/-][0-9]+)?$`)

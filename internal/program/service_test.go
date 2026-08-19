@@ -255,6 +255,10 @@ func (f *fakeProgramStore) GetVersionDetail(context.Context, uuid.UUID) (Detail,
 	return Detail{}, f.err
 }
 
+func (f *fakeProgramStore) SetBlockClients(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
 type capturingStore struct {
 	fakeProgramStore
 	lastParams ListParams

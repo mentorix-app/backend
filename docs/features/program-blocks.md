@@ -50,7 +50,9 @@ program_version_week_days → program_version_week_day_blocks → program_versio
 | `client_user_id` | uuid FK → `users` | |
 | `created_at`, `created_by` | | |
 
-UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id, block_key)` нет → блок виден всем клиентам программы — отдельного boolean-флага нет. `GET .../programs/{id}` возвращает `blocks[].client_user_ids`: пустой массив `[]`, никогда `null` — виден всем клиентам программы. `block_key` переживает publish и `discard-unpublished` (working copy ↔ frozen version), поэтому правило продолжает указывать на тот же блок в любой версии. Внутренний инвариант: `GetVersionDetail` заполняет `BlockKey` и применяет правила программы — это не HTTP-контракт, а то, что не даёт `discard-unpublished` пересоздать ключи блоков и молча сломать все правила. Управление правилами (запись) — вне текущего MVP.
+UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id, block_key)` нет → блок виден всем клиентам программы — отдельного boolean-флага нет. `GET .../programs/{id}` возвращает `blocks[].client_user_ids`: пустой массив `[]`, никогда `null` — виден всем клиентам программы. `block_key` переживает publish и `discard-unpublished` (working copy ↔ frozen version), поэтому правило продолжает указывать на тот же блок в любой версии. Внутренний инвариант: `GetVersionDetail` заполняет `BlockKey` и применяет правила программы — это не HTTP-контракт, а то, что не даёт `discard-unpublished` пересоздать ключи блоков и молча сломать все правила.
+
+Запись правил — `PUT .../blocks/{block_id}/clients`, полная замена списка; пустой список возвращает блок к общему доступу. День обязан сохранять хотя бы один общий блок: ограничение отклоняется `400` (`ErrLastSharedBlock`), если сделает день без общего блока — проверка идёт по рабочей копии **и** по каждой опубликованной версии с активным назначением, потому что клиенты сидят на этих версиях прямо сейчас, без publish. Проверка запускается только на переходе shared → restricted; смена состава клиентов уже ограниченного блока или снятие ограничения инвариант не ломает. `client_user_ids` в теле должны быть клиентами, назначенными на программу — иначе `400` (`ErrClientNotAssignedToProgram`).
 
 **`sort_order`:** после любой операции, затрагивающей порядок (create, move, reorder, delete, merge, ungroup, extract), store нормализует siblings к уникальным `1..N` без дублей. Ответ `GET /programs/{id}` — дерево уже отсортировано по `sort_order`.
 
@@ -133,6 +135,7 @@ UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id
 | Удалить упражнение | `DELETE .../blocks/{block_id}/exercises/{item_id}` |
 | Добавить в группу | `POST .../blocks/{block_id}/exercises` |
 | merge / ungroup / move / reorder | см. [api-endpoints.md](../../.claude/rules/api-endpoints.md) § Program week subtree; reorder — полный список id siblings |
+| Видимость блока | `PUT .../blocks/{block_id}/clients` — `client_user_ids`, полная замена |
 
 ## Вне MVP
 

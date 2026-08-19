@@ -4,6 +4,7 @@ package storetest
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -267,5 +268,111 @@ func TestBlockKey_SurvivesPublishAndDiscard(t *testing.T) {
 	}
 	if restoredBlock.BlockKey != wantKey {
 		t.Fatalf("restored block_key = %s, want %s", restoredBlock.BlockKey, wantKey)
+	}
+}
+
+// seedAssignedClient registers a client user and links them to the trainer.
+// Returns the client's user id and the trainer id.
+func seedAssignedClient(t *testing.T, pool *pgxpool.Pool, trainerUserID uuid.UUID, emailPrefix string) (uuid.UUID, uuid.UUID) {
+	t.Helper()
+	ctx := context.Background()
+
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	clientUserID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(
+		ctx, emailPrefix+"@test.com", pwHash, "")
+	if err != nil {
+		t.Fatalf("register client user: %v", err)
+	}
+
+	var trainerID uuid.UUID
+	err = pool.QueryRow(ctx,
+		`SELECT id FROM mentorix.trainers WHERE user_id = $1`, trainerUserID).Scan(&trainerID)
+	if err != nil {
+		t.Fatalf("select trainer id: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id, status)
+		VALUES ($1, $2, 'active')`, trainerID, clientUserID); err != nil {
+		t.Fatalf("insert trainer_clients: %v", err)
+	}
+	return clientUserID, trainerID
+}
+
+func TestSetBlockClients_refusesLastSharedBlock(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "last-shared")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+
+	for i := 0; i < 2; i++ {
+		detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+			program.DayExerciseInput{ExerciseID: exerciseID})
+		if err != nil {
+			t.Fatalf("createSingleBlockStore %d: %v", i, err)
+		}
+	}
+	blocks := detail.Weeks[0].Days[0].Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %d, want 2", len(blocks))
+	}
+
+	published, err := store.PublishFromDraft(ctx, detail.ID, userID, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	clientUserID, trainerID := seedAssignedClient(t, pool, userID, "last-shared-client")
+	programID := published.ID
+	if _, err := store.SetClientProgramAssignment(ctx, userID, trainerID, clientUserID, &programID); err != nil {
+		t.Fatalf("SetClientProgramAssignment: %v", err)
+	}
+
+	// Restricting the first block is fine — the second one stays shared.
+	if _, err := store.SetBlockClients(ctx, userID, programID, week.ID, blocks[0].ID,
+		[]uuid.UUID{clientUserID}); err != nil {
+		t.Fatalf("SetBlockClients on first block: %v", err)
+	}
+
+	// Restricting the second one would leave the day without a shared block.
+	_, err = store.SetBlockClients(ctx, userID, programID, week.ID, blocks[1].ID,
+		[]uuid.UUID{clientUserID})
+	if !errors.Is(err, program.ErrLastSharedBlock) {
+		t.Fatalf("SetBlockClients on last shared block error = %v, want ErrLastSharedBlock", err)
+	}
+}
+
+func TestSetBlockClients_refusesUnassignedClient(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	userID, exerciseID := seedTrainerAndExercise(t, pool, "unassigned")
+	detail, err := store.CreateDraft(ctx, userID)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	week := detail.Weeks[0]
+	day := week.Days[0]
+	detail, err = createSingleBlockStore(ctx, store, userID, detail.ID, week.ID, day.ID,
+		program.DayExerciseInput{ExerciseID: exerciseID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore: %v", err)
+	}
+	block, _ := firstDayBlock(detail.Weeks[0].Days[0])
+
+	stranger, _ := seedAssignedClient(t, pool, userID, "unassigned-client")
+	_, err = store.SetBlockClients(ctx, userID, detail.ID, week.ID, block.ID,
+		[]uuid.UUID{stranger})
+	if !errors.Is(err, program.ErrClientNotAssignedToProgram) {
+		t.Fatalf("SetBlockClients error = %v, want ErrClientNotAssignedToProgram", err)
 	}
 }

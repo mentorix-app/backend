@@ -3,6 +3,7 @@ package program
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -55,6 +56,7 @@ type programStore interface {
 	DeleteProgramVersion(ctx context.Context, programID, versionID uuid.UUID) error
 	CleanupProgramVersions(ctx context.Context, programID uuid.UUID) (VersionCleanupResult, error)
 	GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Detail, error)
+	SetBlockClients(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, clientUserIDs []uuid.UUID) (Detail, error)
 }
 
 // QuotaChecker verifies plan quotas for a trainer user; nil disables checks (tests).
@@ -487,6 +489,30 @@ func (s *Service) PatchDayBlock(ctx context.Context, userID, programID, weekID, 
 		return Detail{}, err
 	}
 	d, err := s.store.PatchDayBlock(ctx, userID, programID, weekID, blockID, in)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) SetBlockClients(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, clientUserIDs []uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	seen := make(map[uuid.UUID]struct{}, len(clientUserIDs))
+	for _, id := range clientUserIDs {
+		if id == uuid.Nil {
+			return Detail{}, fmt.Errorf("%w: client_user_ids must not contain a nil uuid", ErrValidation)
+		}
+		if _, dup := seen[id]; dup {
+			return Detail{}, fmt.Errorf("%w: client_user_ids must not contain duplicates", ErrValidation)
+		}
+		seen[id] = struct{}{}
+	}
+	d, err := s.store.SetBlockClients(ctx, userID, programID, weekID, blockID, clientUserIDs)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound

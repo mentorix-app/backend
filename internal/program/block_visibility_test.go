@@ -114,6 +114,14 @@ func TestDaySharedAfterRestrict(t *testing.T) {
 			want:     true,
 		},
 		{
+			name: "day of only restricted blocks is unaffected by a key it does not hold",
+			day: Day{Blocks: []DayBlock{
+				{BlockKey: keyA, ClientUserIDs: []uuid.UUID{petya}},
+			}},
+			restrict: keyC,
+			want:     true,
+		},
+		{
 			name:     "empty day is unaffected",
 			day:      Day{},
 			restrict: keyA,

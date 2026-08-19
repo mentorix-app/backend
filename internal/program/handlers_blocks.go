@@ -243,6 +243,38 @@ func (h *Handlers) blockExerciseAction(c echo.Context, status int, fn blockExerc
 	return c.JSON(status, d)
 }
 
+type setBlockClientsBody struct {
+	ClientUserIDs []string `json:"client_user_ids"`
+}
+
+func (h *Handlers) SetBlockClients(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, weekID, blockID, err := parseWeekBlockIDs(c)
+	if err != nil {
+		return err
+	}
+	var body setBlockClientsBody
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	clientUserIDs := make([]uuid.UUID, 0, len(body.ClientUserIDs))
+	for _, raw := range body.ClientUserIDs {
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid client_user_ids: not a uuid")
+		}
+		clientUserIDs = append(clientUserIDs, id)
+	}
+	d, err := h.svc.SetBlockClients(c.Request().Context(), uid, programID, weekID, blockID, clientUserIDs)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
 func parseWeekBlockIDs(c echo.Context) (uuid.UUID, uuid.UUID, uuid.UUID, error) {
 	programID, err := parseID(c.Param("id"))
 	if err != nil {
