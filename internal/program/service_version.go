@@ -74,3 +74,7 @@ func (s *Service) GetAssignmentByTrainerID(ctx context.Context, trainerID, clien
 func (s *Service) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Detail, error) {
 	return s.store.GetVersionDetail(ctx, versionID)
 }
+
+func (s *Service) GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (Detail, error) {
+	return s.store.GetVersionDetailForClient(ctx, versionID, clientUserID)
+}

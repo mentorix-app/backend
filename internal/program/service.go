@@ -56,6 +56,7 @@ type programStore interface {
 	DeleteProgramVersion(ctx context.Context, programID, versionID uuid.UUID) error
 	CleanupProgramVersions(ctx context.Context, programID uuid.UUID) (VersionCleanupResult, error)
 	GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Detail, error)
+	GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (Detail, error)
 	SetBlockClients(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, clientUserIDs []uuid.UUID) (Detail, error)
 }
 

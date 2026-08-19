@@ -146,3 +146,15 @@ func (s *Store) GetVersionDetail(ctx context.Context, versionID uuid.UUID) (Deta
 
 	return detail, nil
 }
+
+// GetVersionDetailForClient loads a frozen version and drops the blocks this
+// client must not see. Visibility rules live on the program, not on the
+// version, so they apply to whichever version the client is currently on.
+// GetVersionDetail already applies them (Task 3), so this only filters.
+func (s *Store) GetVersionDetailForClient(ctx context.Context, versionID, clientUserID uuid.UUID) (Detail, error) {
+	detail, err := s.GetVersionDetail(ctx, versionID)
+	if err != nil {
+		return Detail{}, err
+	}
+	return FilterDetailForClient(detail, clientUserID), nil
+}

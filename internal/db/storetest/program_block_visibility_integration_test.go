@@ -4,6 +4,7 @@ package storetest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/workoutcompletion"
 )
 
 func TestMigration_BlockKeyColumnsExist(t *testing.T) {
@@ -924,5 +926,131 @@ func TestMove_keepsBlockClients(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("moved block not found after move")
+	}
+}
+
+// assignedVersionID returns the frozen version a client is currently assigned to.
+func assignedVersionID(t *testing.T, pool *pgxpool.Pool, programID, clientUserID uuid.UUID) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var versionID uuid.UUID
+	if err := pool.QueryRow(ctx,
+		`SELECT program_version_id FROM mentorix.program_assignments
+		 WHERE program_id = $1 AND client_user_id = $2`,
+		programID, clientUserID).Scan(&versionID); err != nil {
+		t.Fatalf("select assigned version id: %v", err)
+	}
+	return versionID
+}
+
+// TestGetVersionDetailForClient_hidesForeignBlocks proves the client-facing
+// read filters out blocks restricted to someone else, while the client the
+// block is restricted to keeps seeing everything. Checking only one client
+// would not catch an implementation that ignores clientUserID entirely.
+func TestGetVersionDetailForClient_hidesForeignBlocks(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, petya := seedDayWithBlocks(t, pool, "client-filter", 2)
+	trainerUserID := ownerUserID(t, pool, programID)
+
+	vasya, trainerID := seedAssignedClient(t, pool, trainerUserID, "client-filter-vasya")
+	pid := programID
+	if _, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, vasya, &pid); err != nil {
+		t.Fatalf("SetClientProgramAssignment(vasya): %v", err)
+	}
+
+	// blocks[1] becomes personal to Petya; blocks[0] stays shared.
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{petya}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	versionID := assignedVersionID(t, pool, programID, petya)
+
+	forPetya, err := store.GetVersionDetailForClient(ctx, versionID, petya)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient(petya): %v", err)
+	}
+	if got := len(forPetya.Weeks[0].Days[0].Blocks); got != 2 {
+		t.Fatalf("blocks for listed client = %d, want 2", got)
+	}
+
+	forVasya, err := store.GetVersionDetailForClient(ctx, versionID, vasya)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient(vasya): %v", err)
+	}
+	if got := len(forVasya.Weeks[0].Days[0].Blocks); got != 1 {
+		t.Fatalf("blocks for unlisted client = %d, want 1", got)
+	}
+	if len(forVasya.Weeks[0].Days[0].Blocks[0].ClientUserIDs) != 0 {
+		t.Fatal("unlisted client kept a restricted block")
+	}
+}
+
+// TestDaySnapshot_containsOnlyVisibleBlocks proves the workout-completion
+// snapshot inherits the client filter automatically: buildDaySnapshot builds
+// from the program.Day it is handed, so passing it a day already filtered by
+// GetVersionDetailForClient is sufficient — no separate filtering logic is
+// needed inside workoutcompletion.
+func TestDaySnapshot_containsOnlyVisibleBlocks(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+	store := program.NewStore(pool)
+
+	programID, weekID, blocks, petya := seedDayWithBlocks(t, pool, "snapshot-filter", 2)
+	trainerUserID := ownerUserID(t, pool, programID)
+	vasya, trainerID := seedAssignedClient(t, pool, trainerUserID, "snapshot-vasya")
+	pid := programID
+	assignment, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, vasya, &pid)
+	if err != nil {
+		t.Fatalf("SetClientProgramAssignment(vasya): %v", err)
+	}
+	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
+		[]uuid.UUID{petya}); err != nil {
+		t.Fatalf("SetBlockClients: %v", err)
+	}
+
+	detail, err := store.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, vasya)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient: %v", err)
+	}
+	day := detail.Weeks[0].Days[0]
+
+	completion, err := workoutcompletion.NewService(pool).Complete(ctx, workoutcompletion.CompleteInput{
+		ClientUserID:        vasya,
+		TrainerID:           trainerID,
+		ProgramID:           programID,
+		ProgramVersionID:    assignment.ProgramVersionID,
+		ProgramAssignmentID: assignment.ID,
+		CompletionCycleID:   assignment.CompletionCycleID,
+		DayKey:              day.DayKey,
+		WeekNumber:          detail.Weeks[0].WeekNumber,
+		DayNumber:           day.DayNumber,
+		ProgramName:         detail.Name,
+		Day:                 day,
+		ResultText:          "done",
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+
+	var snapshot string
+	if err := pool.QueryRow(ctx,
+		`SELECT day_snapshot::text FROM mentorix.client_workout_completions WHERE id = $1`,
+		completion.ID).Scan(&snapshot); err != nil {
+		t.Fatalf("select day_snapshot: %v", err)
+	}
+	var parsed struct {
+		Blocks []struct {
+			BlockType string `json:"block_type"`
+		} `json:"blocks"`
+	}
+	if err := json.Unmarshal([]byte(snapshot), &parsed); err != nil {
+		t.Fatalf("unmarshal day_snapshot: %v", err)
+	}
+	if len(parsed.Blocks) != 1 {
+		t.Fatalf("blocks in day_snapshot = %d, want 1", len(parsed.Blocks))
 	}
 }

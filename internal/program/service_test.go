@@ -255,6 +255,13 @@ func (f *fakeProgramStore) GetVersionDetail(context.Context, uuid.UUID) (Detail,
 	return Detail{}, f.err
 }
 
+func (f *fakeProgramStore) GetVersionDetailForClient(context.Context, uuid.UUID, uuid.UUID) (Detail, error) {
+	if f.detail.Program.ID != uuid.Nil {
+		return f.detail, nil
+	}
+	return Detail{}, f.err
+}
+
 func (f *fakeProgramStore) SetBlockClients(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, []uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
