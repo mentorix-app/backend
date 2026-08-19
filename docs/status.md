@@ -23,7 +23,7 @@
 | CI/CD (`make check-ci`, Deploy Hook stage, migrate preDeploy) | [environments.md](environments.md), [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |
-| Garbage cleanup (assignments one-row, auto version purge, invites, Redis stale, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
+| Garbage cleanup (assignments one-row, auto version purge, осиротевшие правила видимости блоков, invites, Redis stale, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
 _Миграции: версия 26 (`./scripts/migrate-check.sh`)._
 

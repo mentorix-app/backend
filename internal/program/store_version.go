@@ -438,8 +438,17 @@ func (s *Store) CleanupProgramVersions(ctx context.Context, programID uuid.UUID)
 	// rule can appear. Purge unconditionally: even the "nothing deleted" path
 	// above can follow a working-copy-only block deletion that already
 	// orphaned a rule on its own.
+	//
+	// Swallow the error rather than returning it: this function's callers
+	// include DELETE /programs/{id} (service.go), which already committed the
+	// assignment delete before reaching here — a transient purge failure must
+	// not leave that request stuck with assignments gone but the program still
+	// active. Failing to purge on time is harmless (the rule just survives
+	// longer, cleaned up by the next best-effort pass or the janitor);
+	// over-deleting on a false purge is not, which is why the version-deletion
+	// errors above still propagate untouched.
 	if _, err := s.q.PurgeOrphanProgramBlockClientsForProgram(ctx, pgconv.ToPGUUID(programID)); err != nil {
-		return VersionCleanupResult{}, fmt.Errorf("purge orphan block clients: %w", err)
+		_ = err
 	}
 	return result, nil
 }
@@ -448,12 +457,15 @@ func (s *Store) cleanupUnusedVersionsBestEffort(ctx context.Context, programID u
 	if _, err := s.CleanupProgramVersions(ctx, programID); err != nil {
 		// Best-effort: assignment change already committed; log would need a logger on Store.
 		_ = err
-	}
-	// Independent of the call above: CleanupProgramVersions can fail before it
-	// reaches its own purge (e.g. ListProgramVersionsByProgramID), so retry the
-	// purge here too. Cheap and idempotent when the first attempt already ran.
-	if _, err := s.q.PurgeOrphanProgramBlockClientsForProgram(ctx, pgconv.ToPGUUID(programID)); err != nil {
-		// Best-effort: assignment change already committed; log would need a logger on Store.
-		_ = err
+		// CleanupProgramVersions swallows its own purge error, so on success it
+		// already attempted the purge — a second call here would be pure
+		// redundancy. Retry only on error: CleanupProgramVersions can fail
+		// before it ever reaches its internal purge call (e.g.
+		// ListProgramVersionsByProgramID or a hard DeleteProgramVersion error),
+		// and this is the only path that still gives the purge a chance in
+		// that case.
+		if _, err := s.q.PurgeOrphanProgramBlockClientsForProgram(ctx, pgconv.ToPGUUID(programID)); err != nil {
+			_ = err
+		}
 	}
 }
