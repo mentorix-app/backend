@@ -640,17 +640,25 @@ func TestSetBlockClients_refusesLastSharedBlockInAssignedVersionOnly(t *testing.
 	}
 }
 
-// TestClearAssignment_removesClientFromBlocks proves that clearing a client's
-// program assignment deletes their block visibility rules for that program.
-// Without this, a rule naming a client who no longer has the program would
-// linger forever, and would wrongly restrict the block again if the client
-// were later reassigned to the same program.
-func TestClearAssignment_removesClientFromBlocks(t *testing.T) {
+// TestClearAssignment_opensPersonalBlockToRemainingClients pins accepted,
+// deliberate behaviour, not a bug: unassigning the client who was the sole
+// entry in a block's rule set does not just delete his rows — the rule set
+// for that (program_id, block_key) goes empty, and empty means shared, so
+// the block opens to every other client still assigned to the program,
+// immediately, on the version they already sit on, with no publish, no
+// error and no log line. Neither the day invariant nor publish validation
+// catch this: both only guard against a shared block being lost, never
+// against one being gained. See docs/features/program-block-visibility.md
+// § Правила ("Снятие клиента может открыть персональный блок") for the
+// write-up. Do not "fix" this test by asserting the block stays hidden —
+// that would contradict the accepted design; if this behaviour ever changes
+// on purpose, update the doc alongside the test.
+func TestClearAssignment_opensPersonalBlockToRemainingClients(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 	store := program.NewStore(pool)
 
-	programID, weekID, blocks, clientUserID := seedDayWithBlocks(t, pool, "clear-assign", 2)
+	programID, weekID, blocks, clientOne := seedDayWithBlocks(t, pool, "clear-opens", 2)
 	trainerUserID := ownerUserID(t, pool, programID)
 	var trainerID uuid.UUID
 	if err := pool.QueryRow(ctx,
@@ -658,23 +666,54 @@ func TestClearAssignment_removesClientFromBlocks(t *testing.T) {
 		t.Fatalf("select trainer id: %v", err)
 	}
 
+	// A second client, assigned to the same program, is the one whose view
+	// we check before and after clientOne is unassigned.
+	clientTwo, _ := seedAssignedClient(t, pool, trainerUserID, "clear-opens-two")
+	pid := programID
+	assignmentTwo, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, clientTwo, &pid)
+	if err != nil {
+		t.Fatalf("SetClientProgramAssignment(clientTwo): %v", err)
+	}
+
+	// Restrict blocks[1] to clientOne alone.
 	if _, err := store.SetBlockClients(ctx, trainerUserID, programID, weekID, blocks[1].ID,
-		[]uuid.UUID{clientUserID}); err != nil {
+		[]uuid.UUID{clientOne}); err != nil {
 		t.Fatalf("SetBlockClients: %v", err)
 	}
 
-	if _, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, clientUserID, nil); err != nil {
-		t.Fatalf("SetClientProgramAssignment(clear): %v", err)
+	// Before the clear: clientTwo, who is not on the block's list, must not
+	// see it.
+	before, err := store.GetVersionDetailForClient(ctx, assignmentTwo.ProgramVersionID, clientTwo)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient (before clear): %v", err)
+	}
+	if got := len(before.Weeks[0].Days[0].Blocks); got != 1 {
+		t.Fatalf("blocks visible to clientTwo before clear = %d, want 1", got)
+	}
+
+	if _, err := store.SetClientProgramAssignment(ctx, trainerUserID, trainerID, clientOne, nil); err != nil {
+		t.Fatalf("SetClientProgramAssignment (clear clientOne): %v", err)
 	}
 
 	var left int
 	if err := pool.QueryRow(ctx, `
 		SELECT count(*) FROM mentorix.program_block_clients
-		WHERE program_id = $1 AND client_user_id = $2`, programID, clientUserID).Scan(&left); err != nil {
+		WHERE program_id = $1 AND client_user_id = $2`, programID, clientOne).Scan(&left); err != nil {
 		t.Fatalf("count block clients: %v", err)
 	}
 	if left != 0 {
 		t.Fatalf("block client rows after clear = %d, want 0", left)
+	}
+
+	// After the clear: the block's rule set is empty, so it reads as shared
+	// again — clientTwo now sees both blocks, on the same version, with no
+	// publish in between. This is the consequence the test pins.
+	after, err := store.GetVersionDetailForClient(ctx, assignmentTwo.ProgramVersionID, clientTwo)
+	if err != nil {
+		t.Fatalf("GetVersionDetailForClient (after clear): %v", err)
+	}
+	if got := len(after.Weeks[0].Days[0].Blocks); got != 2 {
+		t.Fatalf("blocks visible to clientTwo after clear = %d, want 2 (block opened to remaining clients)", got)
 	}
 }
 
