@@ -101,7 +101,7 @@ func schemaBindings() []schemaBinding {
 			SortOrder   *int   `json:"sort_order"`
 		}{})},
 		{name: "ProgramBlockClientsSet", typ: reflect.TypeOf(struct {
-			ClientUserIDs []string `json:"client_user_ids"`
+			ClientUserIDs *[]string `json:"client_user_ids"`
 		}{})},
 		{name: "ProgramBlockExerciseExtract", typ: reflect.TypeOf(struct {
 			SortOrder *int `json:"sort_order"`

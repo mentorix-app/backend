@@ -244,7 +244,10 @@ func (h *Handlers) blockExerciseAction(c echo.Context, status int, fn blockExerc
 }
 
 type setBlockClientsBody struct {
-	ClientUserIDs []string `json:"client_user_ids"`
+	// Pointer so an omitted field is distinguishable from an explicit []:
+	// the former is a malformed request (400), the latter clears the block
+	// back to shared.
+	ClientUserIDs *[]string `json:"client_user_ids"`
 }
 
 func (h *Handlers) SetBlockClients(c echo.Context) error {
@@ -260,8 +263,11 @@ func (h *Handlers) SetBlockClients(c echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
-	clientUserIDs := make([]uuid.UUID, 0, len(body.ClientUserIDs))
-	for _, raw := range body.ClientUserIDs {
+	if body.ClientUserIDs == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "client_user_ids is required")
+	}
+	clientUserIDs := make([]uuid.UUID, 0, len(*body.ClientUserIDs))
+	for _, raw := range *body.ClientUserIDs {
 		id, err := uuid.Parse(raw)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid client_user_ids: not a uuid")

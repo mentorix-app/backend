@@ -26,3 +26,9 @@ WHERE program_id = $1;
 -- name: DeleteProgramBlockClientsForClient :exec
 DELETE FROM mentorix.program_block_clients
 WHERE program_id = $1 AND client_user_id = $2;
+
+-- name: LockProgramForUpdate :exec
+SELECT id
+FROM mentorix.programs
+WHERE id = $1
+FOR UPDATE;

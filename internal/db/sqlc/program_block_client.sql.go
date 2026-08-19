@@ -147,3 +147,15 @@ func (q *Queries) ListProgramBlockClients(ctx context.Context, programID pgtype.
 	}
 	return items, nil
 }
+
+const lockProgramForUpdate = `-- name: LockProgramForUpdate :exec
+SELECT id
+FROM mentorix.programs
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockProgramForUpdate(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockProgramForUpdate, id)
+	return err
+}

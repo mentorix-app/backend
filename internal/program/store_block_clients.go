@@ -38,6 +38,33 @@ func (s *Store) SetBlockClients(ctx context.Context, userID, programID, weekID, 
 		return Detail{}, err
 	}
 
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+
+	// Serialize with any other SetBlockClients call on this program: the day
+	// invariant reads sibling blocks that a concurrent request can restrict at
+	// the same time, so without a lock two requests can each see the other's
+	// block as still shared, both pass the check, and both commit — leaving the
+	// day with zero shared blocks. This row lock is what makes the two calls
+	// serialize instead of racing.
+	//
+	// GetDetail and ensureDaysKeepSharedBlock below read through s.q — the
+	// pool, not qtx/this transaction — on purpose, not by oversight. Under
+	// READ COMMITTED, a plain read after the lock is granted already sees
+	// everything a competing transaction committed before releasing the lock
+	// (PostgreSQL blocks our FOR UPDATE until it does), so the reads are
+	// correctly serialized by the lock even though they don't run inside qtx.
+	// Do not "fix" this by moving them onto qtx: that would just make an
+	// already-correct read part of the same transaction for no benefit.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
 	current, err := s.GetDetail(ctx, programID)
 	if err != nil {
 		return Detail{}, err
@@ -52,13 +79,6 @@ func (s *Store) SetBlockClients(ctx context.Context, userID, programID, weekID, 
 		}
 	}
 
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return Detail{}, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	qtx := s.q.WithTx(tx)
 	if err := qtx.DeleteProgramBlockClients(ctx, sqlc.DeleteProgramBlockClientsParams{
 		ProgramID: pgconv.ToPGUUID(programID),
 		BlockKey:  pgconv.ToPGUUID(blockKey),

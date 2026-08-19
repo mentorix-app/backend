@@ -620,3 +620,9 @@ func TestHandlers_SetBlockClients_rejectsNonUUID(t *testing.T) {
 	c, _ := setBlockClientsContext(t, userID, programID, weekID, blockID, body)
 	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
 }
+
+func TestHandlers_SetBlockClients_rejectsMissingClientUserIDs(t *testing.T) {
+	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
+	c, _ := setBlockClientsContext(t, userID, programID, weekID, blockID, `{}`)
+	assertHTTPError(t, h.SetBlockClients(c), http.StatusBadRequest)
+}
