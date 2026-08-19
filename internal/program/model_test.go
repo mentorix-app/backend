@@ -1,6 +1,7 @@
 package program
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -73,6 +74,38 @@ func TestValidatePublishDetail_missingCategory(t *testing.T) {
 	}
 	if err := validatePublishDetail(d); err == nil {
 		t.Fatal("validatePublishDetail() error = nil, want validation error for missing category")
+	}
+}
+
+func TestValidatePublishDetail_dayWithoutSharedBlock(t *testing.T) {
+	category := CategoryMuscleGain
+	difficulty := exercise.DifficultyBeginner
+	client := uuid.New()
+
+	d := Detail{
+		Program: Program{
+			Name:       "Program",
+			Category:   &category,
+			Difficulty: (*Difficulty)(&difficulty),
+		},
+		Weeks: []Week{{
+			WeekNumber: 1,
+			SortOrder:  1,
+			Days: []Day{{
+				DayNumber: 1,
+				Blocks: []DayBlock{{
+					BlockType:     BlockTypeSingle,
+					BlockKey:      uuid.New(),
+					ClientUserIDs: []uuid.UUID{client},
+					Exercises:     []DayExercise{{ExerciseID: uuid.New(), SortOrder: 1}},
+				}},
+			}},
+		}},
+	}
+
+	err := validatePublishDetail(d)
+	if !errors.Is(err, ErrLastSharedBlock) {
+		t.Fatalf("validatePublishDetail() error = %v, want ErrLastSharedBlock", err)
 	}
 }
 

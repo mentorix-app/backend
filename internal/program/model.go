@@ -304,6 +304,10 @@ func validatePublishDetail(d Detail) error {
 					}
 				}
 			}
+			if dayHasExercises && !dayHasSharedBlock(day) {
+				return fmt.Errorf("%w: week %d day %d has no shared block",
+					ErrLastSharedBlock, week.WeekNumber, day.DayNumber)
+			}
 			if dayHasExercises {
 				hasTrainingDay = true
 			}
