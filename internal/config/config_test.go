@@ -240,3 +240,46 @@ func TestLoad_webhookRequiresTokenAndSecret(t *testing.T) {
 		t.Fatal("expected error without BOT_WEBHOOK_SECRET")
 	}
 }
+
+func TestLoad_clientAnalyticsPageURL(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("CLIENT_ANALYTICS_PAGE_URL", " https://app.example.com/stats ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ClientAnalyticsPageURL != "https://app.example.com/stats" {
+		t.Errorf("url = %q", cfg.ClientAnalyticsPageURL)
+	}
+}
+
+func TestLoad_clientAnalyticsPageURL_optional(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("CLIENT_ANALYTICS_PAGE_URL", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ClientAnalyticsPageURL != "" {
+		t.Errorf("url = %q, want empty", cfg.ClientAnalyticsPageURL)
+	}
+}
+
+func TestLoad_clientAnalyticsPageURL_invalid(t *testing.T) {
+	for _, raw := range []string{
+		"app.example.com/stats",             // no scheme
+		"ftp://app.example.com/stats",       // wrong scheme
+		"https://app.example.com/stats?x=1", // query is reserved for the link
+		"https://app.example.com/stats#top", // fragment
+	} {
+		t.Run(raw, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("CLIENT_ANALYTICS_PAGE_URL", raw)
+			if _, err := Load(); err == nil {
+				t.Fatalf("expected error for %q", raw)
+			}
+		})
+	}
+}
