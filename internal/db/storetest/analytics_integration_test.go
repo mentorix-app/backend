@@ -451,3 +451,66 @@ func TestAnalyticsService_ProgramWeekResults(t *testing.T) {
 		t.Fatalf("missing program err = %v", err)
 	}
 }
+
+func TestAnalyticsService_ClientSelfAnalytics(t *testing.T) {
+	pool := NewPool(t)
+	fx := seedAnalyticsFixture(t, pool, "an-self")
+	svc := analytics.NewService(pool, "test-jwt-secret-at-least-32-chars-long")
+	ctx := context.Background()
+
+	got, err := svc.ClientSelfAnalytics(ctx, fx.clientUserID, fx.trainerID)
+	if err != nil {
+		t.Fatalf("ClientSelfAnalytics: %v", err)
+	}
+	if got.Client.ClientUserID != fx.clientUserID {
+		t.Fatalf("client = %+v", got.Client)
+	}
+	if got.Trainer.TrainerID != fx.trainerID {
+		t.Fatalf("trainer = %+v", got.Trainer)
+	}
+	if got.CurrentAssignment == nil || got.CurrentAssignment.ProgramID != fx.programID {
+		t.Fatalf("current_assignment = %+v", got.CurrentAssignment)
+	}
+	if got.CurrentAssignment.Progress.CompletedDays != 2 || got.CurrentAssignment.Progress.TotalTrainingDays != 3 {
+		t.Fatalf("progress = %+v", got.CurrentAssignment.Progress)
+	}
+	if got.Activity.TotalCompletions != 3 {
+		t.Fatalf("activity = %+v", got.Activity)
+	}
+	if len(got.RecentCompletions) != 3 {
+		t.Fatalf("recent = %d items", len(got.RecentCompletions))
+	}
+	for i := 1; i < len(got.RecentCompletions); i++ {
+		if got.RecentCompletions[i].CompletedAt.After(got.RecentCompletions[i-1].CompletedAt) {
+			t.Fatalf("recent completions must be sorted desc: %+v", got.RecentCompletions)
+		}
+	}
+	for _, item := range got.RecentCompletions {
+		if item.Comments == nil {
+			t.Fatalf("comments must be [] not null: %+v", item)
+		}
+	}
+	if !got.ExpiresAt.IsZero() {
+		t.Fatalf("expires_at is set by the handler, got %v", got.ExpiresAt)
+	}
+
+	// Trainer the client is not linked to → not found.
+	if _, err := svc.ClientSelfAnalytics(ctx, fx.clientUserID, uuid.New()); !errors.Is(err, analytics.ErrClientNotFound) {
+		t.Fatalf("foreign trainer err = %v", err)
+	}
+	// Unknown client → not found.
+	if _, err := svc.ClientSelfAnalytics(ctx, uuid.New(), fx.trainerID); !errors.Is(err, analytics.ErrClientNotFound) {
+		t.Fatalf("unknown client err = %v", err)
+	}
+
+	// Blocked link → not found: the trainer revoked access.
+	if _, err := pool.Exec(ctx, `
+		UPDATE mentorix.trainer_clients SET status = 'blocked'
+		WHERE trainer_id = $1 AND client_user_id = $2
+	`, fx.trainerID, fx.clientUserID); err != nil {
+		t.Fatalf("block: %v", err)
+	}
+	if _, err := svc.ClientSelfAnalytics(ctx, fx.clientUserID, fx.trainerID); !errors.Is(err, analytics.ErrClientNotFound) {
+		t.Fatalf("blocked err = %v", err)
+	}
+}

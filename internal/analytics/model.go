@@ -37,6 +37,29 @@ type ClientInfo struct {
 	LastActiveAt *time.Time `json:"last_active_at"`
 }
 
+// ClientSelfAnalytics is what the client sees on the page opened from the
+// Telegram bot: the same figures the trainer sees for this client, scoped to
+// one trainer, plus the latest completions. No avatar, no link status.
+type ClientSelfAnalytics struct {
+	Client            ClientSelfInfo       `json:"client"`
+	Trainer           ClientSelfTrainer    `json:"trainer"`
+	CurrentAssignment *AssignmentAnalytics `json:"current_assignment"`
+	Activity          ActivityStats        `json:"activity"`
+	RecentCompletions []CompletionItem     `json:"recent_completions"`
+	// ExpiresAt is when the signed link stops working; set by the handler.
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type ClientSelfInfo struct {
+	ClientUserID uuid.UUID `json:"client_user_id"`
+	DisplayName  string    `json:"display_name"`
+}
+
+type ClientSelfTrainer struct {
+	TrainerID   uuid.UUID `json:"trainer_id"`
+	DisplayName string    `json:"display_name"`
+}
+
 type AssignmentAnalytics struct {
 	ProgramID        uuid.UUID `json:"program_id"`
 	ProgramVersionID uuid.UUID `json:"program_version_id"`

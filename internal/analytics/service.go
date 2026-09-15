@@ -46,7 +46,12 @@ func (s *Service) ClientAnalytics(ctx context.Context, trainerUserID, clientUser
 	if err != nil {
 		return ClientAnalytics{}, err
 	}
+	return s.clientAnalyticsByTrainerID(ctx, trainerID, clientUserID)
+}
 
+// clientAnalyticsByTrainerID is shared by the trainer endpoint (trainer resolved
+// from the JWT) and the client self page (trainer id taken from the signed link).
+func (s *Service) clientAnalyticsByTrainerID(ctx context.Context, trainerID, clientUserID uuid.UUID) (ClientAnalytics, error) {
 	header, err := s.store.ClientHeader(ctx, trainerID, clientUserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -157,16 +162,26 @@ func (s *Service) ClientCompletions(ctx context.Context, trainerUserID, clientUs
 	if err != nil {
 		return CompletionsResult{}, fmt.Errorf("count completions: %w", err)
 	}
-	rows, err := s.store.ListClientCompletions(ctx, trainerID, clientUserID, params)
-	if err != nil {
-		return CompletionsResult{}, fmt.Errorf("list completions: %w", err)
-	}
-
-	comments, err := s.commentsByCompletionIDs(ctx, completionIDsFromClientRows(rows))
+	items, err := s.completionItems(ctx, trainerID, clientUserID, params)
 	if err != nil {
 		return CompletionsResult{}, err
 	}
+	return CompletionsResult{
+		Items:      items,
+		Pagination: paginationMeta(params.Page, params.Limit, total),
+	}, nil
+}
 
+// completionItems loads one page of the client's journal with trainer replies.
+func (s *Service) completionItems(ctx context.Context, trainerID, clientUserID uuid.UUID, params CompletionsParams) ([]CompletionItem, error) {
+	rows, err := s.store.ListClientCompletions(ctx, trainerID, clientUserID, params)
+	if err != nil {
+		return nil, fmt.Errorf("list completions: %w", err)
+	}
+	comments, err := s.commentsByCompletionIDs(ctx, completionIDsFromClientRows(rows))
+	if err != nil {
+		return nil, err
+	}
 	items := make([]CompletionItem, 0, len(rows))
 	for _, row := range rows {
 		id := pgconv.FromPGUUID(row.ID)
@@ -187,9 +202,49 @@ func (s *Service) ClientCompletions(ctx context.Context, trainerUserID, clientUs
 			Comments:       itemComments,
 		})
 	}
-	return CompletionsResult{
-		Items:      items,
-		Pagination: paginationMeta(params.Page, params.Limit, total),
+	return items, nil
+}
+
+const clientSelfRecentCompletionsLimit = 30
+
+const clientLinkStatusBlocked = "blocked"
+
+// ClientSelfAnalytics builds the client's own page for one trainer. Access was
+// already proven by the signed link; here we only check the link is still alive.
+func (s *Service) ClientSelfAnalytics(ctx context.Context, clientUserID, trainerID uuid.UUID) (ClientSelfAnalytics, error) {
+	base, err := s.clientAnalyticsByTrainerID(ctx, trainerID, clientUserID)
+	if err != nil {
+		return ClientSelfAnalytics{}, err
+	}
+	if base.Client.Status == clientLinkStatusBlocked {
+		return ClientSelfAnalytics{}, ErrClientNotFound
+	}
+
+	trainerName, err := s.store.TrainerDisplayName(ctx, trainerID)
+	if err != nil {
+		return ClientSelfAnalytics{}, fmt.Errorf("trainer display name: %w", err)
+	}
+
+	recent, err := s.completionItems(ctx, trainerID, clientUserID, CompletionsParams{
+		Page:  1,
+		Limit: clientSelfRecentCompletionsLimit,
+	})
+	if err != nil {
+		return ClientSelfAnalytics{}, err
+	}
+
+	return ClientSelfAnalytics{
+		Client: ClientSelfInfo{
+			ClientUserID: base.Client.ClientUserID,
+			DisplayName:  base.Client.DisplayName,
+		},
+		Trainer: ClientSelfTrainer{
+			TrainerID:   trainerID,
+			DisplayName: trainerName,
+		},
+		CurrentAssignment: base.CurrentAssignment,
+		Activity:          base.Activity,
+		RecentCompletions: recent,
 	}, nil
 }
 
