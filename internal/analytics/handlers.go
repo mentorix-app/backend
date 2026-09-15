@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,6 +34,9 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.GET("/programs/analytics", h.ListProgramsAnalytics)
 	g.GET("/programs/:program_id/analytics", h.GetProgramAnalytics)
 	g.GET("/programs/:program_id/weeks/:week_number/results", h.GetProgramWeekResults)
+
+	// Client self page: access is proven by the signed link, not by a JWT.
+	e.GET("/client/analytics", h.GetClientSelfAnalytics)
 }
 
 func (h *Handlers) GetClientAnalytics(c echo.Context) error {
@@ -49,6 +53,37 @@ func (h *Handlers) GetClientAnalytics(c echo.Context) error {
 	if err != nil {
 		return HTTPErrorFrom(err)
 	}
+	return c.JSON(http.StatusOK, result)
+}
+
+// GetClientSelfAnalytics serves the page the Telegram bot links to. The four
+// query parameters come verbatim from the link; the signature covers all of them.
+func (h *Handlers) GetClientSelfAnalytics(c echo.Context) error {
+	clientUserID, err := uuid.Parse(c.QueryParam("client_user_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid client_user_id")
+	}
+	trainerID, err := uuid.Parse(c.QueryParam("trainer_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid trainer_id")
+	}
+	exp, err := strconv.ParseInt(c.QueryParam("exp"), 10, 64)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid exp")
+	}
+	sig := c.QueryParam("sig")
+	if sig == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "missing sig")
+	}
+	if !VerifyClientAnalyticsLink(h.jwtSecret, clientUserID, trainerID, exp, sig, time.Now()) {
+		return echo.NewHTTPError(http.StatusUnauthorized, "link expired or invalid")
+	}
+
+	result, err := h.svc.ClientSelfAnalytics(c.Request().Context(), clientUserID, trainerID)
+	if err != nil {
+		return HTTPErrorFrom(err)
+	}
+	result.ExpiresAt = time.Unix(exp, 0).UTC()
 	return c.JSON(http.StatusOK, result)
 }
 
