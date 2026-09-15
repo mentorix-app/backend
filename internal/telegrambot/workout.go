@@ -84,26 +84,26 @@ func (b *Bot) handleProgramDayDone(ctx context.Context, chatID int64, tgID strin
 	resp, err := b.clients.GetTelegramProgram(ctx, tgID, nil)
 	if err != nil || !resp.HasProgram || resp.Program == nil || resp.Assignment == nil {
 		b.answerCallback(queryID, "")
-		b.sendText(chatID, formatProgramSummary(resp), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramSummary(resp), b.menu)
 		return
 	}
 	week, ok := findWeek(resp.Program.Weeks, weekNumber)
 	if !ok {
 		b.answerCallback(queryID, "")
-		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 		return
 	}
 	day, ok := findDay(week.Days, dayNumber)
 	if !ok || !dayHasExercises(*day) {
 		b.answerCallback(queryID, "")
-		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 		return
 	}
 
 	done, err := b.workouts.IsCompleted(ctx, resp.Assignment.CompletionCycleID, day.DayKey)
 	if err != nil {
 		b.answerCallback(queryID, "")
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 	if done {
@@ -114,7 +114,7 @@ func (b *Bot) handleProgramDayDone(ctx context.Context, chatID int64, tgID strin
 	clientUserID, err := b.clients.ClientUserIDByTelegram(ctx, tgID)
 	if err != nil {
 		b.answerCallback(queryID, "")
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 
@@ -133,11 +133,11 @@ func (b *Bot) handleProgramDayDone(ctx context.Context, chatID int64, tgID strin
 	}
 	if err := b.pending.Set(ctx, tgID, pend); err != nil {
 		b.answerCallback(queryID, "")
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 	b.answerCallback(queryID, "")
-	b.sendMarkdownWithInline(chatID, askResultText, mainMenuKeyboard(), pendingCancelKeyboard())
+	b.sendMarkdownWithInline(chatID, askResultText, b.menu, pendingCancelKeyboard())
 }
 
 func (b *Bot) handlePendingCancel(ctx context.Context, chatID int64, tgID string) {
@@ -152,7 +152,7 @@ func (b *Bot) handlePendingCancel(ctx context.Context, chatID int64, tgID string
 		b.handleProgramDay(ctx, chatID, tgID, weekNumber, dayNumber)
 		return
 	}
-	b.sendText(chatID, "Отменено.", mainMenuKeyboard())
+	b.sendText(chatID, "Отменено.", b.menu)
 }
 
 func (b *Bot) tryHandleWorkoutResult(ctx context.Context, msg *tgbotapi.Message) bool {
@@ -166,26 +166,26 @@ func (b *Bot) tryHandleWorkoutResult(ctx context.Context, msg *tgbotapi.Message)
 	}
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {
-		b.sendMarkdownWithInline(msg.Chat.ID, resultEmptyText, mainMenuKeyboard(), pendingCancelKeyboard())
+		b.sendMarkdownWithInline(msg.Chat.ID, resultEmptyText, b.menu, pendingCancelKeyboard())
 		return true
 	}
 
 	resp, err := b.clients.GetTelegramProgram(ctx, tgID, nil)
 	if err != nil || !resp.HasProgram || resp.Program == nil {
 		b.clearWorkoutPending(ctx, tgID)
-		b.sendText(msg.Chat.ID, formatProgramSummary(resp), mainMenuKeyboard())
+		b.sendText(msg.Chat.ID, formatProgramSummary(resp), b.menu)
 		return true
 	}
 	week, ok := findWeek(resp.Program.Weeks, pend.WeekNumber)
 	if !ok {
 		b.clearWorkoutPending(ctx, tgID)
-		b.sendText(msg.Chat.ID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(msg.Chat.ID, formatProgramNotFoundMessage(), b.menu)
 		return true
 	}
 	day, ok := findDay(week.Days, pend.DayNumber)
 	if !ok || day.DayKey != pend.DayKey {
 		b.clearWorkoutPending(ctx, tgID)
-		b.sendText(msg.Chat.ID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(msg.Chat.ID, formatProgramNotFoundMessage(), b.menu)
 		return true
 	}
 
@@ -212,15 +212,15 @@ func (b *Bot) tryHandleWorkoutResult(ctx context.Context, msg *tgbotapi.Message)
 			return true
 		}
 		if errors.Is(err, workoutcompletion.ErrValidation) && strings.Contains(err.Error(), "too long") {
-			b.sendMarkdownWithInline(msg.Chat.ID, resultTooLongText, mainMenuKeyboard(), pendingCancelKeyboard())
+			b.sendMarkdownWithInline(msg.Chat.ID, resultTooLongText, b.menu, pendingCancelKeyboard())
 			return true
 		}
 		if errors.Is(err, workoutcompletion.ErrValidation) {
-			b.sendMarkdownWithInline(msg.Chat.ID, resultEmptyText, mainMenuKeyboard(), pendingCancelKeyboard())
+			b.sendMarkdownWithInline(msg.Chat.ID, resultEmptyText, b.menu, pendingCancelKeyboard())
 			return true
 		}
 		b.clearWorkoutPending(ctx, tgID)
-		b.sendText(msg.Chat.ID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(msg.Chat.ID, menuErrorText(err), b.menu)
 		return true
 	}
 	b.clearWorkoutPending(ctx, tgID)
