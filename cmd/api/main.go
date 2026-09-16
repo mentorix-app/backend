@@ -165,9 +165,17 @@ func main() {
 		workoutPending := workoutcompletion.NewPendingStore(rdb)
 
 		if cfg.BotToken != "" && cfg.BotWebhookURL != "" {
-			tgBot, err := telegrambot.NewFromToken(cfg.BotToken, trainerClientSvc,
+			botOpts := []telegrambot.BotOption{
 				telegrambot.WithWorkoutCompletions(workoutSvc, workoutPending),
-			)
+			}
+			if cfg.ClientAnalyticsPageURL != "" {
+				botOpts = append(botOpts, telegrambot.WithClientAnalyticsLink(
+					analytics.NewClientLinkBuilder(cfg.ClientAnalyticsPageURL, cfg.JWTSecret),
+				))
+			} else {
+				logger.Info("client analytics page not configured; stats button disabled")
+			}
+			tgBot, err := telegrambot.NewFromToken(cfg.BotToken, trainerClientSvc, botOpts...)
 			if err != nil {
 				logger.Error("telegram webhook bot init failed", "error", err)
 				os.Exit(1)

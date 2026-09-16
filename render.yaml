@@ -62,3 +62,5 @@ services:
         sync: false
       - key: TRAINER_INVITE_TTL_DAYS
         sync: false
+      - key: CLIENT_ANALYTICS_PAGE_URL
+        sync: false

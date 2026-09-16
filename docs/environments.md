@@ -67,6 +67,6 @@ Redis не переносить. Затем фронт/CORS → stage URL; bot w
 | --- | --- |
 | `.env.example` / `.env` | local (`.env` не в git) |
 | `render.yaml` | stage links + cookie/proxy + `BOT_WEBHOOK_URL` |
-| Dashboard `sync: false` | `JWT_SECRET`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS`, `TRAINER_INVITE_TTL_DAYS` |
+| Dashboard `sync: false` | `JWT_SECRET`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS`, `TRAINER_INVITE_TTL_DAYS`, `CLIENT_ANALYTICS_PAGE_URL` |
 
 Integration: `TEST_DATABASE_URL` → `mentorix_test`. Front: access JSON, refresh HttpOnly cookie, `credentials: 'include'`.
