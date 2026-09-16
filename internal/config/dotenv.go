@@ -7,18 +7,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Local env files, in priority order: personal secrets first, committed defaults second.
-const (
-	dotenvLocalFile = ".env.local"
-	dotenvFile      = ".env"
-)
+// dotenvFile is the single local env file; on Render it does not exist.
+const dotenvFile = ".env"
 
-// LoadDotenv loads .env.local and then .env from the working directory.
-// Variables already present in the process environment are never overridden,
-// so the effective precedence is: shell/Render environment > .env.local > .env.
-// Missing files are skipped; on Render neither file exists.
+// LoadDotenv loads .env from the working directory. Variables already present in
+// the process environment are never overridden, so the effective precedence is:
+// shell/Render environment > .env. A missing file is skipped.
 func LoadDotenv() {
-	LoadDotenvFiles(dotenvLocalFile, dotenvFile)
+	LoadDotenvFiles(dotenvFile)
 }
 
 // LoadDotenvFiles loads the given files in order without overriding variables

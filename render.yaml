@@ -8,7 +8,9 @@ databases:
     postgresMajorVersion: "16"
     region: frankfurt
     databaseName: mentorix
-    ipAllowList: [] # private network only; External URL from Dashboard for local dump/restore
+    ipAllowList: # external access for local tooling (make psql-stage); External URL in Dashboard
+      - source: 0.0.0.0/0
+        description: everywhere
 
 services:
   - type: keyvalue
@@ -17,7 +19,9 @@ services:
     region: frankfurt
     maxmemoryPolicy: allkeys-lru
     persistenceMode: off
-    ipAllowList: []
+    ipAllowList: # external access for local tooling (make redis-stage); External URL in Dashboard
+      - source: 0.0.0.0/0
+        description: everywhere
 
   - type: web
     name: mentorix-api-stage

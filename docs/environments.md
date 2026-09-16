@@ -64,20 +64,27 @@ Redis не переносить. Затем фронт/CORS → stage URL; bot w
 
 ## Env
 
-Local: три файла, приоритет `shell > .env.local > .env` (загрузка в `internal/config.LoadDotenv`,
+Local: один файл `.env`, приоритет `shell > .env` (загрузка в `internal/config.LoadDotenv`,
 скрипты — `scripts/lib/env.sh`). Уже выставленные в shell переменные никогда не перекрываются.
 
 | Файл | В git | Содержание |
 | --- | --- | --- |
-| `.env` | да | несекретные локальные дефолты: порты, localhost Postgres/Redis, CORS, TTL |
-| `.env.local` | нет | личные значения и секреты: `JWT_SECRET`, `BOT_*`, `CLIENT_ANALYTICS_PAGE_URL`, переопределения дефолтов |
-| `.env.example` | да | шаблон `.env.local`; `make setup` копирует его, если `.env.local` ещё нет |
+| `.env.example` | да | шаблон `.env`; `make setup` копирует его, если `.env` ещё нет |
+| `.env` | нет | всё локальное: порты, localhost Postgres/Redis, CORS, TTL, `JWT_SECRET`, `BOT_*` |
+| `.env.stage` | нет | только внешние `DATABASE_URL` (`sslmode=require`) и `REDIS_URL` (`rediss://`) стейджа для `make psql-stage` / `make redis-stage`; API его не читает |
 
 Stage: файлы не используются, всё из Render.
 
 | Источник | Назначение |
 | --- | --- |
-| `render.yaml` | stage links + cookie/proxy + `BOT_WEBHOOK_URL` |
+| `render.yaml` | stage links + cookie/proxy + `BOT_WEBHOOK_URL`; `ipAllowList` БД и Key Value открыт (`0.0.0.0/0`) для локальных инструментов |
 | Dashboard `sync: false` | `JWT_SECRET`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS`, `TRAINER_INVITE_TTL_DAYS`, `CLIENT_ANALYTICS_PAGE_URL` |
+
+Добавленная в `render.yaml` переменная `sync: false` в Dashboard сама не появляется — её заводят руками (Environment → Add).
+
+Datastore CLI: `make psql` / `make redis` (локально), `make psql-stage` / `make redis-stage` (Render; `ARGS="-c 'select 1'"`).
+Значения для `.env.stage`: Dashboard → инстанс → External URL, или `render pg get` / `render kv get … --include-sensitive-connection-info`.
+
+Frontend локально → stage API: base URL `https://mentorix-api-stage.onrender.com`, `credentials: 'include'`; origin `http://localhost:3000` должен быть в `CORS_ALLOW_ORIGINS` стейджа.
 
 Integration: `TEST_DATABASE_URL` → `mentorix_test` (в `.env`). Front: access JSON, refresh HttpOnly cookie, `credentials: 'include'`.
