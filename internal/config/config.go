@@ -231,7 +231,7 @@ func validatePageURL(raw string) error {
 	if u.Host == "" {
 		return fmt.Errorf("must be absolute")
 	}
-	if u.RawQuery != "" || u.Fragment != "" {
+	if strings.ContainsAny(raw, "?#") {
 		return fmt.Errorf("must not contain query or fragment")
 	}
 	return nil

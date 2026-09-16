@@ -284,7 +284,7 @@ func (b *Bot) handleStats(ctx context.Context, chatID int64, telegramUserID stri
 	inline := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonURL("Открыть статистику", link),
 	))
-	b.sendTextWithInline(chatID, formatStatsMessage(trainer.DisplayName), b.menu, inline)
+	b.sendTextWithInline(chatID, formatStatsMessage(trainer.DisplayName), formatStatsUnavailable(), b.menu, inline)
 }
 
 func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQuery) {
@@ -396,11 +396,13 @@ func (b *Bot) sendMarkdownWithInline(chatID int64, text string, keyboard tgbotap
 	}
 }
 
-func (b *Bot) sendTextWithInline(chatID int64, text string, keyboard tgbotapi.ReplyKeyboardMarkup, inline tgbotapi.InlineKeyboardMarkup) {
+// sendTextWithInline sends plain text with an inline keyboard; if Telegram
+// rejects the message, fallbackText is sent with the reply menu instead.
+func (b *Bot) sendTextWithInline(chatID int64, text, fallbackText string, keyboard tgbotapi.ReplyKeyboardMarkup, inline tgbotapi.InlineKeyboardMarkup) {
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ReplyMarkup = inline
 	if _, err := b.api.Send(msg); err != nil {
-		b.sendText(chatID, text, keyboard)
+		b.sendText(chatID, fallbackText, keyboard)
 	}
 }
 

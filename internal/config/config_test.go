@@ -273,6 +273,8 @@ func TestLoad_clientAnalyticsPageURL_invalid(t *testing.T) {
 		"ftp://app.example.com/stats",       // wrong scheme
 		"https://app.example.com/stats?x=1", // query is reserved for the link
 		"https://app.example.com/stats#top", // fragment
+		"https://app.example.com/stats?",    // bare query marker
+		"https://app.example.com/stats#",    // bare fragment marker
 	} {
 		t.Run(raw, func(t *testing.T) {
 			setMinimalEnv(t)

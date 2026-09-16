@@ -2,6 +2,7 @@ package telegrambot
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -104,10 +105,15 @@ func TestMainMenuKeyboard_buttons(t *testing.T) {
 }
 
 type fakeTelegramAPI struct {
-	sent []tgbotapi.MessageConfig
+	sent      []tgbotapi.MessageConfig
+	failFirst bool
 }
 
 func (f *fakeTelegramAPI) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
+	if f.failFirst {
+		f.failFirst = false
+		return tgbotapi.Message{}, errors.New("telegram: send failed")
+	}
 	msg, ok := c.(tgbotapi.MessageConfig)
 	if ok {
 		f.sent = append(f.sent, msg)
@@ -591,6 +597,22 @@ func TestBot_handleStats_sendsLink(t *testing.T) {
 	}
 	if len(linker.calls) != 1 || linker.calls[0][0] != clientID || linker.calls[0][1] != uuid.MustParse("22222222-2222-2222-2222-222222222222") {
 		t.Fatalf("linker calls = %+v", linker.calls)
+	}
+}
+
+func TestBot_handleStats_sendFailureFallsBackToUnavailable(t *testing.T) {
+	api := &fakeTelegramAPI{failFirst: true}
+	linker := &fakeLinker{link: "https://app.example.com/stats?client_user_id=x&trainer_id=y&exp=1&sig=z"}
+	clientID := uuid.New()
+	bot := New(api, &fakeTrainerClient{clientUserID: clientID}, WithClientAnalyticsLink(linker))
+
+	bot.handleMessage(context.Background(), statsMessage())
+
+	if len(api.sent) != 1 {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+	if !strings.Contains(api.sent[0].Text, "недоступна") {
+		t.Fatalf("fallback text = %q", api.sent[0].Text)
 	}
 }
 
