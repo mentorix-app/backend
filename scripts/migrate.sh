@@ -11,7 +11,7 @@ require_env_files
 
 database_url="$(env_value DATABASE_URL)"
 if [[ -z "$database_url" ]]; then
-  echo "DATABASE_URL is not set (shell, .env.local or .env)" >&2
+  echo "DATABASE_URL is not set (shell or .env)" >&2
   exit 1
 fi
 

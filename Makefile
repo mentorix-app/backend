@@ -15,6 +15,7 @@ AIR_VERSION ?= v1.61.7
 
 .PHONY: help dev run build setup \
 	migrate migrate-down schema-sync sqlc \
+	psql redis psql-stage redis-stage \
 	check check-ci \
 	install-hooks install-tools \
 	install-migrate install-sqlc install-lint install-air
@@ -36,8 +37,8 @@ build: ## Build bin/api
 	@mkdir -p bin
 	go build -o bin/api ./cmd/api
 
-setup: install-hooks ## First time: .env.local, migrate, pre-commit
-	@test -f .env.local || (cp .env.example .env.local && echo "Created .env.local from .env.example — fill in JWT_SECRET and other secrets")
+setup: install-hooks ## First time: .env, migrate, pre-commit
+	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example — fill in JWT_SECRET and other secrets")
 	@$(MAKE) migrate
 
 # --- db ---
@@ -54,6 +55,18 @@ schema-sync: ## Regenerate db/schema.sql from migrations
 sqlc: ## sqlc generate
 	@command -v sqlc >/dev/null 2>&1 || $(MAKE) --no-print-directory install-sqlc
 	sqlc generate
+
+psql: ## psql → local Postgres (.env)
+	@$(SCRIPTS)/db-cli.sh psql local $(ARGS)
+
+redis: ## redis-cli → local Redis (.env)
+	@$(SCRIPTS)/db-cli.sh redis local $(ARGS)
+
+psql-stage: ## psql → Render stage Postgres (.env.stage)
+	@$(SCRIPTS)/db-cli.sh psql stage $(ARGS)
+
+redis-stage: ## redis-cli → Render stage Key Value (.env.stage)
+	@$(SCRIPTS)/db-cli.sh redis stage $(ARGS)
 
 # --- qa ---
 

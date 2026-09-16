@@ -2,7 +2,7 @@
 # Shared helpers for reading local env files from shell scripts.
 #
 # Precedence mirrors cmd/api: a variable already exported in the shell wins,
-# then .env.local (personal, git-ignored), then .env (committed defaults).
+# then .env (personal, git-ignored; template in .env.example).
 # Source this file from a script whose cwd is the repository root.
 
 # env_file_value FILE KEY — print KEY's value from FILE, or nothing.
@@ -18,18 +18,15 @@ env_value() {
   local key="$1" value
   value="${!key:-}"
   if [[ -z "$value" ]]; then
-    value="$(env_file_value .env.local "$key")"
-  fi
-  if [[ -z "$value" ]]; then
     value="$(env_file_value .env "$key")"
   fi
   printf '%s' "$value"
 }
 
-# require_env_files — fail with a hint when neither env file exists.
+# require_env_files — fail with a hint when .env is missing.
 require_env_files() {
-  if [[ ! -f .env && ! -f .env.local ]]; then
-    echo "Missing .env and .env.local. Run 'make setup' (copies .env.example to .env.local)." >&2
+  if [[ ! -f .env ]]; then
+    echo "Missing .env. Run 'make setup' (copies .env.example to .env)." >&2
     return 1
   fi
 }
