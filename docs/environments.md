@@ -1,6 +1,6 @@
 # Окружения
 
-1. **Local** — Postgres + Redis, `make run` / `make dev`, `.env` из [`.env.example`](../.env.example).
+1. **Local** — Postgres + Redis, `make run` / `make dev`; env-файлы — см. [Env](#env).
 2. **Stage** — `develop` → CI → Deploy Hook → `mentorix-api-stage`.
 3. **Prod** — позже (`main` + отдельные сервисы); пока **не** в [`render.yaml`](../render.yaml).
 
@@ -12,6 +12,7 @@
 | --- | --- |
 | Web | `mentorix-api-stage` → `https://mentorix-api-stage.onrender.com` |
 | Postgres / Redis | `mentorix-db-stage` / `mentorix-redis-stage` |
+| Frontend | `https://dashboard-u7fz.onrender.com` — origin в `CORS_ALLOW_ORIGINS`, база для `CLIENT_ANALYTICS_PAGE_URL` |
 
 Plans: web **starter**, Postgres **basic-256mb** (PG 16), Redis **starter**, region **frankfurt**.
 
@@ -63,10 +64,20 @@ Redis не переносить. Затем фронт/CORS → stage URL; bot w
 
 ## Env
 
+Local: три файла, приоритет `shell > .env.local > .env` (загрузка в `internal/config.LoadDotenv`,
+скрипты — `scripts/lib/env.sh`). Уже выставленные в shell переменные никогда не перекрываются.
+
+| Файл | В git | Содержание |
+| --- | --- | --- |
+| `.env` | да | несекретные локальные дефолты: порты, localhost Postgres/Redis, CORS, TTL |
+| `.env.local` | нет | личные значения и секреты: `JWT_SECRET`, `BOT_*`, `CLIENT_ANALYTICS_PAGE_URL`, переопределения дефолтов |
+| `.env.example` | да | шаблон `.env.local`; `make setup` копирует его, если `.env.local` ещё нет |
+
+Stage: файлы не используются, всё из Render.
+
 | Источник | Назначение |
 | --- | --- |
-| `.env.example` / `.env` | local (`.env` не в git) |
 | `render.yaml` | stage links + cookie/proxy + `BOT_WEBHOOK_URL` |
-| Dashboard `sync: false` | `JWT_SECRET`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS`, `TRAINER_INVITE_TTL_DAYS` |
+| Dashboard `sync: false` | `JWT_SECRET`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS`, `TRAINER_INVITE_TTL_DAYS`, `CLIENT_ANALYTICS_PAGE_URL` |
 
-Integration: `TEST_DATABASE_URL` → `mentorix_test`. Front: access JSON, refresh HttpOnly cookie, `credentials: 'include'`.
+Integration: `TEST_DATABASE_URL` → `mentorix_test` (в `.env`). Front: access JSON, refresh HttpOnly cookie, `credentials: 'include'`.

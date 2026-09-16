@@ -8,7 +8,7 @@ Go REST API (Echo + PostgreSQL + Redis).
 
 ```bash
 make install-tools   # once
-make setup           # .env, migrations, pre-commit hook
+make setup           # .env.local, migrations, pre-commit hook
 make dev             # API with hot reload
 ```
 

@@ -26,6 +26,7 @@
 | [features/workout-completions.md](features/workout-completions.md) | Отметка дней программы / история |
 | [features/workout-comments.md](features/workout-comments.md) | Ответ тренера на результат тренировки |
 | [features/trainer-analytics.md](features/trainer-analytics.md) | Аналитика тренера: клиент и программы |
+| [features/client-analytics.md](features/client-analytics.md) | Страница статистики клиента по ссылке из Telegram |
 | [features/garbage-cleanup.md](features/garbage-cleanup.md) | Автоочистка БД и Redis |
 | [features/subscriptions.md](features/subscriptions.md) | Тарифы тренеров и квоты |
 | [features/admin.md](features/admin.md) | Admin API |

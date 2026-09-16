@@ -35,6 +35,10 @@ func (s *Store) ClientHeader(ctx context.Context, trainerID, clientUserID uuid.U
 	})
 }
 
+func (s *Store) TrainerDisplayName(ctx context.Context, trainerID uuid.UUID) (string, error) {
+	return s.q.GetTrainerUserDisplayName(ctx, pgconv.ToPGUUID(trainerID))
+}
+
 func (s *Store) CurrentAssignment(ctx context.Context, trainerID, clientUserID uuid.UUID) (sqlc.GetClientCurrentAssignmentAnalyticsRow, error) {
 	return s.q.GetClientCurrentAssignmentAnalytics(ctx, sqlc.GetClientCurrentAssignmentAnalyticsParams{
 		TrainerID:    pgconv.ToPGUUID(trainerID),

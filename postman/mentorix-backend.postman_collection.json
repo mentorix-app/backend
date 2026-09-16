@@ -1960,6 +1960,16 @@
           "response": []
         },
         {
+          "name": "GET /client/analytics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/client/analytics?client_user_id={{client_user_id}}&trainer_id={{trainer_id}}&exp={{client_analytics_exp}}&sig={{client_analytics_sig}}",
+            "description": "Client self page opened from the Telegram bot. No Bearer — the four query params come from the signed link the bot sends (valid 30 minutes)."
+          },
+          "response": []
+        },
+        {
           "name": "PUT /trainer/clients/program-assignment",
           "request": {
             "auth": {

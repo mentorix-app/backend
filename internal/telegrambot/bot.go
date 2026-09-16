@@ -24,6 +24,7 @@ type trainerClient interface {
 	SetTelegramActiveTrainer(ctx context.Context, telegramUserID string, trainerID uuid.UUID) (*trainerclient.ActiveTrainerResponse, error)
 	GetTelegramProgram(ctx context.Context, telegramUserID string, trainerID *uuid.UUID) (trainerclient.TelegramProgramResponse, error)
 	ClientUserIDByTelegram(ctx context.Context, telegramUserID string) (uuid.UUID, error)
+	GetTelegramActiveTrainer(ctx context.Context, telegramUserID string) (*trainerclient.ActiveTrainerResponse, error)
 }
 
 type telegramAPI interface {
@@ -31,11 +32,19 @@ type telegramAPI interface {
 	Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error)
 }
 
+// ClientAnalyticsLinker issues signed links to the client analytics page.
+// Implemented by analytics.ClientLinkBuilder; nil means the feature is off.
+type ClientAnalyticsLinker interface {
+	BuildClientAnalyticsLink(clientUserID, trainerID uuid.UUID) string
+}
+
 type Bot struct {
 	api      telegramAPI
 	clients  trainerClient
 	workouts *workoutcompletion.Service
 	pending  workoutcompletion.PendingStore
+	links    ClientAnalyticsLinker
+	menu     tgbotapi.ReplyKeyboardMarkup
 }
 
 type BotOption func(*Bot)
@@ -47,11 +56,19 @@ func WithWorkoutCompletions(svc *workoutcompletion.Service, pending workoutcompl
 	}
 }
 
+// WithClientAnalyticsLink enables the «Статистика» button.
+func WithClientAnalyticsLink(l ClientAnalyticsLinker) BotOption {
+	return func(b *Bot) {
+		b.links = l
+	}
+}
+
 func New(api telegramAPI, clients trainerClient, opts ...BotOption) *Bot {
 	b := &Bot{api: api, clients: clients}
 	for _, opt := range opts {
 		opt(b)
 	}
+	b.menu = mainMenuKeyboard(b.links != nil)
 	return b
 }
 
@@ -88,13 +105,13 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 			b.handleStart(ctx, msg)
 			return
 		case "menu", "help":
-			b.sendText(msg.Chat.ID, helpText(), mainMenuKeyboard())
+			b.sendText(msg.Chat.ID, helpText(b.links != nil), b.menu)
 			return
 		}
 	}
 
 	switch strings.TrimSpace(msg.Text) {
-	case btnProgram, btnTrainers, btnHelp:
+	case btnProgram, btnTrainers, btnHelp, btnStats:
 		b.clearWorkoutPending(ctx, tgID)
 	}
 
@@ -109,12 +126,15 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	case btnTrainers:
 		b.handleTrainers(ctx, msg.Chat.ID, tgID)
 		return
+	case btnStats:
+		b.handleStats(ctx, msg.Chat.ID, tgID)
+		return
 	case btnHelp:
-		b.sendText(msg.Chat.ID, helpText(), mainMenuKeyboard())
+		b.sendText(msg.Chat.ID, helpText(b.links != nil), b.menu)
 		return
 	default:
 		if strings.TrimSpace(msg.Text) != "" {
-			b.sendText(msg.Chat.ID, "Выберите пункт меню или отправьте /menu.", mainMenuKeyboard())
+			b.sendText(msg.Chat.ID, "Выберите пункт меню или отправьте /menu.", b.menu)
 		}
 	}
 }
@@ -124,17 +144,17 @@ func (b *Bot) handleStart(ctx context.Context, msg *tgbotapi.Message) {
 		b.acceptInvite(ctx, msg, token)
 		return
 	}
-	b.sendText(msg.Chat.ID, "Откройте ссылку-приглашение от тренера или выберите пункт меню.", mainMenuKeyboard())
+	b.sendText(msg.Chat.ID, "Откройте ссылку-приглашение от тренера или выберите пункт меню.", b.menu)
 }
 
 func (b *Bot) handleProgram(ctx context.Context, chatID int64, telegramUserID string) {
 	resp, err := b.clients.GetTelegramProgram(ctx, telegramUserID, nil)
 	if err != nil {
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 	if !resp.HasProgram || resp.Program == nil {
-		b.sendText(chatID, formatProgramSummary(resp), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramSummary(resp), b.menu)
 		return
 	}
 	var completed map[uuid.UUID]struct{}
@@ -142,31 +162,31 @@ func (b *Bot) handleProgram(ctx context.Context, chatID int64, telegramUserID st
 		var cerr error
 		completed, cerr = b.workouts.CompletedDayKeys(ctx, resp.Assignment.CompletionCycleID)
 		if cerr != nil {
-			b.sendText(chatID, menuErrorText(cerr), mainMenuKeyboard())
+			b.sendText(chatID, menuErrorText(cerr), b.menu)
 			return
 		}
 	}
 	inline := programWeeksKeyboard(resp.Program.Weeks, completed)
 	if len(inline.InlineKeyboard) == 0 {
-		b.sendText(chatID, formatProgramEmptyTrainingDays(resp.TrainerDisplayName), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramEmptyTrainingDays(resp.TrainerDisplayName), b.menu)
 		return
 	}
-	b.sendMarkdownWithInline(chatID, formatProgramSummary(resp), mainMenuKeyboard(), inline)
+	b.sendMarkdownWithInline(chatID, formatProgramSummary(resp), b.menu, inline)
 }
 
 func (b *Bot) handleProgramWeek(ctx context.Context, chatID int64, telegramUserID string, weekNumber int) {
 	resp, err := b.clients.GetTelegramProgram(ctx, telegramUserID, nil)
 	if err != nil {
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 	if !resp.HasProgram || resp.Program == nil {
-		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 		return
 	}
 	week, ok := findWeek(resp.Program.Weeks, weekNumber)
 	if !ok || !weekHasSelectableDays(*week) {
-		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 		return
 	}
 	var completed map[uuid.UUID]struct{}
@@ -174,43 +194,43 @@ func (b *Bot) handleProgramWeek(ctx context.Context, chatID int64, telegramUserI
 		var cerr error
 		completed, cerr = b.workouts.CompletedDayKeys(ctx, resp.Assignment.CompletionCycleID)
 		if cerr != nil {
-			b.sendText(chatID, menuErrorText(cerr), mainMenuKeyboard())
+			b.sendText(chatID, menuErrorText(cerr), b.menu)
 			return
 		}
 	}
 	inline := programDaysKeyboard(weekNumber, week.Days, completed)
 	if len(inline.InlineKeyboard) == 0 {
-		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 		return
 	}
-	b.sendMarkdownWithInline(chatID, formatProgramWeekPicker(weekNumber), mainMenuKeyboard(), inline)
+	b.sendMarkdownWithInline(chatID, formatProgramWeekPicker(weekNumber), b.menu, inline)
 }
 
 func (b *Bot) handleProgramDay(ctx context.Context, chatID int64, telegramUserID string, weekNumber, dayNumber int) {
 	resp, err := b.clients.GetTelegramProgram(ctx, telegramUserID, nil)
 	if err != nil {
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 	if !resp.HasProgram || resp.Program == nil {
-		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 		return
 	}
 	week, ok := findWeek(resp.Program.Weeks, weekNumber)
 	if !ok {
-		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 		return
 	}
 	day, ok := findDay(week.Days, dayNumber)
 	if !ok || !dayHasExercises(*day) {
-		b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+		b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 		return
 	}
 	completed := false
 	if b.workouts != nil && resp.Assignment != nil {
 		completed, err = b.workouts.IsCompleted(ctx, resp.Assignment.CompletionCycleID, day.DayKey)
 		if err != nil {
-			b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+			b.sendText(chatID, menuErrorText(err), b.menu)
 			return
 		}
 	}
@@ -220,22 +240,51 @@ func (b *Bot) handleProgramDay(ctx context.Context, chatID int64, telegramUserID
 func (b *Bot) sendProgramDay(chatID int64, weekNumber, dayNumber int, day program.Day, weeks []program.Week, completed bool) {
 	text := formatProgramDay(weekNumber, dayNumber, day)
 	inline := programDayKeyboard(weeks, weekNumber, dayNumber, completed)
-	b.sendMarkdownWithInline(chatID, text, mainMenuKeyboard(), inline)
+	b.sendMarkdownWithInline(chatID, text, b.menu, inline)
 }
 
 func (b *Bot) handleTrainers(ctx context.Context, chatID int64, telegramUserID string) {
 	list, err := b.clients.ListTelegramTrainers(ctx, telegramUserID)
 	if err != nil {
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 	text, trainers := formatTrainers(list)
 	inline := trainersInlineKeyboard(trainers)
 	if len(inline.InlineKeyboard) == 0 {
-		b.sendMarkdown(chatID, text, mainMenuKeyboard())
+		b.sendMarkdown(chatID, text, b.menu)
 		return
 	}
-	b.sendMarkdownWithInline(chatID, text, mainMenuKeyboard(), inline)
+	b.sendMarkdownWithInline(chatID, text, b.menu, inline)
+}
+
+// handleStats sends a signed link to the client's analytics page for the
+// active trainer. The link itself sits in an inline URL button so it does not
+// show up as text in the chat history.
+func (b *Bot) handleStats(ctx context.Context, chatID int64, telegramUserID string) {
+	if b.links == nil {
+		b.sendText(chatID, formatStatsUnavailable(), b.menu)
+		return
+	}
+	clientUserID, err := b.clients.ClientUserIDByTelegram(ctx, telegramUserID)
+	if err != nil {
+		b.sendText(chatID, menuErrorText(err), b.menu)
+		return
+	}
+	trainer, err := b.clients.GetTelegramActiveTrainer(ctx, telegramUserID)
+	if err != nil {
+		b.sendText(chatID, menuErrorText(err), b.menu)
+		return
+	}
+	link := b.links.BuildClientAnalyticsLink(clientUserID, trainer.TrainerID)
+	if link == "" {
+		b.sendText(chatID, formatStatsUnavailable(), b.menu)
+		return
+	}
+	inline := tgbotapi.NewInlineKeyboardMarkup(tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonURL("Открыть статистику", link),
+	))
+	b.sendTextWithInline(chatID, formatStatsMessage(trainer.DisplayName), formatStatsUnavailable(), b.menu, inline)
 }
 
 func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQuery) {
@@ -277,21 +326,21 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQ
 func (b *Bot) handleTrainerCallback(ctx context.Context, chatID int64, tgID string, trainerID uuid.UUID) {
 	_, err := b.clients.SetTelegramActiveTrainer(ctx, tgID, trainerID)
 	if err != nil {
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 	list, err := b.clients.ListTelegramTrainers(ctx, tgID)
 	if err != nil {
-		b.sendText(chatID, menuErrorText(err), mainMenuKeyboard())
+		b.sendText(chatID, menuErrorText(err), b.menu)
 		return
 	}
 	for _, t := range list.Items {
 		if t.TrainerID == trainerID {
-			b.sendMarkdown(chatID, formatActiveTrainerNotification(t), mainMenuKeyboard())
+			b.sendMarkdown(chatID, formatActiveTrainerNotification(t), b.menu)
 			return
 		}
 	}
-	b.sendText(chatID, formatProgramNotFoundMessage(), mainMenuKeyboard())
+	b.sendText(chatID, formatProgramNotFoundMessage(), b.menu)
 }
 
 func (b *Bot) acceptInvite(ctx context.Context, msg *tgbotapi.Message, token string) {
@@ -301,7 +350,7 @@ func (b *Bot) acceptInvite(ctx context.Context, msg *tgbotapi.Message, token str
 		DisplayName:    displayName(msg.From),
 	})
 	if err != nil {
-		b.sendText(msg.Chat.ID, inviteErrorText(err), mainMenuKeyboard())
+		b.sendText(msg.Chat.ID, inviteErrorText(err), b.menu)
 		return
 	}
 
@@ -310,7 +359,7 @@ func (b *Bot) acceptInvite(ctx context.Context, msg *tgbotapi.Message, token str
 	if len(list.Items) > 1 && !result.AlreadyLinked {
 		text += "\n\nСменить активного тренера можно в «Тренеры»."
 	}
-	b.sendText(msg.Chat.ID, text, mainMenuKeyboard())
+	b.sendText(msg.Chat.ID, text, b.menu)
 }
 
 func welcomeMessage(result trainerclient.AcceptInviteResult) string {
@@ -344,6 +393,16 @@ func (b *Bot) sendMarkdownWithInline(chatID int64, text string, keyboard tgbotap
 	if _, err := b.api.Send(msg); err != nil {
 		b.sendText(chatID, text, keyboard)
 		return
+	}
+}
+
+// sendTextWithInline sends plain text with an inline keyboard; if Telegram
+// rejects the message, fallbackText is sent with the reply menu instead.
+func (b *Bot) sendTextWithInline(chatID int64, text, fallbackText string, keyboard tgbotapi.ReplyKeyboardMarkup, inline tgbotapi.InlineKeyboardMarkup) {
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ReplyMarkup = inline
+	if _, err := b.api.Send(msg); err != nil {
+		b.sendText(chatID, fallbackText, keyboard)
 	}
 }
 
@@ -406,9 +465,12 @@ func inviteErrorText(err error) string {
 	return "Не удалось принять приглашение. Попробуйте позже."
 }
 
-func helpText() string {
-	return "Mentorix — программы тренировок от вашего тренера.\n\n" +
+func helpText(withStats bool) string {
+	text := "Mentorix — программы тренировок от вашего тренера.\n\n" +
 		"📅 Программа — выбор недели и дня\n" +
-		"👤 Тренеры — ваши тренеры\n\n" +
-		"Команды: /menu — показать меню"
+		"👤 Тренеры — ваши тренеры\n"
+	if withStats {
+		text += "📊 Статистика — ссылка на страницу с вашей статистикой\n"
+	}
+	return text + "\nКоманды: /menu — показать меню"
 }

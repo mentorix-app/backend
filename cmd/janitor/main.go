@@ -6,14 +6,13 @@ import (
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/joho/godotenv"
 
 	"mentorix-backend/internal/cleanup"
 	"mentorix-backend/internal/config"
 )
 
 func main() {
-	_ = godotenv.Load()
+	config.LoadDotenv()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,

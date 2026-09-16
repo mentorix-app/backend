@@ -1154,6 +1154,60 @@ paths:
         "409":
           description: Reply already exists for this completion
 
+  /client/analytics:
+    get:
+      tags: [analytics]
+      summary: Client self analytics (signed link)
+      description: >
+        The page a client opens from the Telegram bot button «Статистика».
+        No Bearer token: access is proven by the signed query string the bot
+        issued (`client_user_id`, `trainer_id`, `exp`, `sig`; HMAC over all
+        four, valid 30 minutes). The frontend forwards the link's query string
+        verbatim. Data is scoped to one trainer (the client's active trainer in
+        the bot) and mirrors the trainer's client analytics plus the latest 30
+        completions with trainer replies.
+      operationId: getClientSelfAnalytics
+      parameters:
+        - name: client_user_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: trainer_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: trainers.id of the client's active trainer
+        - name: exp
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: Unix expiry timestamp from the link
+        - name: sig
+          in: query
+          required: true
+          schema:
+            type: string
+          description: HMAC signature from the link
+      responses:
+        "200":
+          description: Client self analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientSelfAnalytics"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Link signature invalid or expired
+        "404":
+          description: Client is not linked to the trainer or the link is blocked
+
   /trainer/programs/analytics:
     get:
       tags: [analytics]
@@ -3274,6 +3328,50 @@ components:
           nullable: true
         activity:
           $ref: "#/components/schemas/AnalyticsActivity"
+
+    ClientSelfAnalytics:
+      type: object
+      required: [client, trainer, current_assignment, activity, recent_completions, expires_at]
+      properties:
+        client:
+          $ref: "#/components/schemas/ClientSelfInfo"
+        trainer:
+          $ref: "#/components/schemas/ClientSelfTrainer"
+        current_assignment:
+          $ref: "#/components/schemas/AnalyticsAssignment"
+          nullable: true
+        activity:
+          $ref: "#/components/schemas/AnalyticsActivity"
+        recent_completions:
+          type: array
+          description: Latest completions with this trainer, newest first, at most 30
+          items:
+            $ref: "#/components/schemas/ClientCompletionItem"
+        expires_at:
+          type: string
+          format: date-time
+          description: When the signed link stops working
+
+    ClientSelfInfo:
+      type: object
+      required: [client_user_id, display_name]
+      properties:
+        client_user_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+
+    ClientSelfTrainer:
+      type: object
+      required: [trainer_id, display_name]
+      properties:
+        trainer_id:
+          type: string
+          format: uuid
+          description: trainers.id
+        display_name:
+          type: string
 
     AnalyticsClientInfo:
       type: object

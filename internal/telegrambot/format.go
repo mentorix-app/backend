@@ -312,8 +312,19 @@ func exerciseDisplayName(name, nameRu string) string {
 }
 
 func menuErrorText(err error) string {
-	if errors.Is(err, trainerclient.ErrActiveTrainerNotSet) {
+	switch {
+	case errors.Is(err, trainerclient.ErrActiveTrainerNotSet):
 		return "Выберите тренера в разделе «Тренеры»."
+	case errors.Is(err, trainerclient.ErrTelegramUserNotFound):
+		return "У вас пока нет тренеров. Откройте ссылку-приглашение от тренера."
 	}
 	return "Не удалось загрузить данные. Попробуйте позже."
+}
+
+func formatStatsMessage(trainerDisplayName string) string {
+	return fmt.Sprintf("📊 Ваша статистика у тренера %s\n\nСсылка действует 30 минут.", trainerDisplayName)
+}
+
+func formatStatsUnavailable() string {
+	return "Статистика пока недоступна."
 }

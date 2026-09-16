@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -37,6 +38,9 @@ type Config struct {
 	BotToken             string
 	BotWebhookURL        string
 	BotWebhookSecret     string
+	// ClientAnalyticsPageURL is the frontend page the Telegram bot links to for
+	// client self-analytics. Empty disables the "Статистика" button.
+	ClientAnalyticsPageURL string
 }
 
 func (c Config) AccessTokenTTL() time.Duration {
@@ -119,15 +123,16 @@ func Load() (Config, error) {
 			Secure:   secure,
 			SameSite: sameSite,
 		},
-		AuthLoginRateMax:     loginMax,
-		AuthLoginRateWindow:  loginWin,
-		AuthRegisterRateMax:  regMax,
-		AuthRegisterRateWin:  regWin,
-		TelegramBotUsername:  strings.TrimSpace(os.Getenv("TELEGRAM_BOT_USERNAME")),
-		TrainerInviteTTLDays: inviteDays,
-		BotToken:             strings.TrimSpace(os.Getenv("BOT_TOKEN")),
-		BotWebhookURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("BOT_WEBHOOK_URL")), "/"),
-		BotWebhookSecret:     strings.TrimSpace(os.Getenv("BOT_WEBHOOK_SECRET")),
+		AuthLoginRateMax:       loginMax,
+		AuthLoginRateWindow:    loginWin,
+		AuthRegisterRateMax:    regMax,
+		AuthRegisterRateWin:    regWin,
+		TelegramBotUsername:    strings.TrimSpace(os.Getenv("TELEGRAM_BOT_USERNAME")),
+		TrainerInviteTTLDays:   inviteDays,
+		BotToken:               strings.TrimSpace(os.Getenv("BOT_TOKEN")),
+		BotWebhookURL:          strings.TrimRight(strings.TrimSpace(os.Getenv("BOT_WEBHOOK_URL")), "/"),
+		BotWebhookSecret:       strings.TrimSpace(os.Getenv("BOT_WEBHOOK_SECRET")),
+		ClientAnalyticsPageURL: strings.TrimSpace(os.Getenv("CLIENT_ANALYTICS_PAGE_URL")),
 	}
 
 	if cfg.AppEnv != AppEnvDevelopment {
@@ -146,6 +151,12 @@ func Load() (Config, error) {
 	}
 	if cfg.BotWebhookURL != "" && cfg.BotWebhookSecret == "" {
 		return Config{}, fmt.Errorf("config: BOT_WEBHOOK_SECRET is required when BOT_WEBHOOK_URL is set")
+	}
+
+	if cfg.ClientAnalyticsPageURL != "" {
+		if err := validatePageURL(cfg.ClientAnalyticsPageURL); err != nil {
+			return Config{}, fmt.Errorf("config: CLIENT_ANALYTICS_PAGE_URL %w", err)
+		}
 	}
 
 	return cfg, nil
@@ -205,4 +216,23 @@ func parseCommaSeparated(s string) []string {
 		}
 	}
 	return out
+}
+
+// validatePageURL accepts only an absolute http(s) URL without query and
+// fragment: the bot appends its own query string to it.
+func validatePageURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("is not a valid URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("must use http or https, got %q", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("must be absolute")
+	}
+	if strings.ContainsAny(raw, "?#") {
+		return fmt.Errorf("must not contain query or fragment")
+	}
+	return nil
 }

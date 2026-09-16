@@ -2,6 +2,7 @@ package telegrambot
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -60,7 +61,7 @@ func TestWelcomeMessage(t *testing.T) {
 }
 
 func TestHelpText(t *testing.T) {
-	if helpText() == "" {
+	if helpText(false) == "" {
 		t.Fatal("expected help text")
 	}
 }
@@ -86,20 +87,33 @@ func TestInviteErrorText(t *testing.T) {
 }
 
 func TestMainMenuKeyboard_buttons(t *testing.T) {
-	kb := mainMenuKeyboard()
+	kb := mainMenuKeyboard(false)
 	if len(kb.Keyboard) != 2 {
 		t.Fatalf("rows = %d", len(kb.Keyboard))
 	}
 	if len(kb.Keyboard[0]) != 2 || len(kb.Keyboard[1]) != 1 {
 		t.Fatalf("unexpected layout: %+v", kb.Keyboard)
 	}
+
+	withStats := mainMenuKeyboard(true)
+	if len(withStats.Keyboard) != 2 || len(withStats.Keyboard[1]) != 2 {
+		t.Fatalf("unexpected layout with stats: %+v", withStats.Keyboard)
+	}
+	if withStats.Keyboard[1][1].Text != btnStats {
+		t.Fatalf("second row = %+v", withStats.Keyboard[1])
+	}
 }
 
 type fakeTelegramAPI struct {
-	sent []tgbotapi.MessageConfig
+	sent      []tgbotapi.MessageConfig
+	failFirst bool
 }
 
 func (f *fakeTelegramAPI) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
+	if f.failFirst {
+		f.failFirst = false
+		return tgbotapi.Message{}, errors.New("telegram: send failed")
+	}
 	msg, ok := c.(tgbotapi.MessageConfig)
 	if ok {
 		f.sent = append(f.sent, msg)
@@ -121,6 +135,9 @@ type fakeTrainerClient struct {
 	program      trainerclient.TelegramProgramResponse
 	clientUserID uuid.UUID
 	clientUserEr error
+
+	activeTrainer    *trainerclient.ActiveTrainerResponse
+	activeTrainerErr error
 }
 
 func (f *fakeTrainerClient) AcceptInvite(_ context.Context, req trainerclient.AcceptInviteRequest) (trainerclient.AcceptInviteResult, error) {
@@ -179,6 +196,19 @@ func (f *fakeTrainerClient) ClientUserIDByTelegram(context.Context, string) (uui
 		return f.clientUserID, nil
 	}
 	return uuid.MustParse("11111111-1111-1111-1111-111111111111"), nil
+}
+
+func (f *fakeTrainerClient) GetTelegramActiveTrainer(context.Context, string) (*trainerclient.ActiveTrainerResponse, error) {
+	if f.activeTrainerErr != nil {
+		return nil, f.activeTrainerErr
+	}
+	if f.activeTrainer != nil {
+		return f.activeTrainer, nil
+	}
+	return &trainerclient.ActiveTrainerResponse{
+		TrainerID:   uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+		DisplayName: "Anna",
+	}, nil
 }
 
 func commandMessage(command, args string) *tgbotapi.Message {
@@ -518,5 +548,128 @@ func TestDisplayName_lastOnly(t *testing.T) {
 	name := displayName(&tgbotapi.User{LastName: "Petrov"})
 	if name != "Petrov" {
 		t.Fatalf("name = %q", name)
+	}
+}
+
+type fakeLinker struct {
+	link  string
+	calls [][2]uuid.UUID
+}
+
+func (f *fakeLinker) BuildClientAnalyticsLink(clientUserID, trainerID uuid.UUID) string {
+	f.calls = append(f.calls, [2]uuid.UUID{clientUserID, trainerID})
+	return f.link
+}
+
+func statsMessage() *tgbotapi.Message {
+	return &tgbotapi.Message{
+		Chat: &tgbotapi.Chat{ID: 1},
+		From: &tgbotapi.User{ID: 42},
+		Text: btnStats,
+	}
+}
+
+func TestBot_handleStats_sendsLink(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	linker := &fakeLinker{link: "https://app.example.com/stats?client_user_id=x&trainer_id=y&exp=1&sig=z"}
+	clientID := uuid.New()
+	bot := New(api, &fakeTrainerClient{clientUserID: clientID}, WithClientAnalyticsLink(linker))
+
+	bot.handleMessage(context.Background(), statsMessage())
+
+	if len(api.sent) != 1 {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+	msg := api.sent[0]
+	if !strings.Contains(msg.Text, "Anna") || !strings.Contains(msg.Text, "30 минут") {
+		t.Fatalf("text = %q", msg.Text)
+	}
+	if strings.Contains(msg.Text, linker.link) {
+		t.Fatalf("link must live in the button, not in the text: %q", msg.Text)
+	}
+	inline, ok := msg.ReplyMarkup.(tgbotapi.InlineKeyboardMarkup)
+	if !ok || len(inline.InlineKeyboard) != 1 || len(inline.InlineKeyboard[0]) != 1 {
+		t.Fatalf("reply markup = %#v", msg.ReplyMarkup)
+	}
+	btn := inline.InlineKeyboard[0][0]
+	if btn.URL == nil || *btn.URL != linker.link {
+		t.Fatalf("button = %+v", btn)
+	}
+	if len(linker.calls) != 1 || linker.calls[0][0] != clientID || linker.calls[0][1] != uuid.MustParse("22222222-2222-2222-2222-222222222222") {
+		t.Fatalf("linker calls = %+v", linker.calls)
+	}
+}
+
+func TestBot_handleStats_sendFailureFallsBackToUnavailable(t *testing.T) {
+	api := &fakeTelegramAPI{failFirst: true}
+	linker := &fakeLinker{link: "https://app.example.com/stats?client_user_id=x&trainer_id=y&exp=1&sig=z"}
+	clientID := uuid.New()
+	bot := New(api, &fakeTrainerClient{clientUserID: clientID}, WithClientAnalyticsLink(linker))
+
+	bot.handleMessage(context.Background(), statsMessage())
+
+	if len(api.sent) != 1 {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+	if !strings.Contains(api.sent[0].Text, "недоступна") {
+		t.Fatalf("fallback text = %q", api.sent[0].Text)
+	}
+}
+
+func TestBot_handleStats_noActiveTrainer(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{activeTrainerErr: trainerclient.ErrActiveTrainerNotSet},
+		WithClientAnalyticsLink(&fakeLinker{link: "https://app.example.com/stats?x=1"}))
+
+	bot.handleMessage(context.Background(), statsMessage())
+
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "Выберите тренера") {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+}
+
+func TestBot_handleStats_unknownUser(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{clientUserEr: trainerclient.ErrTelegramUserNotFound},
+		WithClientAnalyticsLink(&fakeLinker{link: "https://app.example.com/stats?x=1"}))
+
+	bot.handleMessage(context.Background(), statsMessage())
+
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "нет тренеров") {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+}
+
+func TestBot_handleStats_disabled(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{})
+
+	bot.handleMessage(context.Background(), statsMessage())
+
+	if len(api.sent) != 1 || !strings.Contains(api.sent[0].Text, "недоступна") {
+		t.Fatalf("sent = %+v", api.sent)
+	}
+	if _, ok := api.sent[0].ReplyMarkup.(tgbotapi.InlineKeyboardMarkup); ok {
+		t.Fatal("disabled feature must not send an inline button")
+	}
+}
+
+func TestBot_menu_hidesStatsWhenDisabled(t *testing.T) {
+	enabled := New(&fakeTelegramAPI{}, &fakeTrainerClient{}, WithClientAnalyticsLink(&fakeLinker{}))
+	if len(enabled.menu.Keyboard[1]) != 2 {
+		t.Fatalf("enabled menu = %+v", enabled.menu.Keyboard)
+	}
+	disabled := New(&fakeTelegramAPI{}, &fakeTrainerClient{})
+	if len(disabled.menu.Keyboard[1]) != 1 {
+		t.Fatalf("disabled menu = %+v", disabled.menu.Keyboard)
+	}
+}
+
+func TestHelpText_mentionsStatsOnlyWhenEnabled(t *testing.T) {
+	if !strings.Contains(helpText(true), btnStats) {
+		t.Fatal("enabled help must mention stats button")
+	}
+	if strings.Contains(helpText(false), btnStats) {
+		t.Fatal("disabled help must not mention stats button")
 	}
 }

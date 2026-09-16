@@ -33,3 +33,4 @@
 - [workout-completions.md](workout-completions.md) — журнал и правила cycle/day_key
 - [trainer-clients.md](trainer-clients.md) — список клиентов и назначения
 - [programs.md](programs.md) — версии и sync
+- [client-analytics.md](client-analytics.md) — та же сводка глазами клиента
