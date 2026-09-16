@@ -23,8 +23,7 @@
       "Bash(git branch --show-current:*)"
     ],
     "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)"
+      
     ]
   }
 }
