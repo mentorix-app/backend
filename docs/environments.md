@@ -12,6 +12,7 @@
 | --- | --- |
 | Web | `mentorix-api-stage` → `https://mentorix-api-stage.onrender.com` |
 | Postgres / Redis | `mentorix-db-stage` / `mentorix-redis-stage` |
+| Frontend | `https://dashboard-u7fz.onrender.com` — origin в `CORS_ALLOW_ORIGINS`, база для `CLIENT_ANALYTICS_PAGE_URL` |
 
 Plans: web **starter**, Postgres **basic-256mb** (PG 16), Redis **starter**, region **frankfurt**.
 
