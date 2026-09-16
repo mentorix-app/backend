@@ -75,7 +75,9 @@ else
     -coverpkg="$integration_coverpkg" \
     -coverprofile="$tmp/int.out" \
     ./internal/db/storetest/...
-  go run github.com/wadey/gocovmerge@latest "$tmp/unit.out" "$tmp/int.out" >"$tmp/merged.out"
+  # shellcheck source=scripts/lib/covmerge.sh
+  source "$root/scripts/lib/covmerge.sh"
+  merge_coverprofiles "$tmp/merged.out" "$tmp/unit.out" "$tmp/int.out"
 fi
 
 echo ""
