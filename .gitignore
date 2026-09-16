@@ -36,8 +36,7 @@ vendor/
 go.work
 go.work.sum
 
-# Env and secrets; only .env.example in git
-.env
+# Env: .env (committed defaults) and .env.example are in git; .env.local and other .env.* hold secrets
 .env.*
 !.env.example
 

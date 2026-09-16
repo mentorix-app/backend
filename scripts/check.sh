@@ -13,7 +13,7 @@
 # --ci skips: migrate-check, live smoke (does include docs-check, integration, coverage).
 #
 # Prerequisites (full suite):
-#   - Go toolchain, .env with DATABASE_URL (migrate-check)
+#   - Go toolchain, DATABASE_URL in .env.local/.env (migrate-check)
 #   - Postgres with TEST_DATABASE_URL (or DATABASE_URL containing mentorix_test) for integration
 #   - API on http://localhost:8080 for smoke (or use --no-smoke / SMOKE_BASE_URL)
 #   - sqlc and golangci-lint on PATH, or installed automatically via go install / go run

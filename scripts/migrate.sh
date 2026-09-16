@@ -5,14 +5,13 @@ command="${1:-up}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-if [[ ! -f .env ]]; then
-  echo "Missing .env. Copy .env.example to .env and set local DATABASE_URL first." >&2
-  exit 1
-fi
+# shellcheck source=scripts/lib/env.sh
+source "$root/scripts/lib/env.sh"
+require_env_files
 
-database_url="$(grep -E '^DATABASE_URL=' .env | head -n1 | cut -d= -f2- | tr -d '\r' | xargs)"
+database_url="$(env_value DATABASE_URL)"
 if [[ -z "$database_url" ]]; then
-  echo "DATABASE_URL is not set in .env" >&2
+  echo "DATABASE_URL is not set (shell, .env.local or .env)" >&2
   exit 1
 fi
 

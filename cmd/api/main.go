@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
@@ -39,7 +38,7 @@ const (
 )
 
 func main() {
-	_ = godotenv.Load()
+	config.LoadDotenv()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,

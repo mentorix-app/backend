@@ -36,8 +36,8 @@ build: ## Build bin/api
 	@mkdir -p bin
 	go build -o bin/api ./cmd/api
 
-setup: install-hooks ## First time: .env, migrate, pre-commit
-	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example")
+setup: install-hooks ## First time: .env.local, migrate, pre-commit
+	@test -f .env.local || (cp .env.example .env.local && echo "Created .env.local from .env.example — fill in JWT_SECRET and other secrets")
 	@$(MAKE) migrate
 
 # --- db ---

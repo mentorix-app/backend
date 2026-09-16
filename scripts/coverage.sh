@@ -58,16 +58,13 @@ go test -count=1 -covermode=atomic -coverprofile="$tmp/unit.out" "${packages[@]}
 
 echo ""
 echo "=== Store integration coverage ==="
-if [[ -z "${TEST_DATABASE_URL:-}" && -z "${DATABASE_URL:-}" && -f .env ]]; then
-  while IFS= read -r line; do
-    case "$line" in
-      TEST_DATABASE_URL=*|DATABASE_URL=*)
-        key="${line%%=*}"
-        val="${line#*=}"
-        export "$key=$val"
-        ;;
-    esac
-  done < <(grep -E '^(TEST_DATABASE_URL|DATABASE_URL)=' .env | tr -d '\r' || true)
+if [[ -z "${TEST_DATABASE_URL:-}" && -z "${DATABASE_URL:-}" ]]; then
+  # shellcheck source=scripts/lib/env.sh
+  source "$root/scripts/lib/env.sh"
+  test_db="$(env_value TEST_DATABASE_URL)"
+  app_db="$(env_value DATABASE_URL)"
+  [[ -n "$test_db" ]] && export TEST_DATABASE_URL="$test_db"
+  [[ -n "$app_db" ]] && export DATABASE_URL="$app_db"
 fi
 if [[ -z "${TEST_DATABASE_URL:-}" && -z "${DATABASE_URL:-}" ]]; then
   echo "WARN: TEST_DATABASE_URL/DATABASE_URL not set — skipping integration coverage merge" >&2
