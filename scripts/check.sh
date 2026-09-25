@@ -44,7 +44,7 @@ for arg in "$@"; do
     --no-coverage) skip_coverage=1 ;;
     --no-docs-check) skip_docs_check=1 ;;
     -h|--help)
-      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -114,8 +114,8 @@ else
   ok
 fi
 
-step "go vet"
-if go vet ./...; then ok; else fail "go vet"; fi
+step "go vet (incl. integration tag)"
+if go vet -tags integration ./...; then ok; else fail "go vet (incl. integration tag)"; fi
 
 step "go test"
 if go test ./... -count=1; then ok; else fail "go test"; fi
