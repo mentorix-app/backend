@@ -16,7 +16,7 @@ AIR_VERSION ?= v1.61.7
 .PHONY: help dev run build setup \
 	migrate migrate-down schema-sync sqlc \
 	psql redis psql-stage redis-stage \
-	check check-ci \
+	check check-ci check-quick \
 	install-hooks install-tools \
 	install-migrate install-sqlc install-lint install-air
 
@@ -73,16 +73,19 @@ redis-stage: ## redis-cli → Render stage Key Value (.env.stage)
 check: ## Full local QA (migrate-check + smoke if API up)
 	$(SCRIPTS)/check.sh $(CHECK_FLAGS)
 
-check-ci: ## Same as GitHub CI / pre-commit
+check-ci: ## Same as GitHub CI
 	$(SCRIPTS)/check.sh --ci $(CHECK_FLAGS)
+
+check-quick: ## Fast subset run by pre-commit (fmt, vet, unit, lint)
+	$(SCRIPTS)/check.sh --quick
 
 # --- tooling ---
 
-install-hooks: ## Install pre-commit → make check-ci
+install-hooks: ## Install pre-commit → make check-quick
 	@test -d .git/hooks || (echo "Not a git repository (.git/hooks missing)" >&2 && exit 1)
 	@cp $(SCRIPTS)/git-hooks/pre-commit .git/hooks/pre-commit
 	@chmod +x .git/hooks/pre-commit
-	@echo "Installed .git/hooks/pre-commit → make check-ci"
+	@echo "Installed .git/hooks/pre-commit → make check-quick"
 
 install-tools: install-migrate install-sqlc install-lint install-air ## Install migrate, sqlc, lint, air
 

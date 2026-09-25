@@ -35,7 +35,7 @@
 
 ## QA
 
-- **Pre-commit:** `make install-hooks` — `make check-ci` ([`scripts/git-hooks/pre-commit`](../scripts/git-hooks/pre-commit)); входит в `make setup`.
+- **Pre-commit:** `make install-hooks` — `make check-quick`: gofmt, vet, unit, lint ([`scripts/git-hooks/pre-commit`](../scripts/git-hooks/pre-commit)); входит в `make setup`.
 - **Перед коммитом:** актуальность docs/rules — [CLAUDE.md](../CLAUDE.md) § Docs sync (`docs-check` внутри check-ci).
 - **Перед push:** `make check` — [CLAUDE.md](../CLAUDE.md) § Technical QA, [`scripts/check.sh`](../scripts/check.sh).
 - **CI/CD:** [environments.md](environments.md).

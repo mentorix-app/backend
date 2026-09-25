@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Installed by: make install-hooks
-# Runs CI-parity checks before each commit (make check-ci).
+# Runs fast checks before each commit (make check-quick): gofmt, vet, unit, lint.
+# Integration, coverage, sqlc drift and docs-check run in CI (make check-ci).
 #
-# Override: PRE_COMMIT_CHECK_FLAGS='--no-coverage' git commit …
-# Full local suite (migrate-check + smoke): make check
+# Skip once: git commit --no-verify
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-echo "=== pre-commit: make check-ci ==="
-# shellcheck disable=SC2086
-make check-ci CHECK_FLAGS="${PRE_COMMIT_CHECK_FLAGS:-}"
+echo "=== pre-commit: make check-quick ==="
+make check-quick
