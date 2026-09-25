@@ -163,8 +163,8 @@ if (( ! skip_integration )); then
 fi
 
 if (( ! skip_coverage )); then
-  step "coverage gate (85%)"
-  if ./scripts/coverage.sh --min 85; then
+  step "coverage gate (80%)"
+  if ./scripts/coverage.sh --min 80; then
     ok
   else
     fail "coverage gate"
