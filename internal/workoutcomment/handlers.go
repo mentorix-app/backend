@@ -30,7 +30,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.POST("/clients/:client_user_id/completions/:completion_id/comments", h.CreateComment)
 }
 
-type createCommentRequest struct {
+type CreateCompletionCommentRequest struct {
 	Text string `json:"text"`
 }
 
@@ -47,7 +47,7 @@ func (h *Handlers) CreateComment(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var req createCommentRequest
+	var req CreateCompletionCommentRequest
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}

@@ -208,7 +208,7 @@ func TestHandlers_ReorderDayBlocks(t *testing.T) {
 func TestPatchBlockBody_toInput(t *testing.T) {
 	blockType := BlockTypeEMOM
 	instr := "work"
-	got := patchBlockBody{BlockType: &blockType, Instruction: &instr}.toInput()
+	got := DayBlockPatchRequest{BlockType: &blockType, Instruction: &instr}.toInput()
 	if got.BlockType == nil || *got.BlockType != BlockTypeEMOM || got.Instruction == nil || *got.Instruction != instr {
 		t.Fatalf("toInput() = %+v", got)
 	}

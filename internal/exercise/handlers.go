@@ -38,15 +38,15 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	base.PUT("/:id", h.Update)
 }
 
-type deleteManyResponse struct {
+type DeleteResult struct {
 	DeletedCount int64 `json:"deleted_count"`
 }
 
-type deleteManyBody struct {
+type DeleteRequest struct {
 	IDs []string `json:"ids"`
 }
 
-type upsertBody struct {
+type UpsertRequest struct {
 	Name            string       `json:"name"`
 	NameRu          string       `json:"name_ru"`
 	Equipment       *Equipment   `json:"equipment"`
@@ -59,7 +59,7 @@ type upsertBody struct {
 	PreviewImageURL string       `json:"preview_image_url"`
 }
 
-func (b upsertBody) toInput() UpsertInput {
+func (b UpsertRequest) toInput() UpsertInput {
 	return UpsertInput(b)
 }
 
@@ -121,7 +121,7 @@ func (h *Handlers) Create(c echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
 	}
-	var body upsertBody
+	var body UpsertRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -151,7 +151,7 @@ func (h *Handlers) Update(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body upsertBody
+	var body UpsertRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -180,7 +180,7 @@ func (h *Handlers) DeleteMany(c echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
 	}
-	var body deleteManyBody
+	var body DeleteRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -209,5 +209,5 @@ func (h *Handlers) DeleteMany(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "delete failed")
 	}
-	return c.JSON(http.StatusOK, deleteManyResponse{DeletedCount: count})
+	return c.JSON(http.StatusOK, DeleteResult{DeletedCount: count})
 }

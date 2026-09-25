@@ -494,7 +494,7 @@ func TestDeleteMany(t *testing.T) {
 			if tt.wantStatus != http.StatusOK {
 				return
 			}
-			var resp deleteManyResponse
+			var resp DeleteResult
 			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 				t.Fatalf("unmarshal: %v", err)
 			}

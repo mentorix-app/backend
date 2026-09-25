@@ -67,7 +67,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.PUT("/:id/weeks/:week_id/blocks/:block_id/clients", h.SetBlockClients)
 }
 
-type patchBody struct {
+type PatchRequest struct {
 	Name            *string              `json:"name"`
 	NameRu          *string              `json:"name_ru"`
 	Description     *string              `json:"description"`
@@ -77,7 +77,7 @@ type patchBody struct {
 	PreviewImageURL *string              `json:"preview_image_url"`
 }
 
-func (b patchBody) toInput() UpdateInput {
+func (b PatchRequest) toInput() UpdateInput {
 	var diff *Difficulty
 	if b.Difficulty != nil {
 		d := Difficulty(*b.Difficulty)
@@ -94,14 +94,14 @@ func (b patchBody) toInput() UpdateInput {
 	}
 }
 
-type dayExerciseBody struct {
+type DayExerciseUpsertRequest struct {
 	ExerciseID  string  `json:"exercise_id"`
 	Sets        *string `json:"sets"`
 	Reps        *string `json:"reps"`
 	Instruction *string `json:"instruction"`
 }
 
-func (b dayExerciseBody) toInput() (DayExerciseInput, error) {
+func (b DayExerciseUpsertRequest) toInput() (DayExerciseInput, error) {
 	exerciseID, err := uuid.Parse(b.ExerciseID)
 	if err != nil {
 		return DayExerciseInput{}, err
@@ -116,13 +116,13 @@ func (b dayExerciseBody) toInput() (DayExerciseInput, error) {
 	return in, nil
 }
 
-type createDayBlockBody struct {
-	BlockType BlockType        `json:"block_type"`
-	SortOrder int              `json:"sort_order"`
-	Exercise  *dayExerciseBody `json:"exercise"`
+type DayBlockCreateRequest struct {
+	BlockType BlockType                 `json:"block_type"`
+	SortOrder int                       `json:"sort_order"`
+	Exercise  *DayExerciseUpsertRequest `json:"exercise"`
 }
 
-func (b createDayBlockBody) toInput() (CreateDayBlockInput, error) {
+func (b DayBlockCreateRequest) toInput() (CreateDayBlockInput, error) {
 	in := CreateDayBlockInput{
 		BlockType: b.BlockType,
 		SortOrder: b.SortOrder,
@@ -137,45 +137,46 @@ func (b createDayBlockBody) toInput() (CreateDayBlockInput, error) {
 	return in, nil
 }
 
-type reorderBlocksBody struct {
+type DayBlocksReorderRequest struct {
 	BlockIDs []string `json:"block_ids"`
 }
 
-type reorderBlockExercisesBody struct {
+// BlockExercisesReorderRequest is the HTTP body; the parsed domain input is BlockExerciseReorder.
+type BlockExercisesReorderRequest struct {
 	ExerciseItemIDs []string `json:"exercise_item_ids"`
 }
 
-type mergeBlocksBody struct {
+type DayBlocksMergeRequest struct {
 	BlockIDs []string `json:"block_ids"`
 }
 
-type patchBlockBody struct {
+type DayBlockPatchRequest struct {
 	BlockType   *BlockType `json:"block_type"`
 	Instruction *string    `json:"instruction"`
 }
 
-func (b patchBlockBody) toInput() BlockPatchInput {
+func (b DayBlockPatchRequest) toInput() BlockPatchInput {
 	return BlockPatchInput(b)
 }
 
-type moveBlockBody struct {
+type DayBlockMoveRequest struct {
 	TargetDayID string `json:"target_day_id"`
 	SortOrder   *int   `json:"sort_order"`
 }
 
-type moveExerciseBody struct {
+type ExerciseMoveRequest struct {
 	TargetBlockID string `json:"target_block_id"`
 }
 
-type extractExerciseBody struct {
+type BlockExerciseExtractRequest struct {
 	SortOrder *int `json:"sort_order"`
 }
 
-type reorderWeeksBody struct {
+type WeeksReorderRequest struct {
 	WeekIDs []string `json:"week_ids"`
 }
 
-type reorderDaysBody struct {
+type DaysReorderRequest struct {
 	DayIDs []string `json:"day_ids"`
 }
 
@@ -253,7 +254,7 @@ func (h *Handlers) Update(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body patchBody
+	var body PatchRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -479,7 +480,7 @@ func (h *Handlers) ReorderWeeks(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body reorderWeeksBody
+	var body WeeksReorderRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -507,7 +508,7 @@ func (h *Handlers) ReorderDays(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body reorderDaysBody
+	var body DaysReorderRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -539,7 +540,7 @@ func (h *Handlers) ReorderDayBlocks(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body reorderBlocksBody
+	var body DayBlocksReorderRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -571,7 +572,7 @@ func (h *Handlers) ReorderBlockExercises(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body reorderBlockExercisesBody
+	var body BlockExercisesReorderRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -603,7 +604,7 @@ func (h *Handlers) CreateDayBlock(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body createDayBlockBody
+	var body DayBlockCreateRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -675,7 +676,7 @@ func (h *Handlers) blockExerciseItemAction(c echo.Context, status int, fn blockE
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body dayExerciseBody
+	var body DayExerciseUpsertRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
