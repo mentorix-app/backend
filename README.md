@@ -16,11 +16,9 @@ make dev             # API with hot reload
 
 **Check:** `GET http://localhost:8080/health` → `{"status":"ok"}`
 
-## Postman
+## API contract
 
-Import `postman/mentorix-backend.postman_collection.json` + `mentorix-local.postman_environment.json`.
-
-Validate contract: `SKIP_SMOKE=1 ./postman/validate.sh` (also inside `make check-ci`)
+Canon: `api/openapi.yaml`. Checked against Go routes and types by `go test ./internal/apicheck/...` (also inside `make check-ci`).
 
 Local + Render stage (CI/CD): [docs/environments.md](docs/environments.md). Prod later.
 

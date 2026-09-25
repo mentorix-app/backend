@@ -118,11 +118,9 @@ fi
 step "golangci-lint"
 if run_lint; then ok; else fail "golangci-lint"; fi
 
-step "contract validation (postman + apicheck)"
-if (( skip_smoke )); then
-  if SKIP_SMOKE=1 ./postman/validate.sh; then ok; else fail "contract validation"; fi
-else
-  if ./postman/validate.sh; then ok; else fail "contract validation"; fi
+if (( ! skip_smoke )); then
+  step "live API smoke"
+  if ./scripts/smoke.sh; then ok; else fail "live API smoke"; fi
 fi
 
 if (( ! skip_docs_check )); then
