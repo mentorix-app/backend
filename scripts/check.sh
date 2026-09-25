@@ -3,7 +3,8 @@
 #
 # Usage:
 #   ./scripts/check.sh              full suite (default)
-#   ./scripts/check.sh --ci         CI parity (GitHub Actions / pre-commit)
+#   ./scripts/check.sh --ci         CI parity (GitHub Actions)
+#   ./scripts/check.sh --quick      fast subset for pre-commit
 #   ./scripts/check.sh --no-coverage
 #   ./scripts/check.sh --no-smoke   skip live API smoke (API need not be running)
 #   ./scripts/check.sh --no-integration
@@ -11,6 +12,7 @@
 #   ./scripts/check.sh --no-docs-check
 #
 # --ci skips: migrate-check, live smoke (does include docs-check, integration, coverage).
+# --quick runs only gofmt, go vet, go test, golangci-lint.
 #
 # Prerequisites (full suite):
 #   - Go toolchain, DATABASE_URL in .env (migrate-check)
@@ -23,6 +25,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 ci_only=0
+quick=0
+skip_build=0
+skip_sqlc=0
 skip_smoke=0
 skip_integration=0
 skip_migrate_check=0
@@ -32,13 +37,14 @@ skip_docs_check=0
 for arg in "$@"; do
   case "$arg" in
     --ci) ci_only=1 ;;
+    --quick) quick=1 ;;
     --no-smoke) skip_smoke=1 ;;
     --no-integration) skip_integration=1 ;;
     --no-migrate-check) skip_migrate_check=1 ;;
     --no-coverage) skip_coverage=1 ;;
     --no-docs-check) skip_docs_check=1 ;;
     -h|--help)
-      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -51,6 +57,16 @@ done
 if (( ci_only )); then
   skip_smoke=1
   skip_migrate_check=1
+fi
+
+if (( quick )); then
+  skip_build=1
+  skip_sqlc=1
+  skip_smoke=1
+  skip_docs_check=1
+  skip_migrate_check=1
+  skip_integration=1
+  skip_coverage=1
 fi
 
 export PATH="$(go env GOPATH)/bin:$PATH"
@@ -98,21 +114,25 @@ else
   ok
 fi
 
-step "go vet"
-if go vet ./...; then ok; else fail "go vet"; fi
+step "go vet (incl. integration tag)"
+if go vet -tags integration ./...; then ok; else fail "go vet (incl. integration tag)"; fi
 
 step "go test"
 if go test ./... -count=1; then ok; else fail "go test"; fi
 
-step "go build"
-if go build -o /dev/null ./...; then ok; else fail "go build"; fi
+if (( ! skip_build )); then
+  step "go build"
+  if go build -o /dev/null ./...; then ok; else fail "go build"; fi
+fi
 
-step "sqlc generate (up to date)"
-ensure_sqlc
-if sqlc generate && git diff --exit-code internal/db/sqlc/; then
-  ok
-else
-  fail "sqlc generate (up to date)"
+if (( ! skip_sqlc )); then
+  step "sqlc generate (up to date)"
+  ensure_sqlc
+  if sqlc generate && git diff --exit-code internal/db/sqlc/; then
+    ok
+  else
+    fail "sqlc generate (up to date)"
+  fi
 fi
 
 step "golangci-lint"

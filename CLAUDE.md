@@ -50,12 +50,12 @@ Canon: code + OpenAPI + schema.
 Docs-only commits: still check links, duplicates, contradictions.
 
 **Pre-commit hook:** after `make install-hooks` (included in `make setup`), each
-`git commit` runs `make check-ci`. Override:
-`PRE_COMMIT_CHECK_FLAGS=--no-coverage git commit …`.
+`git commit` runs `make check-quick` (gofmt, vet, unit, lint). docs-check,
+integration and coverage run in CI. Skip once: `git commit --no-verify`.
 
 ## Technical QA — before push
 
-Full run: `make check`. CI / pre-commit: `make check-ci`.
+Full run: `make check`. CI: `make check-ci`. Pre-commit: `make check-quick`.
 
 | Step | In `check-ci` | Full `check` only |
 | ---- | --- | --- |

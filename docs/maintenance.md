@@ -32,7 +32,7 @@
 ## Перед коммитом
 
 1. Сверить diff с docs/rules/status ([CLAUDE.md](../CLAUDE.md) § Docs sync).
-2. Pre-commit / вручную: `make check-ci` (включает docs-check).
+2. Вручную: `./scripts/docs-check.sh` или `make check-ci`. Pre-commit (`make check-quick`) docs-check не запускает — он идёт в CI.
 
 ## Перед push
 
