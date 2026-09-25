@@ -32,7 +32,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.DELETE("/trainers/:user_id/plan", h.RevokePlan)
 }
 
-type grantPlanBody struct {
+type GrantPlanRequest struct {
 	Plan subscription.Plan `json:"plan"`
 }
 
@@ -46,7 +46,7 @@ func (h *Handlers) GrantPlan(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidUserID)
 	}
-	var body grantPlanBody
+	var body GrantPlanRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}

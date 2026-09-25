@@ -5,11 +5,13 @@ import (
 	"reflect"
 	"strings"
 
+	"mentorix-backend/internal/admin"
 	"mentorix-backend/internal/analytics"
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/subscription"
 	"mentorix-backend/internal/trainerclient"
 	"mentorix-backend/internal/workoutcomment"
 )
@@ -31,26 +33,11 @@ func schemaBindings() []schemaBinding {
 		{name: "TokenResponse", typ: reflect.TypeOf(auth.TokenResponse{})},
 		{name: "MeResponse", typ: reflect.TypeOf(auth.MeResponse{})},
 		{name: "ExerciseListResponse", typ: reflect.TypeOf(exercise.ListResult{})},
-		{name: "ExerciseDeleteRequest", typ: reflect.TypeOf(struct {
-			IDs []string `json:"ids"`
-		}{})},
-		{name: "ExerciseDeleteResponse", typ: reflect.TypeOf(struct {
-			DeletedCount int64 `json:"deleted_count"`
-		}{})},
+		{name: "ExerciseDeleteRequest", typ: reflect.TypeOf(exercise.DeleteRequest{})},
+		{name: "ExerciseDeleteResponse", typ: reflect.TypeOf(exercise.DeleteResult{})},
 		{name: "Pagination", typ: reflect.TypeOf(exercise.Pagination{})},
 		{name: "Exercise", typ: reflect.TypeOf(exercise.Exercise{})},
-		{name: "ExerciseUpsert", typ: reflect.TypeOf(struct {
-			Name            string                `json:"name"`
-			NameRu          string                `json:"name_ru"`
-			Equipment       *exercise.Equipment   `json:"equipment"`
-			Type            exercise.ExerciseType `json:"type"`
-			MuscleGroup     exercise.MuscleGroup  `json:"muscle_group"`
-			Description     string                `json:"description"`
-			DescriptionRu   string                `json:"description_ru"`
-			Difficulty      exercise.Difficulty   `json:"difficulty"`
-			VideoURL        string                `json:"video_url"`
-			PreviewImageURL string                `json:"preview_image_url"`
-		}{})},
+		{name: "ExerciseUpsert", typ: reflect.TypeOf(exercise.UpsertRequest{})},
 		{name: "Program", typ: reflect.TypeOf(program.Program{})},
 		{name: "ProgramWeek", typ: reflect.TypeOf(program.Week{})},
 		{name: "ProgramDayExercise", typ: reflect.TypeOf(program.DayExercise{})},
@@ -58,63 +45,19 @@ func schemaBindings() []schemaBinding {
 		{name: "ProgramDay", typ: reflect.TypeOf(program.Day{})},
 		{name: "ProgramDetail", typ: reflect.TypeOf(program.Detail{})},
 		{name: "ProgramListResponse", typ: reflect.TypeOf(program.ListResult{})},
-		{name: "ProgramPatch", typ: reflect.TypeOf(struct {
-			Name            *string              `json:"name"`
-			NameRu          *string              `json:"name_ru"`
-			Description     *string              `json:"description"`
-			DescriptionRu   *string              `json:"description_ru"`
-			Category        *program.Category    `json:"category"`
-			Difficulty      *exercise.Difficulty `json:"difficulty"`
-			PreviewImageURL *string              `json:"preview_image_url"`
-		}{})},
-		{name: "ProgramWeeksReorder", typ: reflect.TypeOf(struct {
-			WeekIDs []string `json:"week_ids"`
-		}{})},
-		{name: "ProgramDaysReorder", typ: reflect.TypeOf(struct {
-			DayIDs []string `json:"day_ids"`
-		}{})},
-		{name: "ProgramDayBlockCreate", typ: reflect.TypeOf(struct {
-			BlockType program.BlockType `json:"block_type"`
-			SortOrder int               `json:"sort_order"`
-			Exercise  *struct {
-				ExerciseID  string  `json:"exercise_id"`
-				Sets        *string `json:"sets"`
-				Reps        *string `json:"reps"`
-				Instruction *string `json:"instruction"`
-			} `json:"exercise"`
-		}{})},
-		{name: "ProgramDayBlocksReorder", typ: reflect.TypeOf(struct {
-			BlockIDs []string `json:"block_ids"`
-		}{})},
-		{name: "ProgramBlockExercisesReorder", typ: reflect.TypeOf(struct {
-			ExerciseItemIDs []string `json:"exercise_item_ids"`
-		}{})},
-		{name: "ProgramDayBlocksMerge", typ: reflect.TypeOf(struct {
-			BlockIDs []string `json:"block_ids"`
-		}{})},
-		{name: "ProgramDayBlockPatch", typ: reflect.TypeOf(struct {
-			BlockType   *program.BlockType `json:"block_type"`
-			Instruction *string            `json:"instruction"`
-		}{})},
-		{name: "ProgramDayBlockMove", typ: reflect.TypeOf(struct {
-			TargetDayID string `json:"target_day_id"`
-			SortOrder   *int   `json:"sort_order"`
-		}{})},
-		{name: "ProgramBlockClientsSet", typ: reflect.TypeOf(struct {
-			ClientUserIDs *[]string `json:"client_user_ids"`
-		}{})},
-		{name: "ProgramBlockExerciseExtract", typ: reflect.TypeOf(struct {
-			SortOrder *int `json:"sort_order"`
-		}{})},
-		{name: "ProgramExerciseMove", typ: reflect.TypeOf(struct {
-			TargetBlockID string `json:"target_block_id"`
-		}{})},
-		{name: "ProgramDayExerciseUpsert", typ: reflect.TypeOf(struct {
-			ExerciseID  string  `json:"exercise_id"`
-			Sets        *string `json:"sets"`
-			Reps        *string `json:"reps"`
-			Instruction *string `json:"instruction"`
-		}{})},
+		{name: "ProgramPatch", typ: reflect.TypeOf(program.PatchRequest{})},
+		{name: "ProgramWeeksReorder", typ: reflect.TypeOf(program.WeeksReorderRequest{})},
+		{name: "ProgramDaysReorder", typ: reflect.TypeOf(program.DaysReorderRequest{})},
+		{name: "ProgramDayBlockCreate", typ: reflect.TypeOf(program.DayBlockCreateRequest{})},
+		{name: "ProgramDayBlocksReorder", typ: reflect.TypeOf(program.DayBlocksReorderRequest{})},
+		{name: "ProgramBlockExercisesReorder", typ: reflect.TypeOf(program.BlockExercisesReorderRequest{})},
+		{name: "ProgramDayBlocksMerge", typ: reflect.TypeOf(program.DayBlocksMergeRequest{})},
+		{name: "ProgramDayBlockPatch", typ: reflect.TypeOf(program.DayBlockPatchRequest{})},
+		{name: "ProgramDayBlockMove", typ: reflect.TypeOf(program.DayBlockMoveRequest{})},
+		{name: "ProgramBlockClientsSet", typ: reflect.TypeOf(program.BlockClientsSetRequest{})},
+		{name: "ProgramBlockExerciseExtract", typ: reflect.TypeOf(program.BlockExerciseExtractRequest{})},
+		{name: "ProgramExerciseMove", typ: reflect.TypeOf(program.ExerciseMoveRequest{})},
+		{name: "ProgramDayExerciseUpsert", typ: reflect.TypeOf(program.DayExerciseUpsertRequest{})},
 		{name: "ProgramAssignment", typ: reflect.TypeOf(program.Assignment{})},
 		{name: "ProgramAssignmentListResponse", typ: reflect.TypeOf(program.AssignmentListResult{})},
 		{name: "BulkSetClientProgramAssignmentRequest", typ: reflect.TypeOf(program.BulkSetClientProgramAssignmentRequest{})},
@@ -144,12 +87,8 @@ func schemaBindings() []schemaBinding {
 		{name: "ClientCompletionsResponse", typ: reflect.TypeOf(analytics.CompletionsResult{})},
 		{name: "ClientCompletionItem", typ: reflect.TypeOf(analytics.CompletionItem{})},
 		{name: "CompletionComment", typ: reflect.TypeOf(workoutcomment.Comment{})},
-		{name: "GrantPlanRequest", typ: reflect.TypeOf(struct {
-			Plan string `json:"plan"`
-		}{})},
-		{name: "CreateCompletionCommentRequest", typ: reflect.TypeOf(struct {
-			Text string `json:"text"`
-		}{})},
+		{name: "GrantPlanRequest", typ: reflect.TypeOf(admin.GrantPlanRequest{})},
+		{name: "CreateCompletionCommentRequest", typ: reflect.TypeOf(workoutcomment.CreateCompletionCommentRequest{})},
 		{name: "ProgramsAnalyticsResponse", typ: reflect.TypeOf(analytics.ProgramsAnalyticsResult{})},
 		{name: "ProgramAnalyticsItem", typ: reflect.TypeOf(analytics.ProgramAnalyticsItem{})},
 		{name: "ProgramAnalytics", typ: reflect.TypeOf(analytics.ProgramAnalytics{})},
@@ -263,6 +202,9 @@ func enumBindings() []enumBinding {
 			string(program.BlockTypeLadder), string(program.BlockTypeDeathBy), string(program.BlockTypeSuperset),
 			string(program.BlockTypeComplex), string(program.BlockTypeSkillWork), string(program.BlockTypeStrength),
 			string(program.BlockTypeConditioning), string(program.BlockTypeGymnastics), string(program.BlockTypeWeightlifting),
+		}},
+		{name: "PlanCode", values: []string{
+			string(subscription.PlanFree), string(subscription.PlanAdvance), string(subscription.PlanElite),
 		}},
 	}
 }

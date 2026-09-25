@@ -95,7 +95,7 @@ Include `created_at` when column exists (except health).
 
 1. Echo route (match patterns above)
 2. `api/openapi.yaml`
-3. `internal/apicheck/schema.go` if new schemas (every request body schema needs a binding)
+3. `internal/apicheck/schema.go` if new schemas (every request body schema needs a binding); bind the handler's exported body type, never an anonymous struct copy
 4. `docs/features/<feature>.md` — behavior only, not path inventory
 
 Run: `go test ./internal/apicheck/...`

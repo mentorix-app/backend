@@ -15,14 +15,19 @@ func repoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
 }
 
-func TestGoRoutesMatchOpenAPI(t *testing.T) {
-	root := repoRoot(t)
-	goRoutes := GoRoutes(nil)
-
-	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))
+func loadRepoOpenAPI(t *testing.T) *openAPIDoc {
+	t.Helper()
+	doc, err := LoadOpenAPI(filepath.Join(repoRoot(t), "api/openapi.yaml"))
 	if err != nil {
 		t.Fatalf("load openapi: %v", err)
 	}
+	return doc
+}
+
+func TestGoRoutesMatchOpenAPI(t *testing.T) {
+	goRoutes := GoRoutes(nil)
+
+	openapi := loadRepoOpenAPI(t)
 
 	if missing, extra := diffRoutes(goRoutes, openapi.Routes()); len(missing)+len(extra) > 0 {
 		t.Error(formatRouteDiff("OpenAPI vs Go", missing, extra))
@@ -30,11 +35,7 @@ func TestGoRoutesMatchOpenAPI(t *testing.T) {
 }
 
 func TestOpenAPISchemasMatchGoTypes(t *testing.T) {
-	root := repoRoot(t)
-	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))
-	if err != nil {
-		t.Fatalf("load openapi: %v", err)
-	}
+	openapi := loadRepoOpenAPI(t)
 
 	for _, bind := range schemaBindings() {
 		t.Run(bind.name, func(t *testing.T) {
@@ -51,11 +52,7 @@ func TestOpenAPISchemasMatchGoTypes(t *testing.T) {
 }
 
 func TestOpenAPIEnumsMatchGoConstants(t *testing.T) {
-	root := repoRoot(t)
-	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))
-	if err != nil {
-		t.Fatalf("load openapi: %v", err)
-	}
+	openapi := loadRepoOpenAPI(t)
 
 	for _, bind := range enumBindings() {
 		t.Run(bind.name, func(t *testing.T) {
@@ -73,11 +70,7 @@ func TestOpenAPIEnumsMatchGoConstants(t *testing.T) {
 // Every JSON request body schema must be bound to a Go type, otherwise
 // TestOpenAPISchemasMatchGoTypes never checks it.
 func TestRequestBodySchemasHaveGoBinding(t *testing.T) {
-	root := repoRoot(t)
-	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))
-	if err != nil {
-		t.Fatalf("load openapi: %v", err)
-	}
+	openapi := loadRepoOpenAPI(t)
 
 	bound := make(map[string]struct{})
 	for _, bind := range schemaBindings() {

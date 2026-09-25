@@ -26,23 +26,15 @@ func TestLoadOpenAPI_invalidYAML(t *testing.T) {
 }
 
 func TestSchemaPropertyNames_unknownSchema(t *testing.T) {
-	root := repoRoot(t)
-	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))
-	if err != nil {
-		t.Fatalf("load openapi: %v", err)
-	}
-	_, err = openapi.SchemaPropertyNames("NotARealSchema")
+	openapi := loadRepoOpenAPI(t)
+	_, err := openapi.SchemaPropertyNames("NotARealSchema")
 	if err == nil {
 		t.Fatal("expected error for unknown schema")
 	}
 }
 
 func TestRequestBodySchemaName_knownRoute(t *testing.T) {
-	root := repoRoot(t)
-	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))
-	if err != nil {
-		t.Fatalf("load openapi: %v", err)
-	}
+	openapi := loadRepoOpenAPI(t)
 	name, ok, err := openapi.RequestBodySchemaName("POST", "/auth/login")
 	if err != nil {
 		t.Fatalf("RequestBodySchemaName() error = %v", err)
@@ -53,11 +45,7 @@ func TestRequestBodySchemaName_knownRoute(t *testing.T) {
 }
 
 func TestRequestBodySchemaName_missingPath(t *testing.T) {
-	root := repoRoot(t)
-	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))
-	if err != nil {
-		t.Fatalf("load openapi: %v", err)
-	}
+	openapi := loadRepoOpenAPI(t)
 	name, ok, err := openapi.RequestBodySchemaName("POST", "/v1/no-such-route")
 	if err != nil {
 		t.Fatalf("RequestBodySchemaName() error = %v", err)

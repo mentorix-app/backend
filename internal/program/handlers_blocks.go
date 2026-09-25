@@ -26,7 +26,7 @@ func (h *Handlers) PatchDayBlock(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	var body patchBlockBody
+	var body DayBlockPatchRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -54,7 +54,7 @@ func (h *Handlers) MergeDayBlocks(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body mergeBlocksBody
+	var body DayBlocksMergeRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -118,7 +118,7 @@ func (h *Handlers) MoveDayBlock(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body moveBlockBody
+	var body DayBlockMoveRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -158,7 +158,7 @@ func (h *Handlers) ExtractBlockExercise(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body extractExerciseBody
+	var body BlockExerciseExtractRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -194,7 +194,7 @@ func (h *Handlers) MoveExerciseToBlock(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body moveExerciseBody
+	var body ExerciseMoveRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -228,7 +228,7 @@ func (h *Handlers) blockExerciseAction(c echo.Context, status int, fn blockExerc
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
 	}
-	var body dayExerciseBody
+	var body DayExerciseUpsertRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
@@ -243,7 +243,7 @@ func (h *Handlers) blockExerciseAction(c echo.Context, status int, fn blockExerc
 	return c.JSON(status, d)
 }
 
-type setBlockClientsBody struct {
+type BlockClientsSetRequest struct {
 	// Pointer so an omitted field is distinguishable from an explicit []:
 	// the former is a malformed request (400), the latter clears the block
 	// back to shared.
@@ -259,7 +259,7 @@ func (h *Handlers) SetBlockClients(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	var body setBlockClientsBody
+	var body BlockClientsSetRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
