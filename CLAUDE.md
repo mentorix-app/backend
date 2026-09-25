@@ -21,7 +21,7 @@ Rules are **not** auto-loaded. Read the file below before writing in that area.
 | `**/*.go` | [go-code.md](.claude/rules/go-code.md) |
 | `db/**` — migrations, queries, schema | [database-naming.md](.claude/rules/database-naming.md) |
 | Redis keys in `internal/**` | [redis-naming.md](.claude/rules/redis-naming.md) |
-| `api/openapi.yaml`, handlers, `internal/apicheck`, `postman/**` | [api-endpoints.md](.claude/rules/api-endpoints.md) |
+| `api/openapi.yaml`, handlers, `internal/apicheck` | [api-endpoints.md](.claude/rules/api-endpoints.md) |
 | docs, rules, `docs/status.md` | [docs-and-rules-maintenance.md](.claude/rules/docs-and-rules-maintenance.md) |
 
 Changelog for frontend / Telegram: `/changelog` skill.
@@ -35,7 +35,7 @@ No commit with code/API/DB changes without aligned docs/rules.
 | If diff touches… | Update / verify |
 | ---------------- | --------------- |
 | `internal/<feature>/`, handlers, service | `docs/features/<feature>.md` |
-| `api/openapi.yaml`, Postman, apicheck | same feature doc; remove stale endpoints from docs |
+| `api/openapi.yaml`, apicheck | same feature doc; remove stale endpoints from docs |
 | `db/migrations/`, `db/queries/` | feature doc tables; new capability → `docs/status.md` |
 | New naming/process pattern | matching `.claude/rules/*.md` |
 | Docs/rules only | no conflict with code, OpenAPI, `db/schema.sql` |
@@ -59,10 +59,9 @@ Full run: `make check`. CI / pre-commit: `make check-ci`.
 
 | Step | In `check-ci` | Full `check` only |
 | ---- | --- | --- |
-| gofmt, vet, unit, build | yes | yes |
+| gofmt, vet, unit (incl. apicheck contract), build | yes | yes |
 | sqlc drift | yes | yes |
 | golangci-lint | yes | yes |
-| contract (`SKIP_SMOKE=1`) | yes | via validate; smoke separate |
 | docs-check | yes | yes |
 | integration + coverage 85% | yes | yes |
 | migrate-check | no | yes |

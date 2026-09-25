@@ -15,7 +15,7 @@ func repoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "../.."))
 }
 
-func TestGoRoutesMatchOpenAPIAndPostman(t *testing.T) {
+func TestGoRoutesMatchOpenAPI(t *testing.T) {
 	root := repoRoot(t)
 	goRoutes := GoRoutes(nil)
 
@@ -24,16 +24,8 @@ func TestGoRoutesMatchOpenAPIAndPostman(t *testing.T) {
 		t.Fatalf("load openapi: %v", err)
 	}
 
-	postman, err := LoadPostman(filepath.Join(root, "postman/mentorix-backend.postman_collection.json"))
-	if err != nil {
-		t.Fatalf("load postman: %v", err)
-	}
-
 	if missing, extra := diffRoutes(goRoutes, openapi.Routes()); len(missing)+len(extra) > 0 {
 		t.Error(formatRouteDiff("OpenAPI vs Go", missing, extra))
-	}
-	if missing, extra := diffRoutes(goRoutes, postman.Routes()); len(missing)+len(extra) > 0 {
-		t.Error(formatRouteDiff("Postman vs Go", missing, extra))
 	}
 }
 
@@ -78,40 +70,29 @@ func TestOpenAPIEnumsMatchGoConstants(t *testing.T) {
 	}
 }
 
-func TestPostmanRequestBodiesMatchOpenAPI(t *testing.T) {
+// Every JSON request body schema must be bound to a Go type, otherwise
+// TestOpenAPISchemasMatchGoTypes never checks it.
+func TestRequestBodySchemasHaveGoBinding(t *testing.T) {
 	root := repoRoot(t)
 	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))
 	if err != nil {
 		t.Fatalf("load openapi: %v", err)
 	}
-	postman, err := LoadPostman(filepath.Join(root, "postman/mentorix-backend.postman_collection.json"))
-	if err != nil {
-		t.Fatalf("load postman: %v", err)
-	}
 
-	for _, req := range postman.Requests() {
-		if req.BodyRaw == "" {
-			continue
-		}
-		schemaName, ok, err := openapi.RequestBodySchemaName(req.Route.Method, req.Route.Path)
+	bound := make(map[string]struct{})
+	for _, bind := range schemaBindings() {
+		bound[bind.name] = struct{}{}
+	}
+	for _, route := range GoRoutes(nil) {
+		schemaName, ok, err := openapi.RequestBodySchemaName(route.Method, route.Path)
 		if err != nil {
-			t.Fatalf("%s (%s): %v", req.Name, req.Route, err)
+			t.Fatalf("%s: %v", route, err)
 		}
 		if !ok {
-			t.Fatalf("%s (%s): postman has JSON body but OpenAPI has no request schema", req.Name, req.Route)
+			continue
 		}
-		bodyKeys, err := jsonObjectKeys(req.BodyRaw)
-		if err != nil {
-			t.Fatalf("%s: parse body: %v", req.Name, err)
-		}
-		schemaKeys, err := openapi.SchemaPropertyNames(schemaName)
-		if err != nil {
-			t.Fatalf("%s: schema %s: %v", req.Name, schemaName, err)
-		}
-		for k := range bodyKeys {
-			if _, ok := schemaKeys[k]; !ok {
-				t.Errorf("%s: body field %q not in OpenAPI schema %s", req.Name, k, schemaName)
-			}
+		if _, ok := bound[schemaName]; !ok {
+			t.Errorf("%s: request schema %s has no entry in schemaBindings", route, schemaName)
 		}
 	}
 }

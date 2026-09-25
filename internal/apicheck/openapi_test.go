@@ -25,14 +25,6 @@ func TestLoadOpenAPI_invalidYAML(t *testing.T) {
 	}
 }
 
-func TestLoadPostman_invalidFile(t *testing.T) {
-	_, err := LoadPostman(filepath.Join(t.TempDir(), "missing.json"))
-	if err != nil {
-		return
-	}
-	t.Fatal("expected error")
-}
-
 func TestSchemaPropertyNames_unknownSchema(t *testing.T) {
 	root := repoRoot(t)
 	openapi, err := LoadOpenAPI(filepath.Join(root, "api/openapi.yaml"))

@@ -144,6 +144,9 @@ func schemaBindings() []schemaBinding {
 		{name: "ClientCompletionsResponse", typ: reflect.TypeOf(analytics.CompletionsResult{})},
 		{name: "ClientCompletionItem", typ: reflect.TypeOf(analytics.CompletionItem{})},
 		{name: "CompletionComment", typ: reflect.TypeOf(workoutcomment.Comment{})},
+		{name: "GrantPlanRequest", typ: reflect.TypeOf(struct {
+			Plan string `json:"plan"`
+		}{})},
 		{name: "CreateCompletionCommentRequest", typ: reflect.TypeOf(struct {
 			Text string `json:"text"`
 		}{})},

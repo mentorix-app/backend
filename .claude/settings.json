@@ -15,7 +15,6 @@
       "Bash(goimports:*)",
       "Bash(golangci-lint run:*)",
       "Bash(./scripts/docs-check.sh:*)",
-      "Bash(./postman/validate.sh:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git show:*)",

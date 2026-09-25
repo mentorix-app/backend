@@ -21,7 +21,7 @@
 | Аналитика тренера (клиент: прогресс/активность/лента; программы: агрегаты, drop-off, матрица недели) | [features/trainer-analytics.md](features/trainer-analytics.md) |
 | Статистика клиента по подписанной ссылке из Telegram (`GET /client/analytics`, кнопка «📊 Статистика») | [features/client-analytics.md](features/client-analytics.md) |
 | Ответ тренера на результат тренировки (комментарий + push в Telegram) | [features/workout-comments.md](features/workout-comments.md) |
-| Контракт OpenAPI + Postman + apicheck | [architecture.md](architecture.md), `api/openapi.yaml` |
+| Контракт OpenAPI + apicheck | [architecture.md](architecture.md), `api/openapi.yaml` |
 | CI/CD (`make check-ci`, Deploy Hook stage, migrate preDeploy) | [environments.md](environments.md), [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |

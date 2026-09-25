@@ -95,8 +95,7 @@ Include `created_at` when column exists (except health).
 
 1. Echo route (match patterns above)
 2. `api/openapi.yaml`
-3. `postman/mentorix-backend.postman_collection.json`
-4. `internal/apicheck/schema.go` if new schemas
-5. `docs/features/<feature>.md` — behavior only, not path inventory
+3. `internal/apicheck/schema.go` if new schemas (every request body schema needs a binding)
+4. `docs/features/<feature>.md` — behavior only, not path inventory
 
-Run: `SKIP_SMOKE=1 ./postman/validate.sh` or `go test ./internal/apicheck/...`
+Run: `go test ./internal/apicheck/...`

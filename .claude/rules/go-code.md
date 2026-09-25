@@ -75,7 +75,7 @@ Never rely on default JSON field names.
 - Table-driven for business rules.
 - Handler tests with fake store/service.
 - Integration: `go test -tags integration ./internal/db/storetest/...`
-- Contract: `internal/apicheck`, `postman/validate.sh`
+- Contract: `internal/apicheck`
 
 ## Tooling
 

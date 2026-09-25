@@ -110,7 +110,7 @@ merge/ungroup/extract — [program-block-visibility.md](program-block-visibility
 ### Фаза 6 — контракт и QA
 
 17. `api/openapi.yaml` — `ProgramDayBlock`, breaking: день через `blocks`.
-18. Postman, `internal/apicheck/schema.go`.
+18. `internal/apicheck/schema.go`.
 19. Обновить [programs.md](programs.md); publish-валидация.
 20. `make check`; строка в `status.md` → реализовано.
 
