@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./scripts/coverage.sh              report only
-#   ./scripts/coverage.sh --min 85     fail if total coverage below threshold
+#   ./scripts/coverage.sh --min 80     fail if total coverage below threshold
 #   ./scripts/coverage.sh --html       write coverage.html
 set -euo pipefail
 
