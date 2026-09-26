@@ -1,38 +1,38 @@
 # Client analytics page
 
-**Статус:** реализовано  
-**Код:** `internal/analytics/client_link.go`, `internal/analytics/` (`ClientSelfAnalytics`), `internal/telegrambot/` (кнопка «📊 Статистика»)
+**Status:** implemented  
+**Code:** `internal/analytics/client_link.go`, `internal/analytics/` (`ClientSelfAnalytics`), `internal/telegrambot/` («📊 Статистика» button)
 
-## Назначение
+## Purpose
 
-Клиент из Telegram-бота открывает в браузере страницу со своей статистикой у активного тренера. Бот выдаёт подписанную ссылку, фронт пересылает её query-строку на `GET /client/analytics` и рендерит ответ. Входа в веб у клиента нет: ссылка сама является пропуском на 30 минут.
+A client opens their analytics for the active trainer from the Telegram bot in a browser. The bot provides a signed link; the frontend forwards the query string to `GET /client/analytics` and renders the response. Clients have no web login; the link itself is a 30-minute pass.
 
-## Безопасность
+## Security
 
-- Ссылка: `<CLIENT_ANALYTICS_PAGE_URL>?client_user_id&trainer_id&exp&sig`; `sig` — HMAC-SHA256 на `JWT_SECRET` с доменом `client_analytics:` (отдельно от аватар-ссылок). Подделать или подменить `client_user_id` / `trainer_id` нельзя.
-- TTL 30 минут; отзыва конкретной ссылки нет. Пока ссылка жива, её можно переслать — принято осознанно, страница только на чтение.
-- Связь `trainer_clients` и статус `blocked` проверяются при каждом запросе, не при выдаче.
-- В сообщении бота ссылка спрятана в inline URL-кнопку.
+- Link format: `<CLIENT_ANALYTICS_PAGE_URL>?client_user_id&trainer_id&exp&sig`. The `sig` is HMAC-SHA256 over `JWT_SECRET` with domain `client_analytics:` (separate from avatar links). `client_user_id` and `trainer_id` cannot be forged or swapped.
+- TTL is 30 minutes; individual links cannot be revoked. While the link is valid, it can be shared — accepted by design because the page is read-only.
+- The `trainer_clients` relationship and `blocked` status are checked on every request, not when the link is issued.
+- The bot hides the link in an inline URL button in its message.
 
 ## API
 
-Контракт: `api/openapi.yaml` — `GET /client/analytics`. Без JWT. `400` — параметр отсутствует/не парсится, `401` — подпись или срок, `404` — клиент не связан с тренером или заблокирован.
+Contract: `api/openapi.yaml` defines `GET /client/analytics`. No JWT required. Returns `400` if parameters are missing or unparseable, `401` if signature or expiry fails, `404` if client is not linked to the trainer or is blocked.
 
-Ответ: `client` (id, имя), `trainer` (`trainers.id`, имя), `current_assignment` и `activity` — те же схемы, что в тренерской аналитике ([trainer-analytics.md](trainer-analytics.md)), `recent_completions` — последние 30 тренировок с ответами тренера, `expires_at` — срок ссылки.
+Response includes `client` (id, name), `trainer` (`trainers.id`, name), `current_assignment` and `activity` (same schemas as trainer analytics; see [trainer-analytics.md](trainer-analytics.md)), `recent_completions` (last 30 workouts with trainer replies), and `expires_at` (link expiry time).
 
-## Бот
+## Bot
 
-Кнопка «📊 Статистика» есть только при заданном `CLIENT_ANALYTICS_PAGE_URL`. Тренер — активный, как для «Программа»; нет активного → «Выберите тренера в разделе «Тренеры»». Подробности меню — [telegram-bot.md](telegram-bot.md).
+The «Статистика» button appears only when `CLIENT_ANALYTICS_PAGE_URL` is set. The trainer used is the active one (same rules as «Программа»); if no active trainer is set, the bot says «Выберите тренера в разделе «Тренеры»». Full menu details are in [telegram-bot.md](telegram-bot.md).
 
 ## Env
 
-| Переменная | Обязательна | Назначение |
+| Variable | Required | Purpose |
 | ---------- | ----------- | ---------- |
-| `CLIENT_ANALYTICS_PAGE_URL` | нет | Абсолютный `http(s)` URL страницы фронта без query; пусто — кнопки нет |
+| `CLIENT_ANALYTICS_PAGE_URL` | no | Absolute `http(s)` URL to frontend page without query string; empty disables the button |
 
-Origin страницы должен быть в `CORS_ALLOW_ORIGINS`.
+The page origin must be in `CORS_ALLOW_ORIGINS`.
 
-## См. также
+## See also
 
-- [trainer-analytics.md](trainer-analytics.md) — те же расчёты со стороны тренера
-- [telegram-bot.md](telegram-bot.md) — меню бота
+- [trainer-analytics.md](trainer-analytics.md) — same calculations from trainer perspective
+- [telegram-bot.md](telegram-bot.md) — bot menu

@@ -1,29 +1,29 @@
 # Exercises
 
-**Статус:** реализовано  
-**Код:** `internal/exercise/`
+**Status:** implemented  
+**Code:** `internal/exercise/`
 
-## Назначение
+## Purpose
 
-Каталог упражнений: глобальные (админские, общие для всех) и приватные (тренерские, под квотой тарифа).
+Exercise catalog: global (admin, shared for all) and private (trainer-owned, under plan quota).
 
-## БД
+## Database
 
-`exercises` (soft delete: `deleted_at`; `owner_trainer_id NULL` = глобальное, иначе — владелец-тренер).
+`exercises` (soft delete: `deleted_at`; `owner_trainer_id NULL` = global, otherwise owner is trainer).
 
 ## API
 
-Контракт: `api/openapi.yaml` (тег Exercises).
+Contract: `api/openapi.yaml` (Exercises tag).
 
-Неочевидные правила:
+Rules that are not obvious:
 
-- Доступ — `trainer` или `admin`. Admin: видит все, CRUD только глобальных. Trainer: видит глобальные + свои, CRUD только своих; создание/редактирование под квотой тарифа (`409 quota_exceeded`, см. [subscriptions.md](subscriptions.md)); удаление всегда разрешено.
-- Ответ содержит `scope` (`global|private`) и `owner_user_id`; фильтр списка `?scope=`.
-- В программу тренер может добавлять глобальные и **свои** упражнения; чужие приватные → 400. Существующие ссылки grandfathered — проверка только при добавлении/замене упражнения.
-- Enum в БД/API: `snake_case` (`exercise_type`).
-- `video_url` — опционально; если задан, только HTTPS-ссылка на YouTube (`youtube.com`, `youtu.be`: `/watch`, `/embed`, `/shorts`, `/live`).
+- Access: `trainer` or `admin`. Admin: sees all, CRUD only global. Trainer: sees global + own, CRUD only own; create/edit under plan quota (`409 quota_exceeded`, see [subscriptions.md](subscriptions.md)); delete always allowed.
+- Response includes `scope` (`global|private`) and `owner_user_id`; list filter `?scope=`.
+- Trainer can add global and **own** exercises to a program; other trainers' private exercises → 400. Existing links are grandfathered — check only on add/replace.
+- Enum in database/API: `snake_case` (`exercise_type`).
+- `video_url` — optional; if set, only HTTPS URL to YouTube (`youtube.com`, `youtu.be`: `/watch`, `/embed`, `/shorts`, `/live`).
 
-## См. также
+## See also
 
-- [subscriptions.md](subscriptions.md) — квоты
+- [subscriptions.md](subscriptions.md) — quotas
 - `.claude/rules/database-naming.md`

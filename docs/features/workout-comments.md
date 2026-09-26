@@ -1,39 +1,28 @@
 # Workout comments
 
-**Статус:** реализовано  
-**Код:** `internal/workoutcomment/`, чтение в `internal/analytics/`, push в `internal/telegramnotify/`
+**Status:** implemented  
+**Code:** `internal/workoutcomment/`, read in `internal/analytics/`, push in `internal/telegramnotify/`
 
-## Назначение
+## Purpose
 
-Тренер отвечает на результат тренировки клиента (чат в вебе). Пока **один ответ
-на результат**; повторная попытка → 409. Расширение до мини-чата — удалить
-UNIQUE-ограничение и проверку в сервисе, контракт API не меняется.
+Trainers reply to a client's workout result (chat in web). Currently limited to **one reply per result**; attempting another returns `409`. Future expansion to mini-chat will remove the UNIQUE constraint and the service check; the API contract stays the same.
 
-## БД
+## Database
 
-- `client_workout_completion_comments` — ответ тренера
-  (`client_workout_completion_id` FK CASCADE, `trainer_id`, `comment_text`,
-  UNIQUE по completion).
+- `client_workout_completion_comments` stores trainer replies with `client_workout_completion_id` (FK CASCADE), `trainer_id`, and `comment_text` (UNIQUE per completion).
 
-Миграция: `000025_workout_completion_comments`.
+Migration: `000025_workout_completion_comments`.
 
 ## API
 
-- `POST /trainer/clients/{client_user_id}/completions/{completion_id}/comments`
-  (`createTrainerCompletionComment`) — тело `{"text"}` (1–2000 символов), 201 →
-  `{id, text, created_at}`. Completion вне пары тренер/клиент → 404; ответ уже
-  есть → 409.
-- Ответы возвращаются в `items[].comments` ленты
-  `GET /trainer/clients/{client_user_id}/completions` (oldest first, одним
-  запросом на страницу).
+- `POST /trainer/clients/{client_user_id}/completions/{completion_id}/comments` (`createTrainerCompletionComment`) takes `{"text"}` (1–2000 characters) and returns `201` with `{id, text, created_at}`. Returns `404` if the completion doesn't belong to that trainer-client pair; `409` if a reply already exists.
+- Replies appear in `items[].comments` of the `GET /trainer/clients/{client_user_id}/completions` log (oldest first, fetched with one request per page).
 
 ## Telegram
 
-После сохранения — best-effort push клиенту: имя тренера, программа
-(`program_name_ru`), неделя/день, цитата `result_text` (до 500 символов) и текст
-ответа. Нет Telegram-привязки — тихий skip.
+After saving, a best-effort push goes to the client with the trainer's name, program name (`program_name_ru`), week and day number, a quote of `result_text` (up to 500 characters), and the reply text. If the client has no Telegram link, the push is silently skipped.
 
-## См. также
+## See also
 
 - [workout-completions.md](workout-completions.md)
 - [trainer-analytics.md](trainer-analytics.md)

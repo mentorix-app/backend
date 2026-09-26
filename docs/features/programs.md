@@ -1,34 +1,34 @@
 # Programs
 
-**Статус:** реализовано  
-**Код:** `internal/program/`
+**Status:** implemented  
+**Code:** `internal/program/`
 
-## Назначение
+## Purpose
 
-Шаблоны программ тренера: недели → дни → блоки → упражнения; publish создаёт замороженные `program_versions`.
+Trainer program templates: weeks → days → blocks → exercises; publish creates frozen `program_versions`.
 
-## БД
+## Database
 
-`programs`, `program_weeks`, `program_week_days`, `program_week_day_blocks`, `program_week_day_block_exercises`, `program_versions` (+ version-дерево), `program_assignments`.
+`programs`, `program_weeks`, `program_week_days`, `program_week_day_blocks`, `program_week_day_block_exercises`, `program_versions` (+ version tree), `program_assignments`.
 
 ## API
 
-Контракт: `api/openapi.yaml` (тег Programs).
+Contract: `api/openapi.yaml` (Programs tag).
 
-Неочевидные правила:
+Rules that are not obvious:
 
-- `POST /programs` → `draft`, пустое `name`, неделя 1 с **7 пустыми днями** автоматически.
-- `PUT …/reorder` (недели, дни, блоки, упражнения в блоке): body — **полный** упорядоченный список id siblings (каждый ровно один раз); частичный список → 400 `invalid reorder: … count mismatch`.
-- Статусы: `draft` → `published` → `archived`; нет `published` → `draft`.
-- Publish из `archived` — только смена статуса, без новой версии.
-- Publish (draft): валидация name/category/difficulty, ≥1 неделя; в каждом непустом дне — блоки с упражнениями (`single`: 1 упражнение; группа: ≥1); `sets`/`reps` опциональны (`null`/omit); при значении — строка: только цифры (`3`), один `/` (`5/4`) или один `-` (`3-6`).
-- `training_days_count` в `Program` / `ProgramDetail`: число дней с ≥1 блоком или упражнением (пустые дни не считаются); в списке — из SQL, в `GET /programs/{id}` — из загруженных недель.
-- Published: in-place edit + `has_unpublished_changes`; publish-update — новая версия; discard-unpublished — откат working copy к latest version (клиенты и frozen-версии без изменений; `day_key` сохраняются, id недель/дней/блоков новые).
-- Trainer видит свои; admin — все, но **только просмотр**: любые мутации не-владельцем → `403`.
-- Квота тарифа на активные программы (draft+published): создание драфта и re-publish из archive — `409 quota_exceeded` при заполненном лимите; мутации существующих блокируются при превышении (read-only после даунгрейда); archive/delete всегда разрешены. См. [subscriptions.md](subscriptions.md).
-- `POST /programs/{id}/assignments/sync` — только владелец программы (`created_by`); admin без владения → `403` (как assign). После sync — авто-cleanup неиспользуемых версий.
+- `POST /programs` → `draft`, empty `name`, week 1 with **7 empty days** automatically.
+- `PUT …/reorder` (weeks, days, blocks, exercises in block): body is **complete** ordered sibling id list (each exactly once); partial list → 400 `invalid reorder: … count mismatch`.
+- Statuses: `draft` → `published` → `archived`; no `published` → `draft`.
+- Publish from `archived` — status change only, no new version.
+- Publish (draft): validate name/category/difficulty, ≥1 week; each non-empty day has blocks with exercises (`single`: 1 exercise; group: ≥1); `sets`/`reps` optional (`null`/omit); when present, string format: digits only (`3`), single `/` (`5/4`), or single `-` (`3-6`).
+- `training_days_count` in `Program` / `ProgramDetail`: count of days with ≥1 block or exercise (empty days don't count); in list from SQL, in `GET /programs/{id}` from loaded weeks.
+- Published: in-place edit + `has_unpublished_changes`; publish-update → new version; discard-unpublished → revert working copy to latest version (clients and frozen versions unchanged; `day_key` preserved, week/day/block ids new).
+- Trainer sees their own; admin sees all, **read-only**: any mutation by non-owner → `403`.
+- Plan quota on active programs (draft+published): create draft and re-publish from archive → `409 quota_exceeded` if limit filled; mutations of existing blocked on exceeded (read-only after downgrade); archive/delete always allowed. See [subscriptions.md](subscriptions.md).
+- `POST /programs/{id}/assignments/sync` — owner only (`created_by`); admin without ownership → `403` (like assign). After sync — auto-cleanup unused versions.
 
-## См. также
+## See also
 
-- [program-blocks.md](program-blocks.md) — блоки в дне
-- [trainer-clients.md](trainer-clients.md) — назначение клиенту
+- [program-blocks.md](program-blocks.md) — blocks in day
+- [trainer-clients.md](trainer-clients.md) — client assignment

@@ -939,7 +939,7 @@ paths:
       description: >
         Proxies the client's Telegram profile photo. Requires a signed URL from
         `avatar_url` in the client list (`exp` and `sig` query params, valid 24h).
-        No Bearer token — suitable for `<img src>`.
+        No Bearer token; suitable for `<img src>`.
       operationId: getTrainerClientAvatar
       parameters:
         - name: exp
@@ -982,7 +982,7 @@ paths:
       summary: Set or clear program for one or more clients
       description: >
         Assign a published program (latest frozen version) or clear assignments
-        (`program_id: null`) for 1–100 linked clients. Pass a single id in
+        (`program_id: null`) for 1 to 100 linked clients. Pass a single id in
         `client_user_ids` for one client. Per-client failures are returned in
         `skipped`; program validation errors fail the whole request.
       operationId: setTrainerClientProgramAssignment

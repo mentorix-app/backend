@@ -1,15 +1,15 @@
 ---
 name: changelog
-description: Use when asked for a changelog for the frontend or Telegram ("чейнджлог для фронта", "changelog по паттерну") — produces a single Telegram-ready message in chat describing API-visible changes since a commit.
+description: Use when asked for a changelog for the frontend or Telegram ("чейнджлог для фронта", "changelog по паттерну") — outputs a single Telegram-ready message describing API-visible changes since a commit.
 ---
 
 # Changelog format (frontend / Telegram)
 
-Output a single Telegram-ready message **in chat** — never a file.
+Output a single Telegram-ready message in chat, never as a file.
 
-Gather the diff first: `git log --oneline <from>..HEAD`, then
-`git diff <from>..HEAD -- api/openapi.yaml` for the contract change.
-Ask for the base commit when it was not given.
+Gather the diff first with `git log --oneline <from>..HEAD`, then review
+`git diff <from>..HEAD -- api/openapi.yaml` for contract changes.
+Ask for the base commit if it was not provided.
 
 ## Template
 

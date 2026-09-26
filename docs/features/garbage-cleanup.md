@@ -1,47 +1,47 @@
 # Garbage cleanup
 
-**Статус:** реализовано  
-**Код:** `internal/program/`, `internal/trainerclient/`, `internal/cleanup/`, `cmd/janitor/`
+**Status:** implemented  
+**Code:** `internal/program/`, `internal/trainerclient/`, `internal/cleanup/`, `cmd/janitor/`
 
-## Назначение
+## Purpose
 
-Автоудаление данных, которые перестали быть нужны после операций или по TTL.
+Auto-delete data that stops being needed after operations or by TTL.
 
 ## Assignments
 
-- Одна строка `program_assignments` на `(trainer_id, client_user_id)`.
-- `assign` / `reassign` — `INSERT` или `UPDATE` той же строки.
-- `clear` (`program_id: null`) — `DELETE` строки.
-- Миграция `000019`: purge `cancelled`, unique без `WHERE status = 'active'`.
+- One `program_assignments` row per `(trainer_id, client_user_id)`.
+- `assign` / `reassign` — `INSERT` or `UPDATE` the same row.
+- `clear` (`program_id: null`) — `DELETE` the row.
+- Migration `000019`: purge `cancelled`, unique without `WHERE status = 'active'`.
 
-## Версии программ
+## Program versions
 
-После `assign`/`reassign`/`clear`/`sync` — best-effort `CleanupProgramVersions` для затронутых программ (удаляет версии без active assignments, кроме единственной).
+After `assign`/`reassign`/`clear`/`sync` — best-effort `CleanupProgramVersions` for affected programs (delete versions with no active assignments, except one).
 
-При `DELETE /programs/{id}` — сначала DELETE assignments программы, cleanup версий, затем soft delete.
+On `DELETE /programs/{id}` — first `DELETE` program assignments, cleanup versions, then soft delete.
 
-## Правила видимости блоков (`program_block_clients`)
+## Block visibility rules (`program_block_clients`)
 
-- `clear`/`reassign` (`SetClientProgramAssignment`) — в той же транзакции `DeleteProgramBlockClientsForClient` удаляет строки клиента для **прежней** `program_id` (не новой).
-- Правило-сирота — `block_key`, которого нет ни в рабочей копии (`program_week_day_blocks`), ни в одной сохранившейся версии (`program_version_week_day_blocks`) программы; оба условия обязательны, версии — потому что клиент может быть назначен на версию, куда рабочая копия уже не смотрит.
-- `PurgeOrphanProgramBlockClientsForProgram` (scoped) вызывается из `CleanupProgramVersions` и из best-effort прохода после `assign`/`reassign`/`clear`/`sync` — момент, когда у `block_key` может исчезнуть последняя версия.
-- `PurgeOrphanProgramBlockClients` (глобальный) — то же самое без `program_id`, вызывается из `cleanup.Run`. Модель данных и правила — [program-block-visibility.md](program-block-visibility.md).
+- `clear`/`reassign` (`SetClientProgramAssignment`) — in same transaction `DeleteProgramBlockClientsForClient` deletes client rows for **previous** `program_id` (not new).
+- Orphaned rule — `block_key` that exists neither in working copy (`program_week_day_blocks`) nor in any saved version (`program_version_week_day_blocks`) of the program; both conditions required, versions because client may be assigned to a version working copy no longer points to.
+- `PurgeOrphanProgramBlockClientsForProgram` (scoped) called from `CleanupProgramVersions` and from best-effort pass after `assign`/`reassign`/`clear`/`sync` — when a `block_key` might lose its last version.
+- `PurgeOrphanProgramBlockClients` (global) — same without `program_id`, called from `cleanup.Run`. Data model and rules — [program-block-visibility.md](program-block-visibility.md).
 
-## Инвайты
+## Invites
 
-При `POST /trainer/invites` — inline purge expired/consumed (grace 7d) инвайтов тренера.
+On `POST /trainer/invites` — inline purge expired/consumed (7d grace) trainer invites.
 
 ## Redis
 
-`mentorix:telegram:active_trainer:{id}` — `Delete` при stale в `resolveActiveTrainerID`.
+`mentorix:telegram:active_trainer:{id}` — `Delete` on stale in `resolveActiveTrainerID`.
 
 ## Janitor
 
 `go run ./cmd/janitor`: purge stale `trainer_invites`, `auth_refresh_sessions` (30d), orphan `program_block_clients` (global, unscoped).
 
-Требует `DATABASE_URL`. Ничем не запланирован (нет cron в `render.yaml`, нет в `.github/workflows/`) — safety net, а не основной механизм; правила видимости блоков в первую очередь чистит best-effort проход выше.
+Requires `DATABASE_URL`. Not scheduled (no cron in `render.yaml`, none in `.github/workflows/`) — safety net, not primary mechanism; block visibility rules are cleaned first by best-effort pass above.
 
-## См. также
+## See also
 
 - [trainer-clients.md](trainer-clients.md)
 - [programs.md](programs.md)

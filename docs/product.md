@@ -1,23 +1,23 @@
-# Продукт
+# Product
 
-**Mentorix** — бэкенд для **тренеров** и **клиентов**.
+**Mentorix** is a backend for **trainers** and **clients**.
 
-## Роли
+## Roles
 
-`admin`, `trainer`, `client`. Роль `admin` — эксклюзивная (не сочетается с другими, триггер в БД); `trainer` и `client` могут сочетаться (тренер может быть клиентом другого тренера).
+`admin`, `trainer`, `client`. The `admin` role is exclusive (does not combine with others, enforced by a database trigger); `trainer` and `client` can combine (a trainer can be a client of another trainer).
 
-## Единый аккаунт
+## Unified account
 
-Один `user_id`; вход — email+пароль (REST). Данные: `users` + `auth_identities`. Домен и middleware опираются на `user_id`.
+One `user_id` per person; login via email and password (REST). Data stored in `users` and `auth_identities`. Domains and middleware rely on `user_id`.
 
-## Связи
+## Connections
 
-- Тренер — веб/REST, email+пароль.
-- Клиент — Telegram-бот (первый канал); deep link invite от тренера.
-- Клиент может быть у нескольких тренеров (`trainer_clients`).
-- Один клиент — один аккаунт, не отдельный аккаунт на тренера.
+- Trainer accesses the system via web/REST with email and password.
+- Client uses the Telegram bot (primary channel); invited via deep link from a trainer.
+- A client can work with multiple trainers (`trainer_clients`).
+- One client account serves all their trainers, not a separate account per trainer.
 
-## Справочники и программы
+## Catalogs and programs
 
-- **Упражнения** — общий каталог; см. [features/exercises.md](features/exercises.md).
-- **Программы** — шаблоны тренера; см. [features/programs.md](features/programs.md).
+- **Exercises** — shared catalog; see [features/exercises.md](features/exercises.md).
+- **Programs** — trainer templates; see [features/programs.md](features/programs.md).

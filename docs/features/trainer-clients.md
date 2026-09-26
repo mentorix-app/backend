@@ -1,37 +1,37 @@
 # Trainer clients (program assignment)
 
-**Статус:** реализовано  
-**Код:** `internal/trainerclient/`
+**Status:** implemented  
+**Code:** `internal/trainerclient/`
 
-## Назначение
+## Purpose
 
-Назначение замороженной версии программы клиенту тренера.
+Assign a frozen program version to a trainer's client.
 
-## БД
+## Database
 
-`trainer_clients`, `program_assignments`, `trainers`.
+Uses `trainer_clients`, `program_assignments`, and `trainers` tables.
 
 ## API
 
-Контракт: `api/openapi.yaml` — `GET /trainer/clients/{client_user_id}/program-assignment`, `PUT /trainer/clients/program-assignment`, `GET /trainer/clients` (список).
+Contract: `api/openapi.yaml` defines `GET /trainer/clients/{client_user_id}/program-assignment`, `PUT /trainer/clients/program-assignment`, and `GET /trainer/clients` (list).
 
-`GET /trainer/clients`: пагинация (`page`, `limit`), поиск по `display_name` (`q`, ILIKE), сортировка `sort_by=name|linked_at`, `sort_order=asc|desc` (по умолчанию `linked_at` desc). Тренер видит только своих клиентов; **admin** — всех клиентов, привязанных к любому тренеру (уникально по `client_user_id`, выбирается самая свежая связь по `linked_at`). Роль `admin` эксклюзивна и не сочетается с `trainer`. Поле `trainer_user_id` — чей user id у выбранной связи; `trainer_display_name` — имя этого тренера. `last_active_at` — последняя `completed_at` в `client_workout_completions` клиента (любой тренер), или `null` если сдач не было. Поле `avatar_url` — подписанный URL прокси фото из Telegram (пустой, если фото нет).
+`GET /trainer/clients` supports pagination (`page`, `limit`), search by `display_name` (`q`, case-insensitive), and sorting by `sort_by=name|linked_at` and `sort_order=asc|desc` (default `linked_at` descending). Trainers see only their own clients; admins see all clients linked to any trainer (deduplicated by `client_user_id`, picking the most recent `linked_at`). The `admin` role is exclusive and does not combine with `trainer`. The `trainer_user_id` field shows the user id of the selected link's trainer; `trainer_display_name` shows that trainer's name. `last_active_at` is the most recent `completed_at` from the client's `client_workout_completions` across any trainer, or `null` if no workouts. `avatar_url` is a signed proxy URL for the Telegram profile photo (empty if no photo exists).
 
-**Admin:** только просмотр списка (`GET /trainer/clients`). Назначение программ (`PUT …/program-assignment`, `GET …/program-assignment`) — только роль `trainer` (роли `admin` и `trainer` теперь взаимоисключающие); admin → `403`. Sync (`POST /programs/{id}/assignments/sync`) — только владелец программы (`created_by`).
+**Admin:** read-only access to the client list (`GET /trainer/clients`). Program assignment (`PUT …/program-assignment` and `GET …/program-assignment`) requires the `trainer` role (the `admin` and `trainer` roles are now mutually exclusive); admins get `403`. Sync (`POST /programs/{id}/assignments/sync`) requires ownership (`created_by`).
 
-`GET /trainer/clients/{client_user_id}/avatar` — прокси аватара (`exp`, `sig` из `avatar_url`); для `<img src>`, без Bearer.
+`GET /trainer/clients/{client_user_id}/avatar` proxies the avatar using `exp` and `sig` from `avatar_url`; intended for `<img src>` and requires no Bearer token.
 
-Неочевидные правила:
+Non-obvious rules:
 
-- Одна активная `program_assignments` на `(trainer_id, client_user_id)` — **одна строка** в БД; `reassign` обновляет её (новый `completion_cycle_id` при смене `program_id`), `clear` удаляет.
-- Квота тарифа на активных клиентов: назначение/переназначение блокируется при превышении лимита (`409 quota_exceeded`); `clear` (снятие) всегда разрешён. См. [subscriptions.md](subscriptions.md).
-- Повторный `PUT` с тем же `program_id` — skip `already_assigned` (без UPDATE).
-- Версия — последняя замороженная; снятие — `program_id: null` в PUT.
-- Назначение: `PUT /trainer/clients/program-assignment` — `client_user_ids` (1–100) + `program_id`; ответ `assigned` / `cleared` / `skipped` (как sync). Один клиент — массив из одного id.
-- `program_assignment` в списке: `assignment_id`, `program_id`, `program_version_id`, `assigned_at`, `program_name`, `program_name_ru` (из замороженной версии), `is_behind_latest` (можно sync, если `true`; `assignment_id` — в body sync).
-- Sync активных назначений — эндпоинты программы (`POST .../assignments/sync`).
+- One active `program_assignments` row per `(trainer_id, client_user_id)` pair in the database. Reassigning updates it (new `completion_cycle_id` if `program_id` changes); clearing deletes it.
+- Plan quota on active clients limits assignment and reassignment (returns `409 quota_exceeded` when exceeded); clearing is always allowed. See [subscriptions.md](subscriptions.md).
+- Repeating a `PUT` with the same `program_id` returns `already_assigned` with no database update.
+- The version assigned is always the latest frozen version. Clearing uses `program_id: null` in the `PUT`.
+- Assignment endpoint: `PUT /trainer/clients/program-assignment` takes `client_user_ids` (1–100) and `program_id`; response lists `assigned`, `cleared`, and `skipped` (same as sync). A single client is sent as an array with one id.
+- Each `program_assignment` in the list includes `assignment_id`, `program_id`, `program_version_id`, `assigned_at`, `program_name`, `program_name_ru` (from frozen version), and `is_behind_latest` (can sync if `true`; `assignment_id` goes in the sync request body).
+- Syncing active assignments uses program endpoints (`POST .../assignments/sync`).
 
-## См. также
+## See also
 
-- [trainer-invites.md](trainer-invites.md) — приглашение и связь с клиентом
+- [trainer-invites.md](trainer-invites.md) — inviting and linking clients
 - [programs.md](programs.md)

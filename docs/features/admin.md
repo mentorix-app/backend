@@ -1,30 +1,30 @@
 # Admin
 
-**Статус:** реализовано  
-**Код:** `internal/admin/`
+**Status:** implemented  
+**Code:** `internal/admin/`
 
-## Назначение
+## Purpose
 
-Роль `admin` отделена от `trainer`/`client`: админ управляет глобальным каталогом упражнений и тарифами тренеров, остальное — только просмотр.
+The `admin` role is separate from `trainer` and `client`. Admins manage the global exercise catalog and trainer plans; everything else is view-only.
 
-## Права
+## Permissions
 
-- Упражнения: CRUD **глобальных**; приватные упражнения тренеров видит, но не редактирует.
-- Программы, клиенты: только просмотр (списки/детали); мутации → `403`.
-- Тарифы: выдача/отзыв бессрочных грантов тренерам.
+- Exercises: CRUD **global** exercises; can view but not edit trainer private exercises.
+- Programs, clients: view only (lists and details); mutations return `403`.
+- Plans: grant and revoke permanent plan grants to trainers.
 
-## БД
+## Database
 
-`user_roles` — триггер `user_roles_admin_exclusive_trg` (миграция `000024`): роль `admin` несовместима с `trainer`/`client`.
+`user_roles` table with trigger `user_roles_admin_exclusive_trg` (migration `000024`): the `admin` role is incompatible with `trainer` or `client`.
 
 ## API
 
-Контракт: `api/openapi.yaml`.
+Contract: `api/openapi.yaml`.
 
-- `PUT /admin/trainers/{user_id}/plan`, `DELETE /admin/trainers/{user_id}/plan` — грант/отзыв тарифа; см. [subscriptions.md](subscriptions.md).
-- Эндпоинта выдачи роли `admin` больше нет (роль назначается только через БД/миграцию).
+- `PUT /admin/trainers/{user_id}/plan`, `DELETE /admin/trainers/{user_id}/plan` — grant or revoke a plan; see [subscriptions.md](subscriptions.md).
+- No endpoint exists to grant the `admin` role (role is set only via database or migration).
 
-## См. также
+## See also
 
 - [auth.md](auth.md)
 - [subscriptions.md](subscriptions.md)
