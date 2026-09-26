@@ -42,7 +42,7 @@ which files are touched — it costs context on each request.
 ## status.md
 
 - Rows only for code that exists (+ OpenAPI for API).
-- No future plans until work starts; then add `## В работе` or `## Запланировано`.
+- No future plans until work starts; then add `## In progress` or `## Planned`.
 - One line per item + link; no specs (use feature docs).
 
 ## Migrations

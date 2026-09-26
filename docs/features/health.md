@@ -1,24 +1,24 @@
 # Health
 
-**Статус:** реализовано  
-**Код:** `internal/health/`
+**Status:** implemented  
+**Code:** `internal/health/`
 
-## Назначение
+## Purpose
 
-Liveness и readiness для оркестрации и мониторинга.
+Liveness and readiness for orchestration and monitoring.
 
-## БД
+## Database
 
-Нет.
+None.
 
 ## API
 
-Контракт: `api/openapi.yaml` (paths `/health`, `/health/ready`).
+Contract: `api/openapi.yaml` (paths `/health`, `/health/ready`).
 
-Неочевидные правила:
+Rules that are not obvious:
 
-- `/health` — всегда ok; `/health/ready` — database/redis `ok` или `skipped` если URL пустой.
+- `/health` — always ok; `/health/ready` — database/redis `ok` or `skipped` if URL empty.
 
-## См. также
+## See also
 
-- [environments.md](../environments.md) — локальная проверка
+- [environments.md](../environments.md) — local verification

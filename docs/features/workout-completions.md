@@ -1,28 +1,27 @@
 # Workout completions
 
-**Статус:** реализовано (фаза 1 — бот + БД)  
-**Код:** `internal/workoutcompletion/`, `internal/telegrambot/workout.go`
+**Status:** implemented (phase 1 — bot + database)  
+**Code:** `internal/workoutcompletion/`, `internal/telegrambot/workout.go`
 
-## Назначение
+## Purpose
 
-Клиент отмечает день программы в Telegram (результат текстом → журнал).  
-История не удаляется при sync/clear/reassign. Галочки по `(completion_cycle_id, day_key)`.
+Clients mark workout days in Telegram (result as text goes to the log). History is not deleted during sync, clearing, or reassignment. Checkmarks are tracked by `(completion_cycle_id, day_key)` pair.
 
-## БД
+## Database
 
-- `program_week_days.day_key`, `program_version_week_days.day_key` (копия при freeze)
-- `program_assignments.completion_cycle_id` (новый при assign / смене `program_id`; не при sync; PUT той же программы → skip `already_assigned`)
-- `client_workout_completions` — журнал
+- `program_week_days.day_key` and `program_version_week_days.day_key` (copied on freeze)
+- `program_assignments.completion_cycle_id` (new on assignment or `program_id` change; stays the same on sync; repeating the same `program_id` in `PUT` returns `already_assigned`)
+- `client_workout_completions` is the log
 
-Миграция: `000020_workout_completions`.
+Migration: `000020_workout_completions`.
 
 ## Telegram
 
-На экране дня: «Тренировка выполнена» → запрос результата + «Отмена» → INSERT → ✅.  
-В выборе дней — «✅ День N»; неделя целиком выполнена — «✅ Неделя N» (все тренировочные дни недели).  
-Pending Redis `mentorix:telegram:workout_pending:{telegram_user_id}` TTL 30м; сброс при любой кнопке бота.
+On the day screen, «Тренировка выполнена» prompts for a result and offers «Отмена»; on submit, the result is inserted and shown as ✅.  
+In day selection, completed days show «✅ День N»; a week with all workouts done shows «✅ Неделя N».  
+A pending state is stored in Redis at `mentorix:telegram:workout_pending:{telegram_user_id}` with a 30-minute TTL; any bot button press clears it.
 
-## См. также
+## See also
 
 - [telegram-bot.md](telegram-bot.md)
 - [programs.md](programs.md)

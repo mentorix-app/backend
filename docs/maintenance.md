@@ -1,46 +1,46 @@
-# Поддержка документации и правил
+# Documentation and rules maintenance
 
-Зеркало [`.claude/rules/docs-and-rules-maintenance.md`](../.claude/rules/docs-and-rules-maintenance.md).
+Mirror: [`.claude/rules/docs-and-rules-maintenance.md`](../.claude/rules/docs-and-rules-maintenance.md).
 
-## Где что лежит
+## Where things live
 
-| Тип | Место |
-| --- | ----- |
-| Как делать (паттерны) | `.claude/rules/*.md` (грузятся по требованию) |
-| Всегда в контексте + маршрутизация правил | `CLAUDE.md` |
-| Повторяемый workflow | `.claude/skills/<name>/SKILL.md` |
-| Что реализовано | `docs/status.md` |
-| Фича (факты) | `docs/features/<name>.md` |
-| Контракт API | `api/openapi.yaml` |
+| Kind | Location |
+| --- | --- |
+| Patterns (how) | `.claude/rules/*.md` (loaded on demand) |
+| Always-on context + rule routing | `CLAUDE.md` |
+| Repeatable workflow | `.claude/skills/<name>/SKILL.md` |
+| Implemented features | `docs/status.md` |
+| Feature facts | `docs/features/<name>.md` |
+| API contract | `api/openapi.yaml` |
 
-## Новая feature
+## New feature
 
-1. `docs/features/<name>.md` + ссылка в [README.md](README.md).
-2. После готовности — строка в [status.md](status.md).
-3. Новый паттерн — в нужный rule-файл, не в docs.
-4. Новый rule-файл невидим, пока на него нет строки в таблице `CLAUDE.md`.
+1. Add `docs/features/<name>.md` + link in [README.md](README.md).
+2. When done, add a row to [status.md](status.md).
+3. New pattern goes in the right rule file, not in docs.
+4. A new rule file is invisible until it gets a row in `CLAUDE.md`.
 
-## Лимиты
+## Limits
 
-- Rule-файл: ~80–120 строк; skill: ~120; feature-doc: ~150; `CLAUDE.md`: ~120.
-- Не копировать OpenAPI и naming rules в docs.
+- Rule file: ~80–120 lines; skill: ~120; feature doc: ~150; `CLAUDE.md`: ~120.
+- Do not copy OpenAPI and naming rules into docs.
 
-## Миграции
+## Migrations
 
-При добавлении `db/migrations/*.up.sql` обновить номер версии в [architecture.md](architecture.md) и [status.md](status.md) (один и тот же номер). Проверка: `./scripts/migrate-check.sh` (БД) и `./scripts/docs-check.sh` (docs).
+When adding `db/migrations/*.up.sql`, update the version number in [architecture.md](architecture.md) and [status.md](status.md) (same number). Verified by `./scripts/migrate-check.sh` (database) and `./scripts/docs-check.sh` (docs).
 
-## Перед коммитом
+## Before commit
 
-1. Сверить diff с docs/rules/status ([CLAUDE.md](../CLAUDE.md) § Docs sync).
-2. Вручную: `./scripts/docs-check.sh` или `make check-ci`. Pre-commit (`make check-quick`) docs-check не запускает — он идёт в CI.
+1. Check diff against docs/rules/status per [CLAUDE.md](../CLAUDE.md) § Docs sync.
+2. Manually: `./scripts/docs-check.sh` or `make check-ci`. Pre-commit (`make check-quick`) does not run docs-check — that runs in CI.
 
-## Перед push
+## Before push
 
-`make check` (полный: ещё migrate-check + smoke). CI на GitHub = `make check-ci`.
+`make check` (full run: also migrate-check + smoke). GitHub CI equals `make check-ci`.
 
 Release / Render: [environments.md](environments.md).
 
 ## status.md
 
-- Только факты с кодом (+ OpenAPI для API).
-- Секции «В работе» / «Запланировано» — только когда реально появятся.
+- Only implemented facts with code (+ OpenAPI for API).
+- Sections "In progress" / "Planned" only when real work begins.

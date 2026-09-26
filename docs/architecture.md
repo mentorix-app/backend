@@ -1,32 +1,32 @@
-# Архитектура
+# Architecture
 
-## Модель
+## Model
 
-- **Монолит** Go: один деплой REST (Echo v4) + PostgreSQL + Redis.
-- Свой auth в Go и Postgres (без Supabase).
+- **Go monolith:** single deployment with REST (Echo v4), PostgreSQL, and Redis.
+- Auth built in Go and Postgres (no Supabase).
 
-## Стек
+## Tech stack
 
-| Область | Выбор |
-| ------- | ----- |
+| Area | Choice |
+| ---- | ------ |
 | HTTP | Echo v4 |
-| БД | PostgreSQL, схема `mentorix`, pgx + sqlc, golang-migrate |
-| Кэш/лимиты | Redis |
+| Database | PostgreSQL, schema `mentorix`, pgx + sqlc, golang-migrate |
+| Cache/rate limits | Redis |
 | Auth | JWT + opaque refresh (cookie), argon2id |
-| Деплой | Render Blueprint ([`render.yaml`](../render.yaml)): stage `develop`; CI-gated Deploy Hook |
-| Логи | `log/slog`, request ID |
+| Deployment | Render Blueprint ([`render.yaml`](../render.yaml)): stage from `develop`; CI-gated Deploy Hook |
+| Logs | `log/slog`, request ID |
 
-Миграции: версия **26**, проверка `./scripts/migrate-check.sh`.
+Migrations: version **26**, checked by `./scripts/migrate-check.sh`.
 
 ## Layout
 
 ```text
 cmd/api/           — REST + Telegram webhook + push
-internal/<feature>/ — домен
+internal/<feature>/ — domain
 internal/db/sqlc/  — generated
 db/migrations/     — SQL
 db/queries/        — sqlc
-api/openapi.yaml   — контракт REST
+api/openapi.yaml   — REST contract
 ```
 
-**Telegram SDK:** `github.com/go-telegram-bot-api/telegram-bot-api/v5` — де-факто стандарт Go; альтернативы `telebot` (выше уровень), raw HTTP (избыточно).
+**Telegram SDK:** `github.com/go-telegram-bot-api/telegram-bot-api/v5` is the de facto Go standard; alternatives are `telebot` (higher level) or raw HTTP (too low level).

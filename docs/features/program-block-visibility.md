@@ -1,102 +1,61 @@
 # Program block visibility
 
-**Статус:** реализовано  
-**Код:** `internal/program/` — `block_visibility.go`, `store_block_clients.go`, `handlers_blocks.go`  
-**Связано:** [program-blocks.md](program-blocks.md), [programs.md](programs.md), [garbage-cleanup.md](garbage-cleanup.md), [telegram-bot.md](telegram-bot.md)
+**Status:** implemented  
+**Code:** `internal/program/` — `block_visibility.go`, `store_block_clients.go`, `handlers_blocks.go`  
+**Related:** [program-blocks.md](program-blocks.md), [programs.md](programs.md), [garbage-cleanup.md](garbage-cleanup.md), [telegram-bot.md](telegram-bot.md)
 
-## Назначение
+## Purpose
 
-Тренер ограничивает блок дня списком клиентов программы — один день можно показывать
-по-разному разным клиентам (например, разная нагрузка при одинаковой структуре
-недели). Правило действует на уровне блока, а не отдельного упражнения.
+A trainer can limit a day's block to a subset of program clients — the same day can appear differently to different clients (for example, different workload while keeping the same week structure). Visibility rules apply at the block level, not to individual exercises.
 
-## БД
+## Database
 
-Таблица правил — `program_block_clients` (миграция `000026_program_block_visibility`;
-дерево блоков в целом — [database-naming.md](../../.claude/rules/database-naming.md)
-§ Program trees):
+Rules table: `program_block_clients` (migration `000026_program_block_visibility`; block tree overall — [database-naming.md](../../.claude/rules/database-naming.md) § Program trees):
 
-| Колонка | Тип | Примечание |
-| ------- | --- | ---------- |
+| Column | Type | Note |
+| ------ | ---- | ---- |
 | `id` | uuid PK | |
 | `program_id` | uuid FK → `programs` | `ON DELETE CASCADE` |
-| `block_key` | uuid | не FK — стабильный ключ, не `program_week_day_blocks.id` |
+| `block_key` | uuid | not FK — stable key, not `program_week_day_blocks.id` |
 | `client_user_id` | uuid FK → `users` | `ON DELETE CASCADE` |
 | `created_at`, `created_by` | | |
 
-UNIQUE `(program_id, block_key, client_user_id)`. Строк для `(program_id, block_key)`
-нет → блок виден всем клиентам программы; отдельного boolean-флага нет.
+UNIQUE `(program_id, block_key, client_user_id)`. No rows for `(program_id, block_key)` means the block is visible to all program clients; there is no separate boolean flag.
 
-Та же миграция добавила `block_key uuid NOT NULL DEFAULT gen_random_uuid()` и в
-`program_week_day_blocks`, и в `program_version_week_day_blocks`. Это то, что даёт
-правилу пережить `publish` и `discard-unpublished`: рабочая копия и версии
-переиспользуют один и тот же `block_key`, а не получают новый `id` при копировании,
-поэтому правило продолжает указывать на тот же логический блок в любом дереве.
+The same migration added `block_key uuid NOT NULL DEFAULT gen_random_uuid()` to both `program_week_day_blocks` and `program_version_week_day_blocks`. This lets the rule survive `publish` and `discard-unpublished`: working copy and versions reuse the same `block_key` instead of getting a new `id` on copy, so the rule continues to point to the same logical block across any tree.
 
-## Правила
+## Rules
 
-- **Пустой список = общий блок.** `client_user_ids: []` — блок виден всем клиентам,
-  назначенным на программу; непустой список — только им. Поле всегда сериализуется
-  как `[]`, никогда как `null` — закреплено и в коде (`store.go`), и в OpenAPI
-  (поле `required`, без `nullable`).
-- **Только назначенные клиенты.** Каждый id в `client_user_ids` должен быть клиентом
-  с активным назначением на эту программу, иначе `400`
-  (`ErrClientNotAssignedToProgram`).
-- **Инвариант дня.** У дня всегда должен остаться хотя бы один общий блок. Проверка —
-  только на переходе общий → ограниченный (смена состава клиентов уже ограниченного
-  блока или снятие ограничения инвариант не ломает); нарушение — `400`
-  (`ErrLastSharedBlock`). Проверяется дважды: при записи правила — по рабочей копии
-  **и** по каждой опубликованной версии с активным назначением (клиенты сидят на этих
-  версиях прямо сейчас, без publish) **и** по последней версии программы, даже если на
-  неё пока никто не назначен, — именно на неё попадёт следующее назначение
-  (`SetClientProgramAssignment`/`SyncProgramAssignments`), пока в рабочей копии есть
-  неопубликованные изменения. Затем — снова для рабочей копии при `publish`.
-- **Версии не синхронизируются.** Правило хранится по `(program_id, block_key)`, а не
-  по версии, поэтому применяется к любой версии, на которой сидит клиент —
-  `GetVersionDetailForClient` подставляет правила при чтении. Смена правил не требует
-  `publish` и не требует `assignments/sync`.
-- **Снятие клиента может открыть персональный блок — осознанно.** Снятие клиента
-  с программы или перевод на другую удаляет его строки `program_block_clients`
-  (`DeleteProgramBlockClientsForClient`). Если он был единственным в списке блока,
-  набор правил для `(program_id, block_key)` пустеет, а пустой набор значит «общий»
-  — блок сразу становится виден остальным назначенцам, на той версии, на которой
-  они уже сидят, без `publish`, без ошибки и без записи в лог. Инвариант дня и
-  publish-валидация этого не ловят: они охраняют только потерю общего блока, а не
-  его появление. Решение принято сознательно, не оставлено как недосмотр; фронт
-  должен задавать тренеру тот же вопрос, что и при ручной очистке списка клиентов
-  блока.
+- **Empty list = shared block.** `client_user_ids: []` means the block is visible to all program clients; non-empty list means only those clients see it. The field always serializes as `[]`, never as `null` — enforced in code (`store.go`) and OpenAPI (`required`, no `nullable`).
+- **Only assigned clients.** Each id in `client_user_ids` must be a client with an active assignment to this program, otherwise `400` (`ErrClientNotAssignedToProgram`).
+- **Day invariant.** Every day must have at least one shared block. The check runs only when transitioning from shared to limited (changing client list for an already limited block or removing a limit does not break the invariant); violation → `400` (`ErrLastSharedBlock`). Checked twice: when writing the rule — against working copy **and** against each published version with active assignments (clients are on these versions right now, without publish) **and** against the latest version even if no one is assigned to it yet — next assignment (`SetClientProgramAssignment`/`SyncProgramAssignments`) will land there while working copy has unpublished changes. Then again for working copy at `publish`.
+- **Versions do not sync.** The rule stores by `(program_id, block_key)`, not by version, so it applies to any version a client is on — `GetVersionDetailForClient` substitutes rules on read. Changing rules needs no `publish` and no `assignments/sync`.
+- **Removing a client can expose a block — intentionally.** Removing a client from the program or moving them to another one deletes their `program_block_clients` rows (`DeleteProgramBlockClientsForClient`). If they were the only one in the block's list, the rules for `(program_id, block_key)` become empty, and empty means "shared" — the block is now visible to other assignees on the version they're already on, with no `publish`, no error, and no log entry. Day invariant and publish validation do not catch this: they guard against losing a shared block, not gaining one. This choice was made intentionally, not overlooked; the frontend should ask the trainer the same question it would for manual cleanup of a block's client list.
 
-## Наследование при операциях с блоками
+## Inheritance in block operations
 
-| Операция | Видимость результата |
-| -------- | --------------------- |
-| Merge (`.../blocks/merge`) | `400`, если у объединяемых блоков разные списки клиентов (в т.ч. «все общие» ≠ «один ограничен») — единственно верного результата нет |
-| Ungroup (`.../blocks/{block_id}/ungroup`) | каждый получившийся `single` наследует список клиентов группы |
-| Extract упражнения (`.../exercises/{item_id}/extract`) | новый `single` наследует список клиентов исходного блока |
-| Move упражнения (`.../exercises/{item_id}/move`) | правило **не переносится** — упражнение получает видимость целевого блока |
-| Move блока в другой день (`.../blocks/{block_id}/move`) | список клиентов блока не меняется |
+| Operation | Visibility of result |
+| --------- | -------------------- |
+| Merge (`.../blocks/merge`) | `400` if blocks being merged have different client lists (including "all shared" ≠ "one limited") — no single correct result |
+| Ungroup (`.../blocks/{block_id}/ungroup`) | each resulting `single` inherits group client list |
+| Extract exercise (`.../exercises/{item_id}/extract`) | new `single` inherits client list from source block |
+| Move exercise (`.../exercises/{item_id}/move`) | rule **not transferred** — exercise gets visibility of target block |
+| Move block to another day (`.../blocks/{block_id}/move`) | block client list does not change |
 
-## Чистка правил
+## Rule cleanup
 
-- Клиент снят с программы (`clear`/`reassign`) — его строки для **прежней**
-  `program_id` удаляются в той же транзакции.
-- Осиротевшее правило — `block_key`, которого нет ни в рабочей копии, ни в одной
-  сохранившейся версии программы; такие строки удаляет best-effort проход после
-  `assign`/`reassign`/`clear`/`sync` и `cleanup.Run` в `janitor`.
+- Client removed from program (`clear`/`reassign`) — their rows for **previous** `program_id` are deleted in the same transaction.
+- Orphaned rule — `block_key` that exists neither in working copy nor in any saved version of the program; such rows are deleted by best-effort pass after `assign`/`reassign`/`clear`/`sync` and `cleanup.Run` in `janitor`.
 
-Детали и точки вызова — [garbage-cleanup.md](garbage-cleanup.md) § Правила видимости
-блоков.
+Details and call sites — [garbage-cleanup.md](garbage-cleanup.md) § Block visibility rules.
 
 ## API
 
-`PUT /programs/{id}/weeks/{week_id}/blocks/{block_id}/clients` — полная замена
-списка. Контракт, коды ошибок и поле `client_user_ids` на `ProgramDayBlock` —
-`api/openapi.yaml`. Именование пути — [api-endpoints.md](../../.claude/rules/api-endpoints.md)
-§ Program week subtree.
+`PUT /programs/{id}/weeks/{week_id}/blocks/{block_id}/clients` — complete list replacement. Contract, error codes, and `client_user_ids` field on `ProgramDayBlock` — `api/openapi.yaml`. Path naming — [api-endpoints.md](../../.claude/rules/api-endpoints.md) § Program week subtree.
 
-## См. также
+## See also
 
-- [program-blocks.md](program-blocks.md) — дерево блоков дня
-- [programs.md](programs.md) — публикация, версии
-- [garbage-cleanup.md](garbage-cleanup.md) — автоочистка
-- [telegram-bot.md](telegram-bot.md) — фильтрация блоков для клиента в боте
+- [program-blocks.md](program-blocks.md) — day block tree
+- [programs.md](programs.md) — publish, versions
+- [garbage-cleanup.md](garbage-cleanup.md) — auto-cleanup
+- [telegram-bot.md](telegram-bot.md) — block filtering for client in bot

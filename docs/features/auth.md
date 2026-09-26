@@ -1,28 +1,28 @@
 # Auth
 
-**Статус:** реализовано  
-**Код:** `internal/auth/`
+**Status:** implemented  
+**Code:** `internal/auth/`
 
-## Назначение
+## Purpose
 
-Регистрация и вход email+пароль, JWT access, opaque refresh в HttpOnly cookie, роли через `user_roles`.
+Email and password registration and login, JWT access token, opaque refresh in HttpOnly cookie, roles via `user_roles`.
 
-## БД
+## Database
 
 `users`, `auth_identities`, `auth_refresh_sessions`, `user_roles`.
 
 ## API
 
-Контракт: `api/openapi.yaml` (тег Auth).
+Contract: `api/openapi.yaml` (Auth tag).
 
-Неочевидные правила:
+Key details:
 
-- Access в JSON; refresh только cookie; фронт — `credentials: 'include'`.
-- Rate limit login/register/refresh по IP при `REDIS_URL`.
-- Пароли: argon2id; JWT HS256.
-- `POST /auth/logout-all` и `GET /auth/me` — Bearer JWT.
+- Access token in JSON; refresh only in cookie; frontend uses `credentials: 'include'`.
+- Rate limiting on login/register/refresh by IP when `REDIS_URL` is set.
+- Passwords: argon2id; JWT signed with HS256.
+- `POST /auth/logout-all` and `GET /auth/me` require Bearer JWT.
 
-## См. также
+## See also
 
-- [product.md](../product.md) — единый аккаунт
-- [environments.md](../environments.md) — env и cookie
+- [product.md](../product.md) — unified account
+- [environments.md](../environments.md) — environment and cookie settings
