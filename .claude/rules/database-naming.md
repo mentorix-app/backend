@@ -7,13 +7,13 @@ Canon: [db/schema.sql](../../db/schema.sql). Locked by migration `000007_schema_
 | Rule | Example |
 | ---- | ------- |
 | Schema | `mentorix` |
-| Name | `snake_case`, **plural** | `programs`, `trainer_clients` |
+| Name | `snake_case`, plural | `programs`, `trainer_clients` |
 | Domain prefix | `auth_*`, `user_*`, `trainer_*`, `program_*` |
-| Child table | **immediate parent** prefix | `program_week_days`, `program_week_day_blocks` |
+| Child table | immediate parent prefix | `program_week_days`, `program_week_day_blocks` |
 | PK | `id uuid` | |
 | Link / junction | both roles in name | `trainer_clients` |
 
-**Immediate-parent rule:** FK `program_week_day_block_id` → table `program_week_day_block_exercises`.
+Immediate-parent rule: FK `program_week_day_block_id` → table `program_week_day_block_exercises`.
 
 ## Columns
 
@@ -22,7 +22,7 @@ Canon: [db/schema.sql](../../db/schema.sql). Locked by migration `000007_schema_
 | FK | `{role}_id` | `program_id`, `week_id`, `program_week_day_block_id` |
 | Client link | `client_user_id` | not `client_id` |
 | Trainer link | `trainer_id` → `trainers` | not `trainer_user_id` |
-| Type | concrete name | `exercise_type`, `block_type` — not `type` |
+| Type | concrete name | `exercise_type`, `block_type` (not `type`) |
 | Enum values | `snake_case` + CHECK | `email_password`, `published` |
 | Audit | `created_at`, `modified_at`, `created_by`, `modified_by` | |
 | Soft delete | `deleted_at` | |
@@ -31,7 +31,7 @@ Canon: [db/schema.sql](../../db/schema.sql). Locked by migration `000007_schema_
 
 | Field | Scope | UNIQUE | Meaning |
 | ----- | ----- | ------ | ------- |
-| `sort_order` | siblings under same parent | no | UI/DnD position; **unique `1..N` per parent** — after any write touching order, store **normalizes/reorders** siblings; API returns siblings sorted by `sort_order` |
+| `sort_order` | siblings under same parent | no | UI/DnD position; **unique `1..N` per parent**. After any write touching order, store normalizes/reorders siblings; API returns siblings sorted by `sort_order` |
 | `week_number` | per `program_id` | yes | stable label |
 | `day_number` | per `week_id` | yes | stable label |
 | `version_number` | per `program_id` | yes | frozen publish label |

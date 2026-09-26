@@ -28,14 +28,14 @@ Prefer plain string keys over hashes unless one identity needs multiple fields.
 
 ## TTL
 
-- **With expiry:** rate-limit windows — set `EXPIRE` on first increment.
-- **No TTL (`0`):** session-like state overwritten on update or cleared explicitly (e.g. active trainer — `Delete` on stale read).
+- Rate-limit windows expire: set `EXPIRE` on first increment.
+- Session-like state has no TTL (`0`): overwrite it on update or clear it explicitly (e.g. active trainer: `Delete` on stale read).
 
 ## Adding a key
 
-1. New `{domain}` segment — do not piggyback on another feature's prefix.
+1. Use a new `{domain}` segment; do not piggyback on another feature's prefix.
 2. `const …KeyPrefix` in the owning package.
-3. Add a row to **Current keys** below.
+3. Add a row to the Current keys table below.
 4. Feature docs describe *what* is stored, not the full naming spec ([docs-and-rules-maintenance.md](docs-and-rules-maintenance.md)).
 
 ## Current keys
@@ -51,6 +51,6 @@ Prefer plain string keys over hashes unless one identity needs multiple fields.
 ## Avoid
 
 - Keys without `mentorix:` prefix
-- `trainer_user_id` in values — use `trainers.id`
+- `trainer_user_id` in values (use `trainers.id`)
 - Generic segments: `cache`, `data`, `tmp`
 - Hash fields mirroring SQL columns unless multiple fields per entity

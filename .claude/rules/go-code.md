@@ -4,10 +4,10 @@ Optional general style: [Google Go Style](https://google.github.io/styleguide/go
 
 ## Layout
 
-- `cmd/<name>/` — wiring only; inject deps, no business logic.
-- `internal/<feature>/` — handler → service → sqlc store.
-- `internal/db/sqlc/` — generated; do not hand-edit.
-- `pkg/` — only if actually needed externally.
+- `cmd/<name>/`: wiring only; inject deps, no business logic.
+- `internal/<feature>/`: handler → service → sqlc store.
+- `internal/db/sqlc/`: generated; do not hand-edit.
+- `pkg/`: only if needed externally.
 
 ## Quality
 
@@ -21,13 +21,13 @@ Optional general style: [Google Go Style](https://google.github.io/styleguide/go
 
 ## Performance & concurrency
 
-Use Go's concurrency when work is independent and I/O-bound; keep goroutines bounded. Simplest correct solution first — no concurrency by default.
+Use Go's concurrency when work is independent and I/O-bound; keep goroutines bounded. Start with the simplest correct solution; no concurrency by default.
 
 ### When to parallelize
 
 - Independent I/O: DB reads, HTTP, Redis, files.
 - Embarrassingly parallel transforms without shared mutable state.
-- Fan-out inside a request or job — with a **fixed upper bound**.
+- Fan-out inside a request or job, only with a fixed upper bound.
 
 ### Patterns
 
@@ -42,7 +42,7 @@ Use Go's concurrency when work is independent and I/O-bound; keep goroutines bou
 
 - Propagate `context.Context` from HTTP handler / caller; stop on cancel.
 - No unbounded `go func()` per request.
-- DB parallelism must respect **pgx pool** size.
+- DB parallelism must respect pgx pool size.
 - Document concurrent-safety on exported APIs (mutators are not safe unless stated).
 - Tests: no `t.Fatal` from child goroutines.
 
@@ -57,7 +57,7 @@ Use Go's concurrency when work is independent and I/O-bound; keep goroutines bou
 
 - For multi-step flows: can independent steps run in parallel with a bounded pool?
 - Prefer in-process worker pool over Redis queue / new service when work fits the monolith.
-- Extract shared pool helper to `internal/...` only after **2+ call sites**.
+- Extract shared pool helper to `internal/...` only after 2+ call sites.
 
 ## Naming (Go / JSON / enums)
 

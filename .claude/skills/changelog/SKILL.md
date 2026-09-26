@@ -1,6 +1,6 @@
 ---
 name: changelog
-description: Use when asked for a changelog for the frontend or Telegram ("чейнджлог для фронта", "changelog по паттерну") — outputs a single Telegram-ready message describing API-visible changes since a commit.
+description: Use when asked for a changelog for the frontend or Telegram ("чейнджлог для фронта", "changelog по паттерну"). It outputs a single Telegram-ready message describing API-visible changes since a commit.
 ---
 
 # Changelog format (frontend / Telegram)
@@ -27,9 +27,9 @@ Ask for the base commit if it was not provided.
 
 - Header exactly `📝 **Changelog**` + commit hash and branch in parentheses.
 - One `🔹` bullet per change; bold lead-in, then compact details in one paragraph.
-- Audience — API client (frontend): endpoints, request/response fields, types,
+- The audience is the API client (frontend): endpoints, request/response fields, types,
   error statuses (400/403/404/409) that need UI handling.
-- No internal kitchen: migrations, sqlc, tests, package names, CI.
+- Leave out internals: migrations, sqlc, tests, package names, CI.
 - Breaking changes marked explicitly: `**Breaking — …:**`.
 - Last line points to `api/openapi.yaml` with operationId / schema names.
 - Language: Russian.
