@@ -4,7 +4,7 @@ Go REST API (Echo + PostgreSQL + Redis).
 
 ## Quick start
 
-**Prerequisites:** Go 1.25+, Postgres 16, Redis (e.g. `brew install postgresql@16 redis`).
+You need Go 1.25+, Postgres 16 and Redis (e.g. `brew install postgresql@16 redis`).
 
 ```bash
 make install-tools   # once
@@ -12,9 +12,9 @@ make setup           # .env, migrations, pre-commit hook
 make dev             # API with hot reload
 ```
 
-`make help` — all commands.
+`make help` lists all commands.
 
-**Check:** `GET http://localhost:8080/health` → `{"status":"ok"}`
+Check: `GET http://localhost:8080/health` should return `{"status":"ok"}`.
 
 ## API contract
 
@@ -24,15 +24,15 @@ Local + Render stage (CI/CD): [docs/environments.md](docs/environments.md). Prod
 
 ## QA
 
-- **Pre-commit:** `make install-hooks` (once; in `make setup`) — `make check-quick` (gofmt, vet, unit, lint) on every commit. Skip once: `git commit --no-verify`.
-- **Before commit:** sync docs/rules — [CLAUDE.md](CLAUDE.md) § Docs sync (`docs-check` in check-ci / CI).
-- **Before push:** `make check` (full: migrate-check + smoke).
+- Pre-commit: `make install-hooks` (once; part of `make setup`) makes every commit run `make check-quick` (gofmt, vet, unit, lint). Skip once: `git commit --no-verify`.
+- Before a commit, sync docs and rules per [CLAUDE.md](CLAUDE.md) § Docs sync (`docs-check` in check-ci / CI).
+- Before a push, run `make check` (full: migrate-check + smoke).
 
 Details: [docs/README.md#qa](docs/README.md#qa).
 
 ## Documentation
 
-**[docs/README.md](docs/README.md)** — product, architecture, features, status.
+[docs/README.md](docs/README.md) covers product, architecture, features and status.
 
 Agent context: [CLAUDE.md](CLAUDE.md) (always loaded) + [.claude/rules/](.claude/rules/) (read per area).
 

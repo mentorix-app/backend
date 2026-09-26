@@ -16,7 +16,7 @@ Shared auth DTOs: [internal/auth/apitypes.go](../../internal/auth/apitypes.go).
 
 | Rule | Example |
 | ---- | ------- |
-| Segments | **kebab-case** | `publish-update`, `program-assignment` |
+| Segments | kebab-case | `publish-update`, `program-assignment` |
 | Resources | plural nouns | `/programs`, `/weeks`, `/blocks` |
 | Path params | `{name}_id` in OpenAPI; Echo `:name_id` | `week_id`, `block_id`, `item_id` |
 | Root resource | `:id` on mount group | `/programs/:id` |
@@ -36,14 +36,14 @@ Shared auth DTOs: [internal/auth/apitypes.go](../../internal/auth/apitypes.go).
 
 ## Route shape
 
-**1. Collection** — under parent, needs parent context in path:
+A collection route sits under its parent and needs the parent context in the path:
 
 ```text
 POST   /parents/{parent_id}/children
 PUT    /parents/{parent_id}/children/reorder
 ```
 
-**2. Instance** — UUID identifies row; shortest path that still scopes ownership:
+An instance route identifies the row by UUID and uses the shortest path that still scopes ownership:
 
 ```text
 PATCH  /…/blocks/{block_id}
@@ -52,7 +52,7 @@ PUT    /…/blocks/{block_id}/exercises/{item_id}
 
 Use `week_id` (not only `program_id`) when checking block/day belongs to week.
 
-**3. Action** — verb segment on instance or collection; no verb in path param names:
+An action route adds a verb segment to an instance or collection; path param names never contain a verb:
 
 ```text
 POST …/blocks/merge          POST …/blocks/{block_id}/ungroup
@@ -61,7 +61,7 @@ POST …/blocks/{block_id}/exercises/{item_id}/extract
 POST /programs/{id}/publish
 ```
 
-**4. `sort_order` in body** — optional; omit → append at end (position `1..N` in parent).
+`sort_order` in the body is optional. Omit it to append at the end (position `1..N` in the parent).
 
 ## Program week subtree
 
@@ -75,7 +75,7 @@ Prefix: `/programs/{id}/weeks/{week_id}`
 | Block instance | `PATCH /blocks/{block_id}`, `DELETE /blocks/{block_id}`, `POST …/ungroup`, `POST …/move`, `PUT …/blocks/{block_id}/clients` |
 | Block exercises | `POST /blocks/{block_id}/exercises`, `PUT …/exercises/reorder`, `PUT\|DELETE …/exercises/{item_id}`, `POST …/extract`, `POST …/move` |
 
-Day id **only** where the operation is about the day's block list (create, reorder, merge). Block `block_id` ops sit at **week** level.
+Day id **only** where the operation is about the day's block list (create, reorder, merge). Block `block_id` ops sit at week level.
 
 ## Other mounts
 
@@ -96,6 +96,6 @@ Include `created_at` when column exists (except health).
 1. Echo route (match patterns above)
 2. `api/openapi.yaml`
 3. `internal/apicheck/schema.go` if new schemas (every request body schema needs a binding); bind the handler's exported body type, never an anonymous struct copy
-4. `docs/features/<feature>.md` — behavior only, not path inventory
+4. `docs/features/<feature>.md`: behavior only, not path inventory
 
 Run: `go test ./internal/apicheck/...`

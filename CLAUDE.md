@@ -1,6 +1,6 @@
 # Mentorix Backend
 
-**Monolith** Go REST (Echo) + PostgreSQL (`mentorix`) + Redis. One `user_id` for all
+A monolith: Go REST (Echo) + PostgreSQL (`mentorix`) + Redis. One `user_id` for all
 login channels. No microservices/gRPC without explicit request.
 
 Prefer idiomatic Go: bounded parallelism, worker pools for independent I/O,
@@ -8,9 +8,9 @@ Prefer idiomatic Go: bounded parallelism, worker pools for independent I/O,
 
 ## Before non-trivial work
 
-1. [docs/status.md](docs/status.md) — what exists
-2. [docs/features/](docs/features/)`<feature>.md` — the feature you touch
-3. [.claude/rules/docs-and-rules-maintenance.md](.claude/rules/docs-and-rules-maintenance.md) — how to update docs/rules
+1. [`docs/status.md`](docs/status.md): what exists
+2. [docs/features/](docs/features/)`<feature>.md`: the feature you touch
+3. [.claude/rules/docs-and-rules-maintenance.md](.claude/rules/docs-and-rules-maintenance.md): how to update docs/rules
 
 ## Rules by area
 
@@ -19,16 +19,16 @@ Rules are **not** auto-loaded. Read the file below before writing in that area.
 | Touching | Read |
 | -------- | ---- |
 | `**/*.go` | [go-code.md](.claude/rules/go-code.md) |
-| `db/**` — migrations, queries, schema | [database-naming.md](.claude/rules/database-naming.md) |
+| `db/**` (migrations, queries, schema) | [database-naming.md](.claude/rules/database-naming.md) |
 | Redis keys in `internal/**` | [redis-naming.md](.claude/rules/redis-naming.md) |
 | `api/openapi.yaml`, handlers, `internal/apicheck` | [api-endpoints.md](.claude/rules/api-endpoints.md) |
 | docs, rules, `docs/status.md` | [docs-and-rules-maintenance.md](.claude/rules/docs-and-rules-maintenance.md) |
 
 Changelog for frontend / Telegram: `/changelog` skill.
 
-**Precedence:** project rules + docs > code/OpenAPI on conflict.
+On conflict, project rules and docs take precedence over code and OpenAPI.
 
-## Docs sync — before every commit (required)
+## Docs sync before every commit (required)
 
 No commit with code/API/DB changes without aligned docs/rules.
 
@@ -42,18 +42,18 @@ No commit with code/API/DB changes without aligned docs/rules.
 
 Docs gate: `./scripts/docs-check.sh` (included in `make check-ci`).
 
-**Actuality:** docs describe **now** only; delete stale text in the same commit.
+Docs describe only the current state; delete stale text in the same commit.
 Canon: code + OpenAPI + schema.
 
-**status.md:** each row = live feature; new done capability → add row if missing.
+In `status.md`, each row is a live feature; when a new capability is done, add its row if missing.
 
 Docs-only commits: still check links, duplicates, contradictions.
 
-**Pre-commit hook:** after `make install-hooks` (included in `make setup`), each
-`git commit` runs `make check-quick` (gofmt, vet, unit, lint). docs-check,
+After `make install-hooks` (included in `make setup`), a pre-commit hook runs
+`make check-quick` (gofmt, vet, unit, lint) on each `git commit`. docs-check,
 integration and coverage run in CI. Skip once: `git commit --no-verify`.
 
-## Technical QA — before push
+## Technical QA before push
 
 Full run: `make check`. CI: `make check-ci`. Pre-commit: `make check-quick`.
 
@@ -74,8 +74,8 @@ Deploy / Render: [docs/environments.md](docs/environments.md).
 ## Git
 
 Branches: `feature/`, `bugfix/`, `hotfix/`, `chore/`, `docs/`, `refactor/`, `test/`
-+ kebab-case. Commits: Conventional Commits (`feat`, `fix`, …). `feat` only for
+prefix plus a kebab-case name. Commits: Conventional Commits (`feat`, `fix`, …). `feat` only for
 user-facing behavior.
 
-Compare 2–3 library options before adding deps; record significant choices in
+Compare 2 or 3 library options before adding deps; record significant choices in
 [docs/architecture.md](docs/architecture.md).
