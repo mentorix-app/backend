@@ -20,6 +20,7 @@ type fakeAuthStore struct {
 	insertSession        error
 	rotateUserID         uuid.UUID
 	rotateErr            error
+	rotateGrace          time.Duration
 	primaryEmail         string
 	primaryErr           error
 	profile              UserProfile
@@ -106,7 +107,8 @@ func (f *fakeAuthStore) InsertRefreshSession(context.Context, uuid.UUID, []byte,
 	return f.insertSession
 }
 
-func (f *fakeAuthStore) RotateRefreshSession(context.Context, []byte, []byte, time.Time) (uuid.UUID, error) {
+func (f *fakeAuthStore) RotateRefreshSession(_ context.Context, _, _ []byte, _ time.Time, grace time.Duration) (uuid.UUID, error) {
+	f.rotateGrace = grace
 	if f.rotateErr != nil {
 		return uuid.Nil, f.rotateErr
 	}
@@ -261,6 +263,72 @@ func TestService_Refresh_invalid(t *testing.T) {
 	_, err := svc.Refresh(context.Background(), "stale")
 	if !errors.Is(err, ErrInvalidRefresh) {
 		t.Errorf("Refresh() error = %v, want ErrInvalidRefresh", err)
+	}
+}
+
+func TestService_Refresh_reusePassesThroughAsInvalid(t *testing.T) {
+	familyID := uuid.New()
+	reuse := &RefreshReuseError{FamilyID: familyID, UserID: uuid.New(), Revoked: 1}
+	svc := testAuthService(&fakeAuthStore{rotateErr: reuse})
+	_, err := svc.Refresh(context.Background(), "spent")
+	if !errors.Is(err, ErrRefreshTokenReused) {
+		t.Errorf("Refresh() error = %v, want ErrRefreshTokenReused", err)
+	}
+	if !errors.Is(err, ErrInvalidRefresh) {
+		t.Errorf("Refresh() error = %v, want it to satisfy ErrInvalidRefresh", err)
+	}
+	if !strings.Contains(err.Error(), familyID.String()) {
+		t.Error("Refresh() dropped the family id from the error")
+	}
+}
+
+func TestService_Refresh_graceReachesStore(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []ServiceOption
+		want time.Duration
+	}{
+		{"default", nil, DefaultRefreshReuseGrace},
+		{"option", []ServiceOption{WithRefreshReuseGrace(5 * time.Second)}, 5 * time.Second},
+		{"negative is clamped to zero", []ServiceOption{WithRefreshReuseGrace(-time.Second)}, 0},
+		{"zero disables the retry", []ServiceOption{WithRefreshReuseGrace(0)}, 0},
+		{"upper bound is kept", []ServiceOption{WithRefreshReuseGrace(MaxRefreshReuseGrace)}, MaxRefreshReuseGrace},
+		{"too large is clamped to the maximum", []ServiceOption{WithRefreshReuseGrace(time.Hour)}, MaxRefreshReuseGrace},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeAuthStore{}
+			svc := NewService(nil, "test-jwt-secret-at-least-32-chars", time.Minute, time.Hour, tt.opts...)
+			svc.store = store
+			if _, err := svc.Refresh(context.Background(), "token"); err != nil {
+				t.Fatalf("Refresh() error = %v", err)
+			}
+			if store.rotateGrace != tt.want {
+				t.Errorf("grace = %v, want %v", store.rotateGrace, tt.want)
+			}
+		})
+	}
+}
+
+func TestRefreshReuseError_textForTheLog(t *testing.T) {
+	familyID, userID := uuid.New(), uuid.New()
+	err := &RefreshReuseError{FamilyID: familyID, UserID: userID, Revoked: 2}
+	for _, want := range []string{"refresh_token_reuse", "family=" + familyID.String(), "user=" + userID.String(), "revoked=2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Error() = %q, missing %q", err.Error(), want)
+		}
+	}
+	if !errors.Is(err, ErrRefreshTokenReused) || !errors.Is(err, ErrInvalidRefresh) {
+		t.Error("reuse error does not satisfy ErrRefreshTokenReused and ErrInvalidRefresh")
+	}
+	if got := (&RefreshReuseError{FamilyID: familyID, UserID: userID}).Error(); !strings.Contains(got, "revoked=0") {
+		t.Errorf("Error() = %q, want revoked=0", got)
+	}
+}
+
+func TestDefaultRefreshReuseGrace(t *testing.T) {
+	if DefaultRefreshReuseGrace != 30*time.Second {
+		t.Errorf("DefaultRefreshReuseGrace = %v, want 30s", DefaultRefreshReuseGrace)
 	}
 }
 

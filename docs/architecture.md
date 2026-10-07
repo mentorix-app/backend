@@ -16,7 +16,7 @@
 | Deployment | Render Blueprint ([`render.yaml`](../render.yaml)): stage from `develop`; CI-gated Deploy Hook |
 | Logs | `log/slog`, request ID |
 
-Migrations: version **27**, checked by `./scripts/migrate-check.sh`.
+Migrations: version **28**, checked by `./scripts/migrate-check.sh`.
 
 ## Layout
 

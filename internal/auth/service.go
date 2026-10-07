@@ -17,7 +17,7 @@ type authStore interface {
 	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error)
 	getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error)
 	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
-	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, error)
+	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time, reuseGrace time.Duration) (uuid.UUID, error)
 	RevokeRefreshSession(ctx context.Context, tokenHash []byte) error
 	RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error
 	UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error)
@@ -36,6 +36,8 @@ type Service struct {
 	accessTTL  time.Duration
 	refreshTTL time.Duration
 	verifiers  map[string]IDTokenVerifier
+	// refreshReuseGrace is how long a rotated refresh token can still be retried.
+	refreshReuseGrace time.Duration
 }
 
 type IssuedAuth struct {
@@ -54,12 +56,20 @@ func WithIDTokenVerifiers(verifiers map[string]IDTokenVerifier) ServiceOption {
 	return func(s *Service) { s.verifiers = verifiers }
 }
 
+// WithRefreshReuseGrace sets how long a rotated refresh token can still be
+// retried. The value is clamped to 0 through MaxRefreshReuseGrace, and 0 turns the retry off.
+func WithRefreshReuseGrace(d time.Duration) ServiceOption {
+	return func(s *Service) { s.refreshReuseGrace = min(max(d, 0), MaxRefreshReuseGrace) }
+}
+
 func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration, opts ...ServiceOption) *Service {
 	s := &Service{
 		store:      NewStore(pool),
 		jwtSecret:  []byte(jwtSecret),
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
+
+		refreshReuseGrace: DefaultRefreshReuseGrace,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -262,7 +272,7 @@ func (s *Service) Refresh(ctx context.Context, refreshPlain string) (IssuedAuth,
 		return out, fmt.Errorf("refresh token: %w", err)
 	}
 	newExpires := time.Now().UTC().Add(s.refreshTTL)
-	userID, err := s.store.RotateRefreshSession(ctx, oldHash, newHash, newExpires)
+	userID, err := s.store.RotateRefreshSession(ctx, oldHash, newHash, newExpires, s.refreshReuseGrace)
 	if err != nil {
 		return out, err
 	}

@@ -177,7 +177,12 @@ paths:
         A token sent in the body is answered with refresh_token in JSON and no cookie.
         A token sent in the cookie is answered with a new cookie and never with
         refresh_token in JSON. A body that cannot be read or has a blank token counts as no body token.
-        Refresh tokens are single-use.
+        Each sign-in has one live refresh token. A refresh spends it and returns its replacement.
+        A spent token can be retried for 30 seconds, for example after a lost response: the retry
+        spends the token issued before and returns a new one, so only the newest token works.
+        After those 30 seconds, presenting a spent token ends that sign-in on every device that
+        shares it, and the answer is the same 401. Send one refresh at a time and keep the token
+        from the latest response. Reuse can be detected for 30 days, the time spent tokens are kept.
       operationId: refresh
       parameters:
         - $ref: "#/components/parameters/RefreshCookie"
@@ -209,6 +214,8 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           description: Rotating the session or the rate limiter failed
+        "503":
+          description: Another request holds this sign-in for too long; retry the call. The cookie is kept.
 
   /auth/logout:
     post:
@@ -218,6 +225,7 @@ paths:
         Revokes the refresh token from the optional JSON body and the one from the cookie, when sent.
         The cookie is cleared whenever a cookie is sent or no body token is sent.
         A body that cannot be read or has a blank token counts as no body token.
+        Logout ends the whole sign-in the token belongs to, even when the token is already spent.
       operationId: logout
       parameters:
         - $ref: "#/components/parameters/RefreshCookie"
@@ -236,6 +244,8 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           description: Revoking a session or the rate limiter failed; the cookie is kept
+        "503":
+          description: Another request holds this sign-in for too long; retry the call. The cookie is kept.
 
   /auth/logout-all:
     post:
@@ -249,6 +259,8 @@ paths:
           description: All sessions revoked
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Another request holds a sign-in for too long; retry the call
 
   /auth/me:
     get:

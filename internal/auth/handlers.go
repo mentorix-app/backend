@@ -278,11 +278,19 @@ func (h *Handlers) Refresh(c echo.Context) error {
 	}
 	issued, err := h.svc.Refresh(c.Request().Context(), plain)
 	if err != nil {
+		if errors.Is(err, ErrRefreshBusy) {
+			return echo.NewHTTPError(http.StatusServiceUnavailable, msgTryAgain).SetInternal(err)
+		}
 		if errors.Is(err, ErrInvalidRefresh) {
 			if !fromBody {
 				h.clearRefreshCookie(c)
 			}
-			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidRefresh.Error())
+			httpErr := echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidRefresh.Error())
+			if errors.Is(err, ErrRefreshTokenReused) {
+				// The client sees an ordinary 401; the request log gets the cause and family id.
+				return httpErr.SetInternal(err)
+			}
+			return httpErr
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "refresh failed")
 	}
@@ -295,7 +303,10 @@ func (h *Handlers) Refresh(c echo.Context) error {
 	return h.writeAuthJSON(c, http.StatusOK, issued, delivery)
 }
 
-const msgOriginNotAllowed = "origin not allowed"
+const (
+	msgOriginNotAllowed = "origin not allowed"
+	msgTryAgain         = "session busy, try again"
+)
 
 // OriginCheckDisabled reports whether the refresh cookie Origin check is off
 // for the configured origins: an empty list or a list containing "*".
@@ -365,6 +376,9 @@ func (h *Handlers) Logout(c echo.Context) error {
 		revokeErr = errors.Join(revokeErr, h.svc.Logout(c.Request().Context(), cookieToken))
 	}
 	if revokeErr != nil {
+		if errors.Is(revokeErr, ErrRefreshBusy) {
+			return echo.NewHTTPError(http.StatusServiceUnavailable, msgTryAgain).SetInternal(revokeErr)
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "logout failed")
 	}
 	if bodyToken == "" || cookieToken != "" {
@@ -379,6 +393,9 @@ func (h *Handlers) LogoutAll(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
 	if err := h.svc.LogoutAll(c.Request().Context(), uid); err != nil {
+		if errors.Is(err, ErrRefreshBusy) {
+			return echo.NewHTTPError(http.StatusServiceUnavailable, msgTryAgain).SetInternal(err)
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "logout failed")
 	}
 	h.clearRefreshCookie(c)

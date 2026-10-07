@@ -69,20 +69,76 @@ WHERE provider = $1 AND subject = $2;
 INSERT INTO mentorix.auth_refresh_sessions (user_id, token_hash, expires_at)
 VALUES ($1, $2, $3);
 
--- name: GetRefreshSessionUserForUpdate :one
-SELECT user_id
+-- name: InsertRefreshSessionInFamily :exec
+INSERT INTO mentorix.auth_refresh_sessions (user_id, family_id, token_hash, expires_at)
+VALUES ($1, $2, $3, $4);
+
+-- name: GetRefreshSessionForRotation :one
+-- Reads the row in any state and locks it. It runs after the family lock, so every time
+-- comparison uses statement_timestamp(): now() is the start of the transaction, before the lock wait.
+SELECT
+  user_id,
+  family_id,
+  (expires_at <= statement_timestamp())::boolean AS expired,
+  (revoked_at IS NOT NULL)::boolean AS revoked,
+  (rotated_at IS NOT NULL)::boolean AS rotated,
+  (rotated_at IS NOT NULL
+    AND statement_timestamp() - rotated_at <= make_interval(secs => sqlc.arg(grace_seconds)::float8))::boolean AS within_grace
 FROM mentorix.auth_refresh_sessions
-WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()
+WHERE token_hash = sqlc.arg(token_hash)
 FOR UPDATE;
+
+-- name: GetRefreshSessionFamilyID :one
+-- Unlocked read: it only finds the family to lock before the row is read again.
+SELECT family_id
+FROM mentorix.auth_refresh_sessions
+WHERE token_hash = $1;
+
+-- name: SetLocalLockTimeout :exec
+SELECT set_config('lock_timeout', sqlc.arg(timeout)::text, true);
+
+-- name: ListUserLiveRefreshFamilies :many
+SELECT DISTINCT family_id
+FROM mentorix.auth_refresh_sessions
+WHERE user_id = $1 AND revoked_at IS NULL
+ORDER BY family_id;
+
+-- name: LockRefreshFamily :exec
+-- Serializes every rotation and revoke of one family until the transaction ends.
+SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text, 0));
+
+-- name: MarkRefreshSessionRotated :exec
+UPDATE mentorix.auth_refresh_sessions
+SET rotated_at = statement_timestamp(), revoked_at = statement_timestamp()
+WHERE token_hash = $1;
 
 -- name: RevokeRefreshSessionByHash :exec
 UPDATE mentorix.auth_refresh_sessions
-SET revoked_at = now()
-WHERE token_hash = $1;
+SET revoked_at = statement_timestamp()
+WHERE token_hash = $1 AND revoked_at IS NULL;
+
+-- name: MarkRefreshFamilyRotated :exec
+-- Spends the family's unrevoked row, expired or not, so the successor is its only live token.
+-- The partial unique index allows at most one such row.
+UPDATE mentorix.auth_refresh_sessions
+SET rotated_at = statement_timestamp(), revoked_at = statement_timestamp()
+WHERE family_id = $1 AND revoked_at IS NULL;
+
+-- name: RefreshFamilyHasActiveSession :one
+SELECT EXISTS (
+  SELECT 1
+  FROM mentorix.auth_refresh_sessions
+  WHERE family_id = $1 AND revoked_at IS NULL AND rotated_at IS NULL AND expires_at > statement_timestamp()
+)::boolean;
+
+-- name: RevokeRefreshFamily :execrows
+UPDATE mentorix.auth_refresh_sessions
+SET revoked_at = statement_timestamp()
+WHERE family_id = $1 AND revoked_at IS NULL;
 
 -- name: RevokeAllUserRefreshSessions :exec
 UPDATE mentorix.auth_refresh_sessions
-SET revoked_at = now()
+SET revoked_at = statement_timestamp()
 WHERE user_id = $1 AND revoked_at IS NULL;
 
 -- name: PurgeStaleRefreshSessions :execrows
