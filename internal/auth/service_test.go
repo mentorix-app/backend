@@ -34,6 +34,18 @@ type fakeAuthStore struct {
 	socialCalls   []socialSignInCall
 	addRoleErr    error
 	addRoleCalls  []addRoleCall
+	attachErr     error
+	attachCalls   []attachIdentityCall
+	passwordHash  string
+	passwordErr   error
+	isAdmin       bool
+	adminErr      error
+}
+
+type attachIdentityCall struct {
+	userID   uuid.UUID
+	provider string
+	subject  string
 }
 
 type socialSignInCall struct {
@@ -61,6 +73,19 @@ func (f *fakeAuthStore) SocialSignIn(_ context.Context, provider string, claims 
 func (f *fakeAuthStore) AddRole(_ context.Context, userID uuid.UUID, role string) error {
 	f.addRoleCalls = append(f.addRoleCalls, addRoleCall{userID: userID, role: role})
 	return f.addRoleErr
+}
+
+func (f *fakeAuthStore) AttachIdentity(_ context.Context, userID uuid.UUID, provider, subject string) error {
+	f.attachCalls = append(f.attachCalls, attachIdentityCall{userID: userID, provider: provider, subject: subject})
+	return f.attachErr
+}
+
+func (f *fakeAuthStore) EmailPasswordHash(context.Context, uuid.UUID) (string, error) {
+	return f.passwordHash, f.passwordErr
+}
+
+func (f *fakeAuthStore) UserIsAdmin(context.Context, uuid.UUID) (bool, error) {
+	return f.isAdmin, f.adminErr
 }
 
 func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _, _ string) (uuid.UUID, error) {
@@ -648,5 +673,204 @@ func TestUsableName(t *testing.T) {
 		if got := usableName(in); got != want {
 			t.Errorf("usableName(%q) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+func TestService_AttachIdentity_success(t *testing.T) {
+	store := &fakeAuthStore{}
+	ver := &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub-attach", Email: "ignored@test.com", EmailVerified: true}}
+	svc := socialTestService(store, map[string]IDTokenVerifier{ProviderApple: ver})
+	userID := uuid.New()
+
+	if err := svc.AttachIdentity(context.Background(), userID, ProviderApple, "raw-token", ""); err != nil {
+		t.Fatalf("AttachIdentity() error = %v", err)
+	}
+
+	want := attachIdentityCall{userID: userID, provider: ProviderApple, subject: "sub-attach"}
+	if len(store.attachCalls) != 1 || store.attachCalls[0] != want {
+		t.Errorf("store calls = %+v, want [%+v]", store.attachCalls, want)
+	}
+	if len(ver.tokens) != 1 || ver.tokens[0] != "raw-token" {
+		t.Errorf("verifier tokens = %v", ver.tokens)
+	}
+}
+
+func TestService_AttachIdentity_errorsPassThrough(t *testing.T) {
+	tests := []struct {
+		name        string
+		verifierErr error
+		storeErr    error
+		want        error
+		wantStore   int
+	}{
+		{name: "invalid token", verifierErr: ErrInvalidIDToken, want: ErrInvalidIDToken},
+		{name: "provider unavailable", verifierErr: ErrIDTokenProviderUnavailable, want: ErrIDTokenProviderUnavailable},
+		{name: "identity of another account", storeErr: ErrIdentityBelongsToAnotherAccount, want: ErrIdentityBelongsToAnotherAccount, wantStore: 1},
+		{name: "user not found", storeErr: pgx.ErrNoRows, want: pgx.ErrNoRows, wantStore: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeAuthStore{attachErr: tt.storeErr}
+			ver := &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub"}, err: tt.verifierErr}
+			svc := socialTestService(store, map[string]IDTokenVerifier{ProviderGoogle: ver})
+
+			err := svc.AttachIdentity(context.Background(), uuid.New(), ProviderGoogle, "raw", "")
+
+			if !errors.Is(err, tt.want) {
+				t.Errorf("AttachIdentity() error = %v, want %v", err, tt.want)
+			}
+			if len(store.attachCalls) != tt.wantStore {
+				t.Errorf("store calls = %d, want %d", len(store.attachCalls), tt.wantStore)
+			}
+		})
+	}
+}
+
+func TestService_AttachIdentity_providerNotConfigured(t *testing.T) {
+	for name, verifiers := range map[string]map[string]IDTokenVerifier{
+		"missing":   {},
+		"nil entry": {ProviderGoogle: nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeAuthStore{}
+			svc := socialTestService(store, verifiers)
+
+			err := svc.AttachIdentity(context.Background(), uuid.New(), ProviderGoogle, "raw", "")
+
+			if !errors.Is(err, ErrProviderNotConfigured) {
+				t.Errorf("AttachIdentity() error = %v, want ErrProviderNotConfigured", err)
+			}
+			if len(store.attachCalls) != 0 {
+				t.Errorf("store called for an unconfigured provider: %+v", store.attachCalls)
+			}
+		})
+	}
+}
+
+func TestService_AttachIdentity_passwordStepUp(t *testing.T) {
+	hash := mustHash(t, "correct-password")
+	tests := []struct {
+		name         string
+		store        *fakeAuthStore
+		password     string
+		wantErr      error
+		wantVerified bool
+		wantAttached bool
+	}{
+		{name: "password account, correct password", store: &fakeAuthStore{passwordHash: hash}, password: "correct-password", wantVerified: true, wantAttached: true},
+		{name: "password account, missing password", store: &fakeAuthStore{passwordHash: hash}, wantErr: ErrPasswordRequired},
+		{name: "password account, wrong password", store: &fakeAuthStore{passwordHash: hash}, password: "wrong-password", wantErr: ErrPasswordIncorrect},
+		{name: "social-only account, no password", store: &fakeAuthStore{}, wantVerified: true, wantAttached: true},
+		{name: "social-only account, stray password is ignored", store: &fakeAuthStore{}, password: "anything", wantVerified: true, wantAttached: true},
+		{name: "user not found", store: &fakeAuthStore{passwordErr: pgx.ErrNoRows}, password: "correct-password", wantErr: pgx.ErrNoRows},
+		{name: "admin account", store: &fakeAuthStore{passwordHash: hash, isAdmin: true}, password: "correct-password", wantErr: ErrAdminCannotAttachIdentity},
+		{name: "admin account without password hash", store: &fakeAuthStore{isAdmin: true}, wantErr: ErrAdminCannotAttachIdentity},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ver := &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub"}}
+			svc := socialTestService(tt.store, map[string]IDTokenVerifier{ProviderGoogle: ver})
+
+			err := svc.AttachIdentity(context.Background(), uuid.New(), ProviderGoogle, "raw", tt.password)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("AttachIdentity() error = %v, want %v", err, tt.wantErr)
+			}
+			if verified := len(ver.tokens) > 0; verified != tt.wantVerified {
+				t.Errorf("verifier called = %v, want %v", verified, tt.wantVerified)
+			}
+			if attached := len(tt.store.attachCalls) > 0; attached != tt.wantAttached {
+				t.Errorf("store attach called = %v, want %v", attached, tt.wantAttached)
+			}
+			if err != nil && tt.password != "" && strings.Contains(err.Error(), tt.password) {
+				t.Error("error text contains the password")
+			}
+		})
+	}
+}
+
+func TestService_AttachIdentity_lookupFailuresStopBeforeVerifying(t *testing.T) {
+	tests := []struct {
+		name  string
+		store *fakeAuthStore
+	}{
+		{name: "password lookup fails", store: &fakeAuthStore{passwordErr: errors.New("db down")}},
+		{name: "admin lookup fails", store: &fakeAuthStore{adminErr: errors.New("db down")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ver := &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub"}}
+			svc := socialTestService(tt.store, map[string]IDTokenVerifier{ProviderGoogle: ver})
+
+			err := svc.AttachIdentity(context.Background(), uuid.New(), ProviderGoogle, "raw", "")
+
+			if err == nil {
+				t.Fatal("AttachIdentity() succeeded, want an error")
+			}
+			if len(ver.tokens) != 0 || len(tt.store.attachCalls) != 0 {
+				t.Errorf("verifier calls = %d, attach calls = %d; want none", len(ver.tokens), len(tt.store.attachCalls))
+			}
+		})
+	}
+}
+
+func TestService_AttachIdentity_providerNotConfiguredBeatsStoreLookups(t *testing.T) {
+	store := &fakeAuthStore{passwordErr: errors.New("db down"), adminErr: errors.New("db down")}
+	svc := socialTestService(store, map[string]IDTokenVerifier{})
+
+	err := svc.AttachIdentity(context.Background(), uuid.New(), ProviderGoogle, "raw", "")
+
+	if !errors.Is(err, ErrProviderNotConfigured) {
+		t.Errorf("AttachIdentity() error = %v, want ErrProviderNotConfigured", err)
+	}
+}
+
+func TestService_AttachIdentity_adminBeatsPasswordCheck(t *testing.T) {
+	hash := mustHash(t, "correct-password")
+	for name, password := range map[string]string{"missing": "", "wrong": "wrong-password"} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeAuthStore{passwordHash: hash, isAdmin: true}
+			ver := &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub"}}
+			svc := socialTestService(store, map[string]IDTokenVerifier{ProviderGoogle: ver})
+
+			err := svc.AttachIdentity(context.Background(), uuid.New(), ProviderGoogle, "raw", password)
+
+			if !errors.Is(err, ErrAdminCannotAttachIdentity) {
+				t.Errorf("AttachIdentity() error = %v, want ErrAdminCannotAttachIdentity", err)
+			}
+		})
+	}
+}
+
+func TestService_AttachIdentity_malformedStoredHashFailsClosed(t *testing.T) {
+	store := &fakeAuthStore{passwordHash: "not-an-argon2-hash"}
+	ver := &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub"}}
+	svc := socialTestService(store, map[string]IDTokenVerifier{ProviderGoogle: ver})
+
+	err := svc.AttachIdentity(context.Background(), uuid.New(), ProviderGoogle, "raw", "some-password")
+
+	if err == nil {
+		t.Fatal("AttachIdentity() succeeded with a malformed stored hash")
+	}
+	if errors.Is(err, ErrPasswordIncorrect) || errors.Is(err, ErrPasswordRequired) {
+		t.Errorf("error = %v, want an internal error", err)
+	}
+	if len(ver.tokens) != 0 || len(store.attachCalls) != 0 {
+		t.Errorf("verifier calls = %d, attach calls = %d; want none", len(ver.tokens), len(store.attachCalls))
+	}
+}
+
+func TestService_AttachIdentity_whitespaceOnlyPasswordIsIncorrect(t *testing.T) {
+	store := &fakeAuthStore{passwordHash: mustHash(t, "correct-password")}
+	ver := &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub"}}
+	svc := socialTestService(store, map[string]IDTokenVerifier{ProviderGoogle: ver})
+
+	err := svc.AttachIdentity(context.Background(), uuid.New(), ProviderGoogle, "raw", "   ")
+
+	if !errors.Is(err, ErrPasswordIncorrect) {
+		t.Errorf("AttachIdentity() error = %v, want ErrPasswordIncorrect", err)
+	}
+	if len(ver.tokens) != 0 {
+		t.Error("verifier called after a failed password check")
 	}
 }

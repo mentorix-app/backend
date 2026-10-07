@@ -39,6 +39,15 @@ type AddRoleRequest struct {
 	Role string `json:"role"`
 }
 
+// AttachIdentityRequest is the JSON body for POST /auth/me/identities.
+// Provider is "apple" or "google". CurrentPassword is required when the account
+// has an email and password sign-in and ignored otherwise.
+type AttachIdentityRequest struct {
+	Provider        string `json:"provider"`
+	IDToken         string `json:"id_token"`
+	CurrentPassword string `json:"current_password,omitempty"`
+}
+
 // RefreshRequest is the optional JSON body for POST /auth/refresh and POST /auth/logout.
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
@@ -63,11 +72,13 @@ type TokenResponse struct {
 
 // MeResponse is the JSON body for GET /auth/me and PATCH /auth/me.
 // Subscription is set for users with a trainer profile and null otherwise.
+// SignInMethods lists the distinct providers attached to the account, sorted.
 type MeResponse struct {
-	UserID       string                     `json:"user_id"`
-	Email        string                     `json:"email"`
-	Name         string                     `json:"name"`
-	CreatedAt    time.Time                  `json:"created_at"`
-	Roles        []string                   `json:"roles"`
-	Subscription *subscription.Subscription `json:"subscription"`
+	UserID        string                     `json:"user_id"`
+	Email         string                     `json:"email"`
+	Name          string                     `json:"name"`
+	CreatedAt     time.Time                  `json:"created_at"`
+	Roles         []string                   `json:"roles"`
+	SignInMethods []string                   `json:"sign_in_methods"`
+	Subscription  *subscription.Subscription `json:"subscription"`
 }

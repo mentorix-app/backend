@@ -89,3 +89,19 @@ WHERE user_id = $1 AND revoked_at IS NULL;
 DELETE FROM mentorix.auth_refresh_sessions
 WHERE (revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
    OR (expires_at < now() - interval '30 days');
+
+-- name: ListUserSignInMethods :many
+SELECT DISTINCT provider
+FROM mentorix.auth_identities
+WHERE user_id = $1
+ORDER BY provider;
+
+-- name: GetEmailPasswordHashByUserID :one
+-- No row means the user does not exist; an empty hash means no password identity.
+SELECT COALESCE(i.password_hash, '')::text AS password_hash
+FROM mentorix.users u
+LEFT JOIN mentorix.auth_identities i
+  ON i.user_id = u.id AND i.provider = sqlc.arg(provider)::text
+WHERE u.id = sqlc.arg(user_id)
+ORDER BY (i.password_hash IS NULL), i.created_at
+LIMIT 1;

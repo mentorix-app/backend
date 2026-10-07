@@ -110,3 +110,37 @@ func TestRateLimiter_logoutDisabled(t *testing.T) {
 		t.Errorf("nil AllowLogout() = %v", err)
 	}
 }
+
+func TestRateLimiter_attachIdentityLimit(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	ctx := context.Background()
+	ip := "10.0.0.5"
+
+	if err := l.AllowAttachIdentity(ctx, ip); err != nil {
+		t.Fatalf("first AllowAttachIdentity: %v", err)
+	}
+	if err := l.AllowAttachIdentity(ctx, ip); !errors.Is(err, ErrRateLimited) {
+		t.Errorf("second AllowAttachIdentity = %v, want ErrRateLimited", err)
+	}
+	if !mr.Exists("mentorix:rl:attach_identity:ip:" + ip) {
+		t.Error("expected key mentorix:rl:attach_identity:ip:" + ip)
+	}
+	if err := l.AllowLogin(ctx, ip); err != nil {
+		t.Errorf("AllowLogin after attach limit = %v, want nil", err)
+	}
+}
+
+func TestRateLimiter_attachIdentityDisabled(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 0, time.Minute, 0, time.Minute)
+	if err := l.AllowAttachIdentity(context.Background(), "1.2.3.4"); err != nil {
+		t.Errorf("AllowAttachIdentity() = %v", err)
+	}
+	var nilLimiter *RateLimiter
+	if err := nilLimiter.AllowAttachIdentity(context.Background(), "1.2.3.4"); err != nil {
+		t.Errorf("nil AllowAttachIdentity() = %v", err)
+	}
+}

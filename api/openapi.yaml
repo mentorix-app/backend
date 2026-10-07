@@ -326,6 +326,53 @@ paths:
         "409":
           description: The account is an admin account, which cannot hold trainer or client roles
 
+  /auth/me/identities:
+    post:
+      tags: [auth]
+      summary: Attach an Apple or Google sign-in to the current account
+      description: >-
+        Verifies the ID token and links its (provider, subject) pair to the signed-in account.
+        Repeating the call for an identity the account already owns changes nothing.
+        The token's email is ignored. Rate limited like login.
+        When the account has an email and password sign-in, current_password must match it,
+        and admin accounts are refused; both checks run before the token is verified.
+        Returns the same body as GET /auth/me.
+      operationId: attachMyIdentity
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AttachIdentityRequest"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          description: >-
+            Invalid JSON, unknown provider, empty id_token, or the provider is not configured on this server
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: >-
+            current_password is missing or wrong for an account with a password,
+            or the account is an admin account
+        "404":
+          description: User not found
+        "409":
+          description: This sign-in already belongs to another account
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          description: Unexpected server error
+        "503":
+          description: The provider's signing keys could not be fetched; retry later
+
   /plans:
     get:
       tags: [subscription]
@@ -2282,6 +2329,10 @@ components:
       type: string
       enum: [apple, google]
 
+    SignInMethod:
+      type: string
+      enum: [email_password, telegram, apple, google]
+
     SelfAssignableRole:
       type: string
       enum: [trainer, client]
@@ -2342,6 +2393,19 @@ components:
         role:
           $ref: "#/components/schemas/SelfAssignableRole"
 
+    AttachIdentityRequest:
+      type: object
+      required: [provider, id_token]
+      properties:
+        provider:
+          $ref: "#/components/schemas/SocialProvider"
+        id_token:
+          type: string
+          description: ID token the Apple or Google SDK returned to the app
+        current_password:
+          type: string
+          description: Required when the account has an email and password sign-in; ignored otherwise
+
     RefreshRequest:
       type: object
       properties:
@@ -2381,7 +2445,7 @@ components:
 
     MeResponse:
       type: object
-      required: [user_id, email, name, created_at, roles]
+      required: [user_id, email, name, created_at, roles, sign_in_methods]
       properties:
         user_id:
           type: string
@@ -2399,6 +2463,11 @@ components:
           items:
             type: string
             enum: [admin, trainer, client]
+        sign_in_methods:
+          type: array
+          description: Distinct providers of the account's identities, sorted alphabetically; empty when there are none
+          items:
+            $ref: "#/components/schemas/SignInMethod"
         subscription:
           $ref: "#/components/schemas/Subscription"
 
