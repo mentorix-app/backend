@@ -77,7 +77,9 @@ Stage: files not used, all from Render.
 | Source | Destination |
 | --- | --- |
 | `render.yaml` | stage links + cookie/proxy + `BOT_WEBHOOK_URL`; `ipAllowList` for DB and Key Value open to `0.0.0.0/0` for local tools |
-| Dashboard `sync: false` | `JWT_SECRET`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS`, `TRAINER_INVITE_TTL_DAYS`, `CLIENT_ANALYTICS_PAGE_URL` |
+| Dashboard `sync: false` | `JWT_SECRET`, `BOT_*`, `TELEGRAM_BOT_USERNAME`, `CORS_ALLOW_ORIGINS`, `TRAINER_INVITE_TTL_DAYS`, `CLIENT_ANALYTICS_PAGE_URL`, `APPLE_CLIENT_IDS`, `GOOGLE_CLIENT_IDS` |
+
+`APPLE_CLIENT_IDS` and `GOOGLE_CLIENT_IDS` list the client IDs (comma separated) accepted as the audience of Apple and Google ID tokens. Leave one empty to turn that sign-in off.
 
 Variables added to `render.yaml` with `sync: false` do not appear in Dashboard automatically — set them manually (Environment → Add).
 

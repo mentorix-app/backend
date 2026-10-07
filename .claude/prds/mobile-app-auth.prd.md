@@ -110,7 +110,7 @@ In every row the person ends with exactly one account, and every trainer link an
 | # | Milestone | Outcome | Status | Plan |
 |---|---|---|---|---|
 | 1 | Sign-in on the phone | A trainer signs in to the app with their web email and password and stays signed in between launches; a new person signs up the same way | complete | `.claude/plans/mobile-app-auth.plan.md` |
-| 2 | Apple and Google | Anyone creates an account or returns to it with Apple or Google, chooses a role on first sign-in, and can add another way to sign in from the profile | pending | n/a |
+| 2 | Apple and Google | Anyone creates an account or returns to it with Apple or Google, chooses a role on first sign-in, and can add another way to sign in from the profile | in-progress | `.claude/plans/mobile-app-auth-m2.plan.md` |
 | 3 | Invites in the app | A new client with no Telegram enters a trainer's code in the app and appears in that trainer's client list | pending | n/a |
 | 4 | Moving from Telegram | A client takes a link code from the bot, enters it in the app and sees the same trainers and history; an account created by mistake is joined automatically | pending | n/a |
 | 5 | Telegram from the app | A client who joined through the app connects Telegram and the bot recognizes them | pending | n/a |

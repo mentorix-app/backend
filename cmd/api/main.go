@@ -111,7 +111,14 @@ func main() {
 		subsSvc := subscription.NewService(pool)
 		subscription.NewHandlers(auth.JWTMiddleware(cfg.JWTSecret)).Mount(e)
 
-		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL())
+		socialVerifiers := auth.NewSocialVerifiers(ctx, cfg.AppleClientIDs, cfg.GoogleClientIDs)
+		logger.Info("social sign-in providers",
+			"apple", socialVerifiers[auth.ProviderApple] != nil,
+			"google", socialVerifiers[auth.ProviderGoogle] != nil,
+		)
+		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL(),
+			auth.WithIDTokenVerifiers(socialVerifiers),
+		)
 		auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter,
 			auth.WithSubscriptions(subsSvc),
 			auth.WithAllowedOrigins(cfg.CORSAllowedOrigins),

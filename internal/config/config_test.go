@@ -285,3 +285,34 @@ func TestLoad_clientAnalyticsPageURL_invalid(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_socialClientIDs(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("APPLE_CLIENT_IDS", " com.example.app , com.example.web ")
+	t.Setenv("GOOGLE_CLIENT_IDS", "g-1.apps.googleusercontent.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.AppleClientIDs) != 2 || cfg.AppleClientIDs[0] != "com.example.app" || cfg.AppleClientIDs[1] != "com.example.web" {
+		t.Errorf("AppleClientIDs = %v", cfg.AppleClientIDs)
+	}
+	if len(cfg.GoogleClientIDs) != 1 || cfg.GoogleClientIDs[0] != "g-1.apps.googleusercontent.com" {
+		t.Errorf("GoogleClientIDs = %v", cfg.GoogleClientIDs)
+	}
+}
+
+func TestLoad_socialClientIDsDefaultToNone(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("APPLE_CLIENT_IDS", "")
+	t.Setenv("GOOGLE_CLIENT_IDS", " , ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.AppleClientIDs) != 0 || len(cfg.GoogleClientIDs) != 0 {
+		t.Errorf("client ids = %v, %v; want none", cfg.AppleClientIDs, cfg.GoogleClientIDs)
+	}
+}

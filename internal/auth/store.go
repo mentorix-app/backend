@@ -15,7 +15,23 @@ import (
 	"mentorix-backend/internal/db/sqlc"
 )
 
-const pgUniqueViolationCode = "23505"
+const (
+	pgUniqueViolationCode = "23505"
+	// pgCheckViolationCode is what the user_roles_admin_exclusive trigger raises.
+	pgCheckViolationCode = "23514"
+	// pgForeignKeyViolationCode is raised when a row refers to a missing user.
+	pgForeignKeyViolationCode = "23503"
+
+	usersEmailUniqueConstraint    = "users_primary_email_lower_uniq"
+	identitySubjectUniqConstraint = "auth_identities_provider_subject_uniq"
+)
+
+// isUniqueViolation reports whether err is a unique violation of the named
+// constraint, so one violation cannot be mistaken for another.
+func isUniqueViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraint
+}
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -40,6 +56,9 @@ func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwor
 		DisplayName:  displayName,
 	})
 	if err != nil {
+		if isUniqueViolation(err, usersEmailUniqueConstraint) {
+			return uuid.Nil, ErrEmailTaken
+		}
 		return uuid.Nil, fmt.Errorf("insert user: %w", err)
 	}
 
@@ -71,6 +90,123 @@ func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwor
 		return uuid.Nil, fmt.Errorf("commit: %w", err)
 	}
 	return pgconv.FromPGUUID(userPG), nil
+}
+
+// SocialSignIn returns the user that owns the (provider, subject) identity and
+// creates the user and identity when none exists. A new user has no roles. The
+// claims' email is stored as primary_email only when the provider marked it
+// verified. A verified email that already belongs to another user fails with
+// ErrEmailBelongsToAnotherAccount and creates nothing.
+func (s *Store) SocialSignIn(ctx context.Context, provider string, claims IDTokenClaims, displayName string) (uuid.UUID, bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	identity := sqlc.GetAuthIdentityUserIDParams{Provider: provider, Subject: claims.Subject}
+
+	userPG, err := qtx.GetAuthIdentityUserID(ctx, identity)
+	if err == nil {
+		return pgconv.FromPGUUID(userPG), false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, false, fmt.Errorf("lookup %s identity: %w", provider, err)
+	}
+
+	var primaryEmail *string
+	if email := NormalizeEmail(claims.Email); claims.EmailVerified && email != "" {
+		_, err := qtx.GetUserIDByPrimaryEmail(ctx, email)
+		if err == nil {
+			return uuid.Nil, false, ErrEmailBelongsToAnotherAccount
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, false, fmt.Errorf("lookup user by email: %w", err)
+		}
+		primaryEmail = &email
+	}
+
+	userPG, err = qtx.InsertUser(ctx, sqlc.InsertUserParams{
+		PrimaryEmail: primaryEmail,
+		DisplayName:  displayName,
+	})
+	if err != nil {
+		if isUniqueViolation(err, usersEmailUniqueConstraint) {
+			// Either another account holds the email, or a concurrent first
+			// sign-in of this same identity just created its user with it. The
+			// failed insert aborted the transaction; read the identity outside it.
+			_ = tx.Rollback(ctx)
+			existing, lookupErr := s.q.GetAuthIdentityUserID(ctx, identity)
+			if lookupErr == nil {
+				return pgconv.FromPGUUID(existing), false, nil
+			}
+			if !errors.Is(lookupErr, pgx.ErrNoRows) {
+				return uuid.Nil, false, fmt.Errorf("lookup %s identity after email conflict: %w", provider, lookupErr)
+			}
+			return uuid.Nil, false, ErrEmailBelongsToAnotherAccount
+		}
+		return uuid.Nil, false, fmt.Errorf("insert user: %w", err)
+	}
+	if err := qtx.InsertAuthIdentity(ctx, sqlc.InsertAuthIdentityParams{
+		UserID:   userPG,
+		Provider: provider,
+		Subject:  claims.Subject,
+	}); err != nil {
+		if isUniqueViolation(err, identitySubjectUniqConstraint) {
+			// A concurrent first sign-in won. The failed insert aborted this
+			// transaction, so roll it back (dropping the new user) and read the
+			// winner's identity outside it.
+			_ = tx.Rollback(ctx)
+			userPG, err = s.q.GetAuthIdentityUserID(ctx, identity)
+			if err != nil {
+				return uuid.Nil, false, fmt.Errorf("lookup %s identity after race: %w", provider, err)
+			}
+			return pgconv.FromPGUUID(userPG), false, nil
+		}
+		return uuid.Nil, false, fmt.Errorf("insert %s identity: %w", provider, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, false, fmt.Errorf("commit: %w", err)
+	}
+	return pgconv.FromPGUUID(userPG), true, nil
+}
+
+// AddRole gives the user a self-assignable role (client or trainer) and is a
+// no-op when the user already has it. The trainer role also creates the
+// trainers row. An admin account fails with ErrRoleConflict.
+func (s *Store) AddRole(ctx context.Context, userID uuid.UUID, role string) error {
+	if role != RoleClient && role != RoleTrainer {
+		return fmt.Errorf("role %q cannot be added by the user", role)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	userPG := pgconv.ToPGUUID(userID)
+
+	if err := qtx.GrantUserRole(ctx, sqlc.GrantUserRoleParams{UserID: userPG, Role: role}); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgCheckViolationCode {
+			return ErrRoleConflict
+		}
+		if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolationCode {
+			return pgx.ErrNoRows
+		}
+		return fmt.Errorf("grant role: %w", err)
+	}
+	if role == RoleTrainer {
+		if err := qtx.InsertTrainerIfMissing(ctx, userPG); err != nil {
+			return fmt.Errorf("insert trainer: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
 }
 
 type emailIdentityRow struct {

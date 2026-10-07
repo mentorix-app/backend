@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -22,6 +23,8 @@ type authStore interface {
 	UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error)
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
+	SocialSignIn(ctx context.Context, provider string, claims IDTokenClaims, displayName string) (uuid.UUID, bool, error)
+	AddRole(ctx context.Context, userID uuid.UUID, role string) error
 }
 
 type Service struct {
@@ -29,6 +32,7 @@ type Service struct {
 	jwtSecret  []byte
 	accessTTL  time.Duration
 	refreshTTL time.Duration
+	verifiers  map[string]IDTokenVerifier
 }
 
 type IssuedAuth struct {
@@ -39,17 +43,44 @@ type IssuedAuth struct {
 	Email         string
 }
 
-func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration) *Service {
-	return &Service{
+type ServiceOption func(*Service)
+
+// WithIDTokenVerifiers sets the ID token verifier for each social provider,
+// keyed by provider name. A provider without an entry cannot be used to sign in.
+func WithIDTokenVerifiers(verifiers map[string]IDTokenVerifier) ServiceOption {
+	return func(s *Service) { s.verifiers = verifiers }
+}
+
+func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration, opts ...ServiceOption) *Service {
+	s := &Service{
 		store:      NewStore(pool),
 		jwtSecret:  []byte(jwtSecret),
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func normalizeDisplayName(name string) string {
 	return strings.TrimSpace(name)
+}
+
+// maxSocialNameRunes is the longest display name social login accepts.
+const maxSocialNameRunes = 100
+
+// usableName reports whether Postgres can store s: valid UTF-8 without NUL.
+func usableName(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
+}
+
+func truncateRunes(s string, limit int) string {
+	if utf8.RuneCountInString(s) <= limit {
+		return s
+	}
+	return string([]rune(s)[:limit])
 }
 
 func (s *Service) RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error) {
@@ -122,6 +153,58 @@ func (s *Service) Login(ctx context.Context, email, password string) (IssuedAuth
 	out.UserID = row.UserID
 	out.Email = email
 	return out, nil
+}
+
+// SocialLogin verifies the provider's ID token and signs the person in, creating
+// an account with no roles on the first sign-in (created is true then). name is
+// the display name for a new account; the token's name is the fallback.
+func (s *Service) SocialLogin(ctx context.Context, provider, rawIDToken, name string) (IssuedAuth, bool, error) {
+	var out IssuedAuth
+	verifier, ok := s.verifiers[provider]
+	if !ok || verifier == nil {
+		return out, false, ErrProviderNotConfigured
+	}
+	claims, err := verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return out, false, err
+	}
+	displayName := normalizeDisplayName(name)
+	if displayName == "" {
+		if tokenName := normalizeDisplayName(claims.Name); usableName(tokenName) {
+			displayName = truncateRunes(tokenName, maxSocialNameRunes)
+		}
+	}
+	userID, created, err := s.store.SocialSignIn(ctx, provider, claims, displayName)
+	if err != nil {
+		return out, false, err
+	}
+	email, err := s.store.UserPrimaryEmail(ctx, userID)
+	if err != nil {
+		return out, false, fmt.Errorf("load user email: %w", err)
+	}
+	plain, h, err := newRefreshToken()
+	if err != nil {
+		return out, false, fmt.Errorf("refresh token: %w", err)
+	}
+	expiresAt := time.Now().UTC().Add(s.refreshTTL)
+	if err := s.store.InsertRefreshSession(ctx, userID, h, expiresAt); err != nil {
+		return out, false, fmt.Errorf("session: %w", err)
+	}
+	token, exp, err := signAccessToken(userID, s.jwtSecret, s.accessTTL)
+	if err != nil {
+		return out, false, fmt.Errorf("sign token: %w", err)
+	}
+	out.AccessToken = token
+	out.AccessExpires = exp
+	out.RefreshToken = plain
+	out.UserID = userID
+	out.Email = email
+	return out, created, nil
+}
+
+// AddRole gives the user the client or trainer role; see Store.AddRole.
+func (s *Service) AddRole(ctx context.Context, userID uuid.UUID, role string) error {
+	return s.store.AddRole(ctx, userID, role)
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error) {

@@ -38,6 +38,10 @@ type Config struct {
 	BotToken             string
 	BotWebhookURL        string
 	BotWebhookSecret     string
+	// AppleClientIDs and GoogleClientIDs are the audiences accepted in Apple and
+	// Google ID tokens. An empty list turns that provider off.
+	AppleClientIDs  []string
+	GoogleClientIDs []string
 	// ClientAnalyticsPageURL is the frontend page the Telegram bot links to for
 	// client self-analytics. Empty disables the "Статистика" button.
 	ClientAnalyticsPageURL string
@@ -133,6 +137,8 @@ func Load() (Config, error) {
 		BotWebhookURL:          strings.TrimRight(strings.TrimSpace(os.Getenv("BOT_WEBHOOK_URL")), "/"),
 		BotWebhookSecret:       strings.TrimSpace(os.Getenv("BOT_WEBHOOK_SECRET")),
 		ClientAnalyticsPageURL: strings.TrimSpace(os.Getenv("CLIENT_ANALYTICS_PAGE_URL")),
+		AppleClientIDs:         parseCommaSeparated(os.Getenv("APPLE_CLIENT_IDS")),
+		GoogleClientIDs:        parseCommaSeparated(os.Getenv("GOOGLE_CLIENT_IDS")),
 	}
 
 	if cfg.AppEnv != AppEnvDevelopment {
