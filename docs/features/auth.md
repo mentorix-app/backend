@@ -54,7 +54,12 @@ Key details:
 - `CORS_ALLOW_ORIGINS` must be set whenever the refresh cookie is `SameSite=none`. With an empty list or a `*` entry the check is off, and the API logs a warning at startup.
 - Token responses from `register`, `login`, `social-login` and `refresh` are sent with `Cache-Control: no-store`.
 - A refresh whose token came from the cookie never returns `refresh_token` in JSON, so page scripts cannot read it.
-- A refresh token is single-use. A mobile client must not run two refresh calls at once: the second call fails with `401`.
+- Every sign-in starts its own token family, and a family has one live token. A refresh spends the live token and returns its replacement.
+- A spent token can be retried for 30 seconds, so a response lost on a bad network still leads to a working token. The retry spends the token issued before it and returns a new one, so the earlier response is dead. A client sends one refresh at a time and uses the token from the latest response: two calls at once make the second one replace the first one's token. This holds for web clients too: two browser tabs, or a double submit, that send the same cookie can end the sign-in later, when the older response's token is presented after the window.
+- After those 30 seconds a spent token is treated as stolen or replayed: every token of its family is revoked, so that sign-in ends on every device that shares it, and the call gets the usual `401`. Other sign-ins of the same user are not affected. The request log records `refresh_token_reuse family=<uuid> user=<uuid> revoked=<n>` and never the token. `revoked=0` means the family was already ended, for example by a logout. Spent tokens are kept for 30 days, so reuse is detectable for that long.
+- `logout` ends the whole family of the token it receives, also when that token is already spent. A token that has expired only ends its own row. `logout-all` ends every family of the user.
+- Rotation and revoke of one family run one at a time. A call that waits more than 5 seconds for that turn answers `503` and changes nothing, and the client should retry it. The cookie is kept.
+- A token that was logged out, expired or never existed gets `401` and changes nothing. A retry inside the window after the family was logged out is also refused.
 
 ## See also
 

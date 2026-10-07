@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -501,6 +502,56 @@ func TestLogout_revokeError(t *testing.T) {
 	he, ok := err.(*echo.HTTPError)
 	if !ok || he.Code != http.StatusInternalServerError {
 		t.Fatalf("error = %v, want 500", err)
+	}
+}
+
+func TestRefresh_busyAnswers503WithoutTouchingCookies(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{refreshErr: fmt.Errorf("rotate: %w", ErrRefreshBusy)})
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: h.cookie.Name, Value: "refresh-token"})
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	var he *echo.HTTPError
+	if err := h.Refresh(c); !errors.As(err, &he) || he.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Refresh() error = %v, want 503", err)
+	}
+	if got := rec.Result().Cookies(); len(got) != 0 {
+		t.Errorf("cookies = %v, want none", got)
+	}
+}
+
+func TestLogout_busyAnswers503WithoutTouchingCookies(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{logoutErr: fmt.Errorf("logout: %w", ErrRefreshBusy)})
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: h.cookie.Name, Value: "refresh-token"})
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	var he *echo.HTTPError
+	if err := h.Logout(c); !errors.As(err, &he) || he.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Logout() error = %v, want 503", err)
+	}
+	if got := rec.Result().Cookies(); len(got) != 0 {
+		t.Errorf("cookies = %v, want none", got)
+	}
+}
+
+func TestLogoutAll_busyAnswers503WithoutTouchingCookies(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{logoutAllErr: fmt.Errorf("logout all: %w", ErrRefreshBusy)})
+	rec := httptest.NewRecorder()
+	c := e.NewContext(httptest.NewRequest(http.MethodPost, "/auth/logout-all", nil), rec)
+	c.Set(ContextUserIDKey, uuid.New())
+
+	var he *echo.HTTPError
+	if err := h.LogoutAll(c); !errors.As(err, &he) || he.Code != http.StatusServiceUnavailable {
+		t.Fatalf("LogoutAll() error = %v, want 503", err)
+	}
+	if got := rec.Result().Cookies(); len(got) != 0 {
+		t.Errorf("cookies = %v, want none", got)
 	}
 }
 
@@ -1045,6 +1096,97 @@ func TestRefresh_invalidCookieTokenClearsCookie(t *testing.T) {
 	cookies := rec.Result().Cookies()
 	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
 		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
+	}
+}
+
+func reuseError(familyID, userID uuid.UUID) error {
+	return &RefreshReuseError{FamilyID: familyID, UserID: userID, Revoked: 1}
+}
+
+func TestRefresh_reuseAnswersLikeInvalidToken(t *testing.T) {
+	familyID, userID := uuid.New(), uuid.New()
+	tests := []struct {
+		name        string
+		req         func() *http.Request
+		wantCleared bool
+	}{
+		{
+			name: "cookie token clears the cookie",
+			req: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+				req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "spent-token"})
+				return req
+			},
+			wantCleared: true,
+		},
+		{
+			name: "body token leaves cookies alone",
+			req: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader(`{"refresh_token":"spent-token"}`))
+				req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+				return req
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			h := testAuthHandlers(&fakeAuthService{refreshErr: reuseError(familyID, userID)})
+			rec := httptest.NewRecorder()
+			c := e.NewContext(tt.req(), rec)
+
+			err := h.Refresh(c)
+
+			var he *echo.HTTPError
+			if !errors.As(err, &he) {
+				t.Fatalf("Refresh() error = %v, want *echo.HTTPError", err)
+			}
+			if he.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want 401", he.Code)
+			}
+			if he.Message != ErrInvalidRefresh.Error() {
+				t.Errorf("message = %v, want %q", he.Message, ErrInvalidRefresh.Error())
+			}
+			msg := fmt.Sprint(he.Message)
+			if strings.Contains(strings.ToLower(msg), "reuse") || strings.Contains(msg, familyID.String()) {
+				t.Errorf("message %q reveals reuse detection", msg)
+			}
+			if !errors.Is(he.Internal, ErrRefreshTokenReused) {
+				t.Fatalf("internal cause = %v, want ErrRefreshTokenReused", he.Internal)
+			}
+			for _, want := range []string{"refresh_token_reuse", "family=" + familyID.String(), "user=" + userID.String(), "revoked=1"} {
+				if !strings.Contains(he.Internal.Error(), want) {
+					t.Errorf("internal cause %q is missing %q", he.Internal.Error(), want)
+				}
+			}
+			if strings.Contains(he.Internal.Error(), "spent-token") {
+				t.Error("internal cause carries the token")
+			}
+			cookies := rec.Result().Cookies()
+			if tt.wantCleared {
+				if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+					t.Errorf("cookies = %v, want one clearing cookie", cookies)
+				}
+			} else if len(cookies) != 0 {
+				t.Errorf("cookies = %v, want none", cookies)
+			}
+		})
+	}
+}
+
+func TestRefresh_plainInvalidTokenHasNoInternalCause(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{refreshErr: ErrInvalidRefresh})
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "bad-token"})
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	var he *echo.HTTPError
+	if err := h.Refresh(c); !errors.As(err, &he) {
+		t.Fatalf("Refresh() error = %v, want *echo.HTTPError", err)
+	}
+	if he.Internal != nil {
+		t.Errorf("internal cause = %v, want nil for an ordinary invalid token", he.Internal)
 	}
 }
 
