@@ -84,6 +84,20 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 	return i, err
 }
 
+const getUserIDByPrimaryEmail = `-- name: GetUserIDByPrimaryEmail :one
+SELECT id
+FROM mentorix.users
+WHERE lower(primary_email) = lower($1::text)
+LIMIT 1
+`
+
+func (q *Queries) GetUserIDByPrimaryEmail(ctx context.Context, email string) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getUserIDByPrimaryEmail, email)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const grantUserRole = `-- name: GrantUserRole :exec
 INSERT INTO mentorix.user_roles (user_id, role)
 VALUES ($1, $2)
@@ -145,6 +159,17 @@ VALUES ($1)
 
 func (q *Queries) InsertTrainer(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, insertTrainer, userID)
+	return err
+}
+
+const insertTrainerIfMissing = `-- name: InsertTrainerIfMissing :exec
+INSERT INTO mentorix.trainers (user_id)
+VALUES ($1)
+ON CONFLICT (user_id) DO NOTHING
+`
+
+func (q *Queries) InsertTrainerIfMissing(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, insertTrainerIfMissing, userID)
 	return err
 }
 

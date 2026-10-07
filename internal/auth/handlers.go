@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -22,6 +23,8 @@ type credentialService interface {
 	RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error)
 	Login(ctx context.Context, email, password string) (IssuedAuth, error)
 	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
+	SocialLogin(ctx context.Context, provider, idToken, name string) (IssuedAuth, bool, error)
+	AddRole(ctx context.Context, userID uuid.UUID, role string) error
 	Logout(ctx context.Context, refreshPlain string) error
 	LogoutAll(ctx context.Context, userID uuid.UUID) error
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
@@ -74,11 +77,13 @@ func NewHandlers(svc *Service, jwtSecret string, cookie config.RefreshCookieSett
 func (h *Handlers) Mount(e *echo.Echo) {
 	e.POST("/auth/register", h.Register)
 	e.POST("/auth/login", h.Login)
+	e.POST("/auth/social-login", h.SocialLogin)
 	e.POST("/auth/refresh", h.Refresh)
 	e.POST("/auth/logout", h.Logout)
 	g := e.Group("", JWTMiddleware(h.jwtSecret))
 	g.GET("/auth/me", h.Me)
 	g.PATCH("/auth/me", h.UpdateMe)
+	g.POST("/auth/me/roles", h.AddRole)
 	g.POST("/auth/logout-all", h.LogoutAll)
 }
 
@@ -195,6 +200,57 @@ func (h *Handlers) Login(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "login failed")
 	}
 	return h.writeAuthJSON(c, http.StatusOK, issued, body.TokenDelivery)
+}
+
+// SocialLogin signs in with an Apple or Google ID token. It returns 201 when the
+// token's identity had no account yet and 200 otherwise.
+func (h *Handlers) SocialLogin(c echo.Context) error {
+	var body SocialLoginRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	if body.Provider != ProviderApple && body.Provider != ProviderGoogle {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid provider")
+	}
+	idToken := strings.TrimSpace(body.IDToken)
+	if idToken == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id_token is required")
+	}
+	if !validTokenDelivery(body.TokenDelivery) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid token_delivery")
+	}
+	if !usableName(body.Name) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid name")
+	}
+	if utf8.RuneCountInString(normalizeDisplayName(body.Name)) > maxSocialNameRunes {
+		return echo.NewHTTPError(http.StatusBadRequest, "name is too long")
+	}
+	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+	}
+	issued, created, err := h.svc.SocialLogin(c.Request().Context(), body.Provider, idToken, body.Name)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidIDToken):
+			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidIDToken.Error())
+		case errors.Is(err, ErrIDTokenProviderUnavailable):
+			// The detail goes to the request log through Internal, not to the client.
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "sign-in provider unavailable").SetInternal(err)
+		case errors.Is(err, ErrProviderNotConfigured):
+			return echo.NewHTTPError(http.StatusBadRequest, ErrProviderNotConfigured.Error())
+		case errors.Is(err, ErrEmailBelongsToAnotherAccount):
+			return echo.NewHTTPError(http.StatusConflict, "an account with this email already exists")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "social login failed")
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	return h.writeAuthJSON(c, status, issued, body.TokenDelivery)
 }
 
 func (h *Handlers) Refresh(c echo.Context) error {
@@ -361,6 +417,39 @@ func (h *Handlers) UpdateMe(c echo.Context) error {
 	return h.writeMeJSON(c, uid, profile)
 }
 
+// AddRole gives the signed-in user the trainer or client role and returns the
+// updated profile. Repeating the call is harmless.
+func (h *Handlers) AddRole(c echo.Context) error {
+	uid, ok := UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	var body AddRoleRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	if body.Role != RoleTrainer && body.Role != RoleClient {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid role")
+	}
+	if err := h.svc.AddRole(c.Request().Context(), uid, body.Role); err != nil {
+		if errors.Is(err, ErrRoleConflict) {
+			return echo.NewHTTPError(http.StatusConflict, ErrRoleConflict.Error())
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "add role failed")
+	}
+	profile, err := h.svc.UserProfile(c.Request().Context(), uid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	return h.writeMeJSON(c, uid, profile)
+}
+
 func (h *Handlers) writeMeJSON(c echo.Context, uid uuid.UUID, profile UserProfile) error {
 	resp := meResponse(uid, profile)
 	if h.subs != nil {
@@ -374,11 +463,15 @@ func (h *Handlers) writeMeJSON(c echo.Context, uid uuid.UUID, profile UserProfil
 }
 
 func meResponse(uid uuid.UUID, profile UserProfile) MeResponse {
+	roles := profile.Roles
+	if roles == nil {
+		roles = []string{}
+	}
 	return MeResponse{
 		UserID:    uid.String(),
 		Email:     profile.Email,
 		Name:      profile.Name,
 		CreatedAt: profile.CreatedAt,
-		Roles:     profile.Roles,
+		Roles:     roles,
 	}
 }

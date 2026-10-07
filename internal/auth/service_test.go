@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -25,6 +27,40 @@ type fakeAuthStore struct {
 	updateDisplayNameErr error
 	revokeErr            error
 	revokeAllErr         error
+
+	socialUserID  uuid.UUID
+	socialCreated bool
+	socialErr     error
+	socialCalls   []socialSignInCall
+	addRoleErr    error
+	addRoleCalls  []addRoleCall
+}
+
+type socialSignInCall struct {
+	provider    string
+	claims      IDTokenClaims
+	displayName string
+}
+
+type addRoleCall struct {
+	userID uuid.UUID
+	role   string
+}
+
+func (f *fakeAuthStore) SocialSignIn(_ context.Context, provider string, claims IDTokenClaims, displayName string) (uuid.UUID, bool, error) {
+	f.socialCalls = append(f.socialCalls, socialSignInCall{provider: provider, claims: claims, displayName: displayName})
+	if f.socialErr != nil {
+		return uuid.Nil, false, f.socialErr
+	}
+	if f.socialUserID == uuid.Nil {
+		f.socialUserID = uuid.New()
+	}
+	return f.socialUserID, f.socialCreated, nil
+}
+
+func (f *fakeAuthStore) AddRole(_ context.Context, userID uuid.UUID, role string) error {
+	f.addRoleCalls = append(f.addRoleCalls, addRoleCall{userID: userID, role: role})
+	return f.addRoleErr
 }
 
 func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _, _ string) (uuid.UUID, error) {
@@ -338,4 +374,279 @@ func mustHash(t *testing.T, password string) string {
 		t.Fatalf("hash: %v", err)
 	}
 	return h
+}
+
+type fakeIDTokenVerifier struct {
+	claims IDTokenClaims
+	err    error
+	tokens []string
+}
+
+func (f *fakeIDTokenVerifier) Verify(_ context.Context, rawToken string) (IDTokenClaims, error) {
+	f.tokens = append(f.tokens, rawToken)
+	return f.claims, f.err
+}
+
+func socialTestService(store authStore, verifiers map[string]IDTokenVerifier) *Service {
+	svc := testAuthService(store)
+	svc.verifiers = verifiers
+	return svc
+}
+
+func TestService_SocialLogin_success(t *testing.T) {
+	tests := []struct {
+		name        string
+		store       *fakeAuthStore
+		wantCreated bool
+	}{
+		{name: "known identity", store: &fakeAuthStore{primaryEmail: "known@test.com"}, wantCreated: false},
+		{name: "new identity", store: &fakeAuthStore{socialCreated: true, primaryEmail: "new@test.com"}, wantCreated: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ver := &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub-1", Email: "x@test.com", EmailVerified: true}}
+			svc := socialTestService(tt.store, map[string]IDTokenVerifier{ProviderGoogle: ver})
+			issued, created, err := svc.SocialLogin(context.Background(), ProviderGoogle, "raw-token", "")
+			if err != nil {
+				t.Fatalf("SocialLogin() error = %v", err)
+			}
+			if created != tt.wantCreated {
+				t.Errorf("created = %v, want %v", created, tt.wantCreated)
+			}
+			if issued.AccessToken == "" || issued.RefreshToken == "" {
+				t.Fatal("expected access and refresh tokens")
+			}
+			if issued.UserID != tt.store.socialUserID {
+				t.Errorf("user id = %v, want %v", issued.UserID, tt.store.socialUserID)
+			}
+			if issued.Email != tt.store.primaryEmail {
+				t.Errorf("email = %q, want primary email %q", issued.Email, tt.store.primaryEmail)
+			}
+			if len(ver.tokens) != 1 || ver.tokens[0] != "raw-token" {
+				t.Errorf("verifier tokens = %v", ver.tokens)
+			}
+		})
+	}
+}
+
+func TestService_SocialLogin_emailEmptyWhenUserHasNone(t *testing.T) {
+	store := &fakeAuthStore{socialCreated: true}
+	svc := socialTestService(&noEmailStore{fakeAuthStore: store}, map[string]IDTokenVerifier{
+		ProviderApple: &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub-1"}},
+	})
+	issued, _, err := svc.SocialLogin(context.Background(), ProviderApple, "raw", "")
+	if err != nil {
+		t.Fatalf("SocialLogin() error = %v", err)
+	}
+	if issued.Email != "" {
+		t.Errorf("email = %q, want empty", issued.Email)
+	}
+}
+
+// noEmailStore reports a user without a primary email.
+type noEmailStore struct{ *fakeAuthStore }
+
+func (noEmailStore) UserPrimaryEmail(context.Context, uuid.UUID) (string, error) { return "", nil }
+
+func TestService_SocialLogin_passesClaimsAndName(t *testing.T) {
+	claims := IDTokenClaims{Subject: "sub-1", Email: "x@test.com", EmailVerified: true, Name: "Token Name"}
+	tests := []struct {
+		name     string
+		given    string
+		wantName string
+	}{
+		{name: "request name wins and is trimmed", given: "  Given Name ", wantName: "Given Name"},
+		{name: "token name is the fallback", given: "   ", wantName: "Token Name"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeAuthStore{}
+			svc := socialTestService(store, map[string]IDTokenVerifier{ProviderApple: &fakeIDTokenVerifier{claims: claims}})
+			if _, _, err := svc.SocialLogin(context.Background(), ProviderApple, "raw", tt.given); err != nil {
+				t.Fatalf("SocialLogin() error = %v", err)
+			}
+			if len(store.socialCalls) != 1 {
+				t.Fatalf("store calls = %d, want 1", len(store.socialCalls))
+			}
+			got := store.socialCalls[0]
+			if got.provider != ProviderApple || got.claims != claims || got.displayName != tt.wantName {
+				t.Errorf("store call = %+v", got)
+			}
+		})
+	}
+}
+
+func TestService_SocialLogin_errors(t *testing.T) {
+	boom := errors.New("boom")
+	tests := []struct {
+		name         string
+		provider     string
+		verifiers    map[string]IDTokenVerifier
+		store        *fakeAuthStore
+		wantErr      error
+		wantStoreHit bool
+	}{
+		{
+			name:      "provider not configured",
+			provider:  ProviderApple,
+			verifiers: map[string]IDTokenVerifier{ProviderGoogle: &fakeIDTokenVerifier{}},
+			store:     &fakeAuthStore{},
+			wantErr:   ErrProviderNotConfigured,
+		},
+		{
+			name:     "no verifiers at all",
+			provider: ProviderGoogle,
+			store:    &fakeAuthStore{},
+			wantErr:  ErrProviderNotConfigured,
+		},
+		{
+			name:      "unknown provider",
+			provider:  "facebook",
+			verifiers: map[string]IDTokenVerifier{ProviderGoogle: &fakeIDTokenVerifier{}},
+			store:     &fakeAuthStore{},
+			wantErr:   ErrProviderNotConfigured,
+		},
+		{
+			name:      "provider unavailable",
+			provider:  ProviderGoogle,
+			verifiers: map[string]IDTokenVerifier{ProviderGoogle: &fakeIDTokenVerifier{err: ErrIDTokenProviderUnavailable}},
+			store:     &fakeAuthStore{},
+			wantErr:   ErrIDTokenProviderUnavailable,
+		},
+		{
+			name:      "invalid token",
+			provider:  ProviderGoogle,
+			verifiers: map[string]IDTokenVerifier{ProviderGoogle: &fakeIDTokenVerifier{err: ErrInvalidIDToken}},
+			store:     &fakeAuthStore{},
+			wantErr:   ErrInvalidIDToken,
+		},
+		{
+			name:         "email belongs to another account",
+			provider:     ProviderGoogle,
+			verifiers:    map[string]IDTokenVerifier{ProviderGoogle: &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s"}}},
+			store:        &fakeAuthStore{socialErr: ErrEmailBelongsToAnotherAccount},
+			wantErr:      ErrEmailBelongsToAnotherAccount,
+			wantStoreHit: true,
+		},
+		{
+			name:         "store failure",
+			provider:     ProviderGoogle,
+			verifiers:    map[string]IDTokenVerifier{ProviderGoogle: &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s"}}},
+			store:        &fakeAuthStore{socialErr: boom},
+			wantErr:      boom,
+			wantStoreHit: true,
+		},
+		{
+			name:         "session insert failure",
+			provider:     ProviderGoogle,
+			verifiers:    map[string]IDTokenVerifier{ProviderGoogle: &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s"}}},
+			store:        &fakeAuthStore{insertSession: boom},
+			wantErr:      boom,
+			wantStoreHit: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := socialTestService(tt.store, tt.verifiers)
+			_, _, err := svc.SocialLogin(context.Background(), tt.provider, "raw", "")
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("SocialLogin() error = %v, want %v", err, tt.wantErr)
+			}
+			if hit := len(tt.store.socialCalls) > 0; hit != tt.wantStoreHit {
+				t.Errorf("store called = %v, want %v", hit, tt.wantStoreHit)
+			}
+		})
+	}
+}
+
+func TestService_AddRole(t *testing.T) {
+	userID := uuid.New()
+	store := &fakeAuthStore{}
+	svc := testAuthService(store)
+	if err := svc.AddRole(context.Background(), userID, RoleTrainer); err != nil {
+		t.Fatalf("AddRole() error = %v", err)
+	}
+	if len(store.addRoleCalls) != 1 || store.addRoleCalls[0] != (addRoleCall{userID: userID, role: RoleTrainer}) {
+		t.Errorf("store calls = %+v", store.addRoleCalls)
+	}
+
+	store.addRoleErr = ErrRoleConflict
+	if err := svc.AddRole(context.Background(), userID, RoleClient); !errors.Is(err, ErrRoleConflict) {
+		t.Errorf("AddRole() error = %v, want ErrRoleConflict", err)
+	}
+}
+
+func TestNewService_withIDTokenVerifiers(t *testing.T) {
+	ver := &fakeIDTokenVerifier{}
+	svc := NewService(nil, "secret", time.Minute, time.Hour, WithIDTokenVerifiers(map[string]IDTokenVerifier{ProviderApple: ver}))
+	if svc.verifiers[ProviderApple] != ver {
+		t.Fatal("verifier was not registered")
+	}
+}
+
+func TestService_SocialLogin_truncatesTokenNameToLimit(t *testing.T) {
+	long := strings.Repeat("Ж", maxSocialNameRunes+50)
+	store := &fakeAuthStore{}
+	svc := socialTestService(store, map[string]IDTokenVerifier{
+		ProviderGoogle: &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s", Name: "  " + long + "  "}},
+	})
+	if _, _, err := svc.SocialLogin(context.Background(), ProviderGoogle, "raw", ""); err != nil {
+		t.Fatalf("SocialLogin() error = %v", err)
+	}
+	got := store.socialCalls[0].displayName
+	if n := utf8.RuneCountInString(got); n != maxSocialNameRunes {
+		t.Errorf("display name has %d runes, want %d", n, maxSocialNameRunes)
+	}
+	if !utf8.ValidString(got) {
+		t.Error("truncation split a multibyte rune")
+	}
+}
+
+func TestService_SocialLogin_shortTokenNameIsKept(t *testing.T) {
+	store := &fakeAuthStore{}
+	svc := socialTestService(store, map[string]IDTokenVerifier{
+		ProviderGoogle: &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s", Name: "Анна"}},
+	})
+	if _, _, err := svc.SocialLogin(context.Background(), ProviderGoogle, "raw", ""); err != nil {
+		t.Fatalf("SocialLogin() error = %v", err)
+	}
+	if got := store.socialCalls[0].displayName; got != "Анна" {
+		t.Errorf("display name = %q", got)
+	}
+}
+
+func TestService_SocialLogin_dropsUnusableTokenName(t *testing.T) {
+	for name, tokenName := range map[string]string{
+		"NUL rune":      "Ann\x00a",
+		"invalid UTF-8": "An\xffna",
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeAuthStore{}
+			svc := socialTestService(store, map[string]IDTokenVerifier{
+				ProviderGoogle: &fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s", Name: tokenName}},
+			})
+			if _, _, err := svc.SocialLogin(context.Background(), ProviderGoogle, "raw", ""); err != nil {
+				t.Fatalf("SocialLogin() error = %v", err)
+			}
+			if got := store.socialCalls[0].displayName; got != "" {
+				t.Errorf("display name = %q, want empty", got)
+			}
+		})
+	}
+}
+
+func TestUsableName(t *testing.T) {
+	tests := map[string]bool{
+		"":         true,
+		"Anna":     true,
+		"Анна 😀":   true,
+		"An\x00na": false,
+		"\x00":     false,
+		"An\xffna": false,
+	}
+	for in, want := range tests {
+		if got := usableName(in); got != want {
+			t.Errorf("usableName(%q) = %v, want %v", in, got, want)
+		}
+	}
 }

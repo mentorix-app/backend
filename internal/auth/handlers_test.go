@@ -32,6 +32,17 @@ type fakeAuthService struct {
 	logoutAllErr   error
 	profile        UserProfile
 	profileErr     error
+
+	socialIssued  IssuedAuth
+	socialCreated bool
+	socialErr     error
+	socialCalls   []socialLoginCall
+	addRoleErr    error
+	addRoleCalls  []addRoleCall
+}
+
+type socialLoginCall struct {
+	provider, idToken, name string
 }
 
 func (f *fakeAuthService) RegisterTrainer(_ context.Context, email, _, _ string) (IssuedAuth, error) {
@@ -122,6 +133,32 @@ func (f *fakeAuthService) UpdateProfileName(_ context.Context, _ uuid.UUID, name
 	out := f.profile
 	out.Name = name
 	return out, nil
+}
+
+func (f *fakeAuthService) SocialLogin(_ context.Context, provider, idToken, name string) (IssuedAuth, bool, error) {
+	f.socialCalls = append(f.socialCalls, socialLoginCall{provider: provider, idToken: idToken, name: name})
+	if f.socialErr != nil {
+		return IssuedAuth{}, false, f.socialErr
+	}
+	out := f.socialIssued
+	if out.UserID == uuid.Nil {
+		out.UserID = uuid.New()
+	}
+	if out.AccessToken == "" {
+		out.AccessToken = "test-access-token"
+	}
+	if out.RefreshToken == "" {
+		out.RefreshToken = "test-refresh-token"
+	}
+	if out.AccessExpires.IsZero() {
+		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	return out, f.socialCreated, nil
+}
+
+func (f *fakeAuthService) AddRole(_ context.Context, userID uuid.UUID, role string) error {
+	f.addRoleCalls = append(f.addRoleCalls, addRoleCall{userID: userID, role: role})
+	return f.addRoleErr
 }
 
 func testAuthHandlers(svc credentialService) *Handlers {

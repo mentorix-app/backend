@@ -15,6 +15,17 @@ VALUES ($1, $2);
 INSERT INTO mentorix.trainers (user_id)
 VALUES ($1);
 
+-- name: InsertTrainerIfMissing :exec
+INSERT INTO mentorix.trainers (user_id)
+VALUES ($1)
+ON CONFLICT (user_id) DO NOTHING;
+
+-- name: GetUserIDByPrimaryEmail :one
+SELECT id
+FROM mentorix.users
+WHERE lower(primary_email) = lower(sqlc.arg(email)::text)
+LIMIT 1;
+
 -- name: GetUserByID :one
 SELECT
   COALESCE(primary_email, '') AS primary_email,
