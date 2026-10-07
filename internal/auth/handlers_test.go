@@ -737,3 +737,545 @@ func TestUpdateMe_success(t *testing.T) {
 		t.Fatalf("name = %q, want Coach", resp.Name)
 	}
 }
+
+// recordingAuthService records the refresh tokens passed to Refresh and Logout.
+type recordingAuthService struct {
+	fakeAuthService
+	refreshed []string
+	loggedOut []string
+	// logoutErrs fails Logout for the given token.
+	logoutErrs map[string]error
+}
+
+func (r *recordingAuthService) Refresh(ctx context.Context, plain string) (IssuedAuth, error) {
+	r.refreshed = append(r.refreshed, plain)
+	return r.fakeAuthService.Refresh(ctx, plain)
+}
+
+func (r *recordingAuthService) Logout(ctx context.Context, plain string) error {
+	r.loggedOut = append(r.loggedOut, plain)
+	if err := r.logoutErrs[plain]; err != nil {
+		return err
+	}
+	return r.fakeAuthService.Logout(ctx, plain)
+}
+
+func postAuthJSON(e *echo.Echo, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+func decodeTokenResponse(t *testing.T, rec *httptest.ResponseRecorder) TokenResponse {
+	t.Helper()
+	var resp TokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return resp
+}
+
+func TestRegister_bodyDelivery(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{registerIssued: IssuedAuth{RefreshToken: "app-refresh"}})
+	e.POST("/auth/register", h.Register)
+
+	rec := postAuthJSON(e, "/auth/register", `{"email":"user@example.com","password":"password123","token_delivery":"body"}`)
+
+	assertHTTPStatus(t, rec, http.StatusCreated)
+	if got := decodeTokenResponse(t, rec).RefreshToken; got != "app-refresh" {
+		t.Fatalf("refresh_token = %q, want app-refresh", got)
+	}
+	if n := len(rec.Result().Cookies()); n != 0 {
+		t.Fatalf("got %d cookies, want none", n)
+	}
+}
+
+func TestRegister_cookieDeliveryByDefault(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	e.POST("/auth/register", h.Register)
+
+	rec := postAuthJSON(e, "/auth/register", `{"email":"user@example.com","password":"password123"}`)
+
+	assertHTTPStatus(t, rec, http.StatusCreated)
+	if got := decodeTokenResponse(t, rec).RefreshToken; got != "" {
+		t.Fatalf("refresh_token = %q, want empty", got)
+	}
+	if strings.Contains(rec.Body.String(), "refresh_token") {
+		t.Fatalf("body must not contain refresh_token: %s", rec.Body.String())
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].Value == "" {
+		t.Fatalf("cookies = %v, want one refresh cookie", cookies)
+	}
+}
+
+func TestRegister_invalidTokenDelivery(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	e.POST("/auth/register", h.Register)
+
+	rec := postAuthJSON(e, "/auth/register", `{"email":"user@example.com","password":"password123","token_delivery":"header"}`)
+
+	assertHTTPStatus(t, rec, http.StatusBadRequest)
+}
+
+func TestLogin_bodyDelivery(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{loginIssued: IssuedAuth{RefreshToken: "app-refresh"}})
+	e.POST("/auth/login", h.Login)
+
+	rec := postAuthJSON(e, "/auth/login", `{"email":"user@example.com","password":"password123","token_delivery":"body"}`)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if got := decodeTokenResponse(t, rec).RefreshToken; got != "app-refresh" {
+		t.Fatalf("refresh_token = %q, want app-refresh", got)
+	}
+	if n := len(rec.Result().Cookies()); n != 0 {
+		t.Fatalf("got %d cookies, want none", n)
+	}
+}
+
+func TestLogin_cookieDeliveryExplicitAndEmpty(t *testing.T) {
+	for _, field := range []string{`,"token_delivery":"cookie"`, `,"token_delivery":""`, ``} {
+		e := echo.New()
+		h := testAuthHandlers(&fakeAuthService{})
+		e.POST("/auth/login", h.Login)
+
+		rec := postAuthJSON(e, "/auth/login", `{"email":"user@example.com","password":"password123"`+field+`}`)
+
+		assertHTTPStatus(t, rec, http.StatusOK)
+		if strings.Contains(rec.Body.String(), "refresh_token") {
+			t.Fatalf("%q: body must not contain refresh_token: %s", field, rec.Body.String())
+		}
+		if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].Value == "" {
+			t.Fatalf("%q: cookies = %v, want one refresh cookie", field, cookies)
+		}
+	}
+}
+
+func TestLogin_invalidTokenDelivery(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	e.POST("/auth/login", h.Login)
+
+	rec := postAuthJSON(e, "/auth/login", `{"email":"user@example.com","password":"password123","token_delivery":"BODY"}`)
+
+	assertHTTPStatus(t, rec, http.StatusBadRequest)
+}
+
+func TestRefresh_bodyToken(t *testing.T) {
+	svc := &recordingAuthService{fakeAuthService: fakeAuthService{refreshIssued: IssuedAuth{RefreshToken: "rotated"}}}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/refresh", h.Refresh)
+
+	rec := postAuthJSON(e, "/auth/refresh", `{"refresh_token":"app-refresh"}`)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if got := decodeTokenResponse(t, rec).RefreshToken; got != "rotated" {
+		t.Fatalf("refresh_token = %q, want rotated", got)
+	}
+	if n := len(rec.Result().Cookies()); n != 0 {
+		t.Fatalf("got %d cookies, want none", n)
+	}
+	if len(svc.refreshed) != 1 || svc.refreshed[0] != "app-refresh" {
+		t.Fatalf("refreshed = %v, want [app-refresh]", svc.refreshed)
+	}
+}
+
+func TestRefresh_bodyTokenWithoutContentType(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader(`{"refresh_token":"app-refresh"}`))
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if len(svc.refreshed) != 1 || svc.refreshed[0] != "app-refresh" {
+		t.Fatalf("refreshed = %v, want [app-refresh]", svc.refreshed)
+	}
+}
+
+// A refresh that arrived by cookie must never expose the new refresh token to page scripts.
+func TestRefresh_cookieOnlyNeverReturnsTokenInJSON(t *testing.T) {
+	svc := &recordingAuthService{fakeAuthService: fakeAuthService{refreshIssued: IssuedAuth{RefreshToken: "rotated"}}}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/refresh", h.Refresh)
+
+	for name, body := range map[string]string{
+		"no body":      "",
+		"empty object": "{}",
+		"empty token":  `{"refresh_token":""}`,
+		"null":         "null",
+		"array":        "[]",
+		"number token": `{"refresh_token":123}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader(body))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			assertHTTPStatus(t, rec, http.StatusOK)
+			if strings.Contains(rec.Body.String(), "refresh_token") || strings.Contains(rec.Body.String(), "rotated") {
+				t.Fatalf("body leaks refresh token: %s", rec.Body.String())
+			}
+			cookies := rec.Result().Cookies()
+			if len(cookies) != 1 || cookies[0].Value != "rotated" || !cookies[0].HttpOnly {
+				t.Fatalf("cookies = %v, want one HttpOnly cookie with the rotated token", cookies)
+			}
+		})
+	}
+	for _, got := range svc.refreshed {
+		if got != "cookie-refresh" {
+			t.Fatalf("refreshed = %v, want only cookie-refresh", svc.refreshed)
+		}
+	}
+}
+
+func TestRefresh_bodyTokenWinsOverCookie(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader(`{"refresh_token":"body-refresh"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if len(svc.refreshed) != 1 || svc.refreshed[0] != "body-refresh" {
+		t.Fatalf("refreshed = %v, want [body-refresh]", svc.refreshed)
+	}
+	if decodeTokenResponse(t, rec).RefreshToken == "" {
+		t.Fatal("expected refresh_token in JSON")
+	}
+	if n := len(rec.Result().Cookies()); n != 0 {
+		t.Fatalf("got %d cookies, want none", n)
+	}
+}
+
+func TestRefresh_invalidBodyTokenKeepsCookie(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{refreshErr: ErrInvalidRefresh})
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader(`{"refresh_token":"stale"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusUnauthorized)
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("Set-Cookie = %v, want none", got)
+	}
+}
+
+func TestRefresh_invalidCookieTokenClearsCookie(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{refreshErr: ErrInvalidRefresh})
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "bad-token"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusUnauthorized)
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
+	}
+}
+
+func TestRefresh_malformedBodyFallsBackToCookie(t *testing.T) {
+	svc := &recordingAuthService{fakeAuthService: fakeAuthService{refreshIssued: IssuedAuth{RefreshToken: "rotated"}}}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader("not-json"))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if len(svc.refreshed) != 1 || svc.refreshed[0] != "cookie-refresh" {
+		t.Fatalf("refreshed = %v, want [cookie-refresh]", svc.refreshed)
+	}
+	if strings.Contains(rec.Body.String(), "refresh_token") {
+		t.Fatalf("body leaks refresh token: %s", rec.Body.String())
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].Value != "rotated" {
+		t.Fatalf("cookies = %v, want one rotated cookie", cookies)
+	}
+}
+
+func TestRefresh_malformedBodyWithoutCookie(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	e.POST("/auth/refresh", h.Refresh)
+
+	rec := postAuthJSON(e, "/auth/refresh", "not-json")
+
+	assertHTTPStatus(t, rec, http.StatusUnauthorized)
+}
+
+func TestRefresh_whitespaceBodyTokenFallsBackToCookie(t *testing.T) {
+	svc := &recordingAuthService{fakeAuthService: fakeAuthService{refreshIssued: IssuedAuth{RefreshToken: "rotated"}}}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader(`{"refresh_token":"   "}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if len(svc.refreshed) != 1 || svc.refreshed[0] != "cookie-refresh" {
+		t.Fatalf("refreshed = %v, want [cookie-refresh]", svc.refreshed)
+	}
+	if strings.Contains(rec.Body.String(), "refresh_token") {
+		t.Fatalf("body leaks refresh token: %s", rec.Body.String())
+	}
+}
+
+func TestLogout_bodyTokenRevokesAndKeepsCookie(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	rec := postAuthJSON(e, "/auth/logout", `{"refresh_token":"app-refresh"}`)
+
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+	if len(svc.loggedOut) != 1 || svc.loggedOut[0] != "app-refresh" {
+		t.Fatalf("loggedOut = %v, want [app-refresh]", svc.loggedOut)
+	}
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("Set-Cookie = %v, want none", got)
+	}
+}
+
+func TestLogout_bodyAndCookieRevokesBothAndClearsCookie(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", strings.NewReader(`{"refresh_token":"body-refresh"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+	if len(svc.loggedOut) != 2 || svc.loggedOut[0] != "body-refresh" || svc.loggedOut[1] != "cookie-refresh" {
+		t.Fatalf("loggedOut = %v, want [body-refresh cookie-refresh]", svc.loggedOut)
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
+	}
+}
+
+func TestLogout_cookieTokenRevokedAndCleared(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+	if len(svc.loggedOut) != 1 || svc.loggedOut[0] != "cookie-refresh" {
+		t.Fatalf("loggedOut = %v, want [cookie-refresh]", svc.loggedOut)
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
+	}
+}
+
+func TestLogout_malformedBodyUsesCookie(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", strings.NewReader("not-json"))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+	if len(svc.loggedOut) != 1 || svc.loggedOut[0] != "cookie-refresh" {
+		t.Fatalf("loggedOut = %v, want [cookie-refresh]", svc.loggedOut)
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
+	}
+}
+
+func TestLogout_malformedBodyWithoutCookie(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	rec := postAuthJSON(e, "/auth/logout", "not-json")
+
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+	if len(svc.loggedOut) != 0 {
+		t.Fatalf("loggedOut = %v, want none", svc.loggedOut)
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
+	}
+}
+
+func TestLogout_bodyTokenRevokeError(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{logoutErr: errors.New("db down")})
+	e.POST("/auth/logout", h.Logout)
+
+	rec := postAuthJSON(e, "/auth/logout", `{"refresh_token":"app-refresh"}`)
+
+	assertHTTPStatus(t, rec, http.StatusInternalServerError)
+}
+
+func TestAuthJSON_noStore(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{})
+	e.POST("/auth/register", h.Register)
+	e.POST("/auth/login", h.Login)
+	e.POST("/auth/refresh", h.Refresh)
+
+	cases := map[string][2]string{
+		"register cookie": {"/auth/register", `{"email":"user@example.com","password":"password123"}`},
+		"register body":   {"/auth/register", `{"email":"user@example.com","password":"password123","token_delivery":"body"}`},
+		"login cookie":    {"/auth/login", `{"email":"user@example.com","password":"password123"}`},
+		"login body":      {"/auth/login", `{"email":"user@example.com","password":"password123","token_delivery":"body"}`},
+		"refresh body":    {"/auth/refresh", `{"refresh_token":"app-refresh"}`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			rec := postAuthJSON(e, tc[0], tc[1])
+			if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+				t.Fatalf("Cache-Control = %q, want no-store (status %d)", got, rec.Code)
+			}
+		})
+	}
+	t.Run("refresh cookie", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
+		req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("Cache-Control = %q, want no-store (status %d)", got, rec.Code)
+		}
+	})
+}
+
+func TestRefreshRequest_jsonKey(t *testing.T) {
+	raw, err := json.Marshal(RefreshRequest{RefreshToken: "x"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(raw) != `{"refresh_token":"x"}` {
+		t.Fatalf("json = %s", raw)
+	}
+}
+
+func logoutWithBodyAndCookie(e *echo.Echo, bodyToken, cookieToken string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", strings.NewReader(`{"refresh_token":"`+bodyToken+`"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: cookieToken})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestLogout_bodyRevokeFailsCookieStillRevoked(t *testing.T) {
+	svc := &recordingAuthService{logoutErrs: map[string]error{"body-refresh": errors.New("db down")}}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	rec := logoutWithBodyAndCookie(e, "body-refresh", "cookie-refresh")
+
+	assertHTTPStatus(t, rec, http.StatusInternalServerError)
+	if len(svc.loggedOut) != 2 || svc.loggedOut[0] != "body-refresh" || svc.loggedOut[1] != "cookie-refresh" {
+		t.Fatalf("loggedOut = %v, want [body-refresh cookie-refresh]", svc.loggedOut)
+	}
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("Set-Cookie = %v, want none", got)
+	}
+}
+
+func TestLogout_cookieRevokeFailsAfterBodyRevoked(t *testing.T) {
+	svc := &recordingAuthService{logoutErrs: map[string]error{"cookie-refresh": errors.New("db down")}}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	rec := logoutWithBodyAndCookie(e, "body-refresh", "cookie-refresh")
+
+	assertHTTPStatus(t, rec, http.StatusInternalServerError)
+	if len(svc.loggedOut) != 2 || svc.loggedOut[0] != "body-refresh" || svc.loggedOut[1] != "cookie-refresh" {
+		t.Fatalf("loggedOut = %v, want [body-refresh cookie-refresh]", svc.loggedOut)
+	}
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("Set-Cookie = %v, want none", got)
+	}
+}
+
+func TestLogout_sameBodyAndCookieTokenRevokedOnce(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	rec := logoutWithBodyAndCookie(e, "same-refresh", "same-refresh")
+
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+	if len(svc.loggedOut) != 1 || svc.loggedOut[0] != "same-refresh" {
+		t.Fatalf("loggedOut = %v, want [same-refresh]", svc.loggedOut)
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
+	}
+}
+
+func TestRefresh_invalidCookieTokenWithBlankBodyTokenClearsCookie(t *testing.T) {
+	e := echo.New()
+	h := testAuthHandlers(&fakeAuthService{refreshErr: ErrInvalidRefresh})
+	e.POST("/auth/refresh", h.Refresh)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader(`{"refresh_token":"  "}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "bad-token"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusUnauthorized)
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].MaxAge != -1 {
+		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
+	}
+}

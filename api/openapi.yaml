@@ -70,7 +70,7 @@ paths:
           description: Registered
           headers:
             Set-Cookie:
-              description: HttpOnly refresh token cookie
+              description: HttpOnly refresh token cookie; absent when token_delivery is body
               schema:
                 type: string
           content:
@@ -100,13 +100,15 @@ paths:
           description: Authenticated
           headers:
             Set-Cookie:
-              description: HttpOnly refresh token cookie
+              description: HttpOnly refresh token cookie; absent when token_delivery is body
               schema:
                 type: string
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           description: Invalid credentials
         "429":
@@ -115,27 +117,57 @@ paths:
   /auth/refresh:
     post:
       tags: [auth]
-      summary: Rotate access token using refresh cookie
+      summary: Rotate access token using a refresh token from the cookie or the JSON body
+      description: >-
+        The refresh token comes from the optional JSON body or from the cookie.
+        When both are present the body token is used and the cookie is left alone.
+        A token sent in the body is answered with refresh_token in JSON and no cookie.
+        A token sent in the cookie is answered with a new cookie and never with
+        refresh_token in JSON. A body that cannot be read or has a blank token counts as no body token.
+        Refresh tokens are single-use.
       operationId: refresh
       parameters:
         - $ref: "#/components/parameters/RefreshCookie"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
       responses:
         "200":
           description: New access token issued
+          headers:
+            Set-Cookie:
+              description: HttpOnly refresh token cookie; present only when the token came from the cookie
+              schema:
+                type: string
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "401":
-          description: Missing or invalid refresh token
+          description: >-
+            Missing or invalid refresh token. The refresh cookie is cleared only
+            when the rejected token came from the cookie.
 
   /auth/logout:
     post:
       tags: [auth]
       summary: Revoke current refresh session
+      description: >-
+        Revokes the refresh token from the optional JSON body and the one from the cookie, when sent.
+        The cookie is cleared whenever a cookie is sent or no body token is sent.
+        A body that cannot be read or has a blank token counts as no body token.
       operationId: logout
       parameters:
         - $ref: "#/components/parameters/RefreshCookie"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
       responses:
         "204":
           description: Logged out
@@ -1943,7 +1975,7 @@ components:
       required: false
       schema:
         type: string
-      description: HttpOnly refresh token (name configurable via REFRESH_COOKIE_NAME)
+      description: HttpOnly refresh token used by the web cabinet (name configurable via REFRESH_COOKIE_NAME)
 
     Page:
       name: page
@@ -2153,6 +2185,14 @@ components:
           type: string
           minLength: 8
           maxLength: 72
+        token_delivery:
+          type: string
+          enum: [cookie, body]
+          default: cookie
+          description: >-
+            How the refresh token is returned. cookie sets the HttpOnly refresh cookie.
+            body returns refresh_token in the JSON response and sets no cookie.
+            An empty value means cookie.
 
     RegisterRequest:
       type: object
@@ -2168,6 +2208,21 @@ components:
         name:
           type: string
           description: Optional display name; defaults to empty string
+        token_delivery:
+          type: string
+          enum: [cookie, body]
+          default: cookie
+          description: >-
+            How the refresh token is returned. cookie sets the HttpOnly refresh cookie.
+            body returns refresh_token in the JSON response and sets no cookie.
+            An empty value means cookie.
+
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+          description: Refresh token held by the client. When empty or absent the cookie is used.
 
     MePatchRequest:
       type: object
@@ -2195,6 +2250,9 @@ components:
         email:
           type: string
           format: email
+        refresh_token:
+          type: string
+          description: Present only when the client asked for body delivery or sent the refresh token in the body
 
     MeResponse:
       type: object
