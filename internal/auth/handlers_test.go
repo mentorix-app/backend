@@ -1279,3 +1279,374 @@ func TestRefresh_invalidCookieTokenWithBlankBodyTokenClearsCookie(t *testing.T) 
 		t.Fatalf("cookies = %v, want one clearing cookie", cookies)
 	}
 }
+
+func TestLogout_rateLimited(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	svc := &recordingAuthService{}
+	h := testAuthHandlers(svc)
+	h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	e := echo.New()
+	e.POST("/auth/logout", h.Logout)
+
+	first := logoutWithBodyAndCookie(e, "body-refresh", "cookie-refresh")
+	assertHTTPStatus(t, first, http.StatusNoContent)
+	second := logoutWithBodyAndCookie(e, "body-refresh-2", "cookie-refresh-2")
+
+	assertHTTPStatus(t, second, http.StatusTooManyRequests)
+	if len(svc.loggedOut) != 2 {
+		t.Fatalf("loggedOut = %v, want only the first request's tokens", svc.loggedOut)
+	}
+	if got := second.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("Set-Cookie = %v, want none", got)
+	}
+}
+
+func TestLogout_rateLimitBackendError(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	h := testAuthHandlers(&fakeAuthService{})
+	h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	mr.Close()
+	e := echo.New()
+	e.POST("/auth/logout", h.Logout)
+
+	rec := postAuthJSON(e, "/auth/logout", `{"refresh_token":"app-refresh"}`)
+
+	assertHTTPStatus(t, rec, http.StatusInternalServerError)
+}
+
+func TestLogout_nilLimiterAllowsRequest(t *testing.T) {
+	h := testAuthHandlers(&fakeAuthService{})
+	if h.limiter != nil {
+		t.Fatal("test handlers must have a nil limiter")
+	}
+	e := echo.New()
+	e.POST("/auth/logout", h.Logout)
+
+	rec := postAuthJSON(e, "/auth/logout", `{"refresh_token":"app-refresh"}`)
+
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+}
+
+func TestLogout_cookieOnlyRevokeFails(t *testing.T) {
+	svc := &recordingAuthService{logoutErrs: map[string]error{"cookie-refresh": errors.New("db down")}}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/logout", h.Logout)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-refresh"})
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assertHTTPStatus(t, rec, http.StatusInternalServerError)
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("Set-Cookie = %v, want none", got)
+	}
+}
+
+func TestRefresh_paddedBodyTokenIsTrimmed(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := testAuthHandlers(svc)
+	e.POST("/auth/refresh", h.Refresh)
+
+	rec := postAuthJSON(e, "/auth/refresh", `{"refresh_token":" abc "}`)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if len(svc.refreshed) != 1 || svc.refreshed[0] != "abc" {
+		t.Fatalf("refreshed = %v, want [abc]", svc.refreshed)
+	}
+}
+
+const (
+	originAllowed    = "https://app.example.com"
+	originDisallowed = "https://evil.example.net"
+)
+
+func originTestHandlers(svc credentialService, allowed ...string) *Handlers {
+	h := testAuthHandlers(svc)
+	WithAllowedOrigins(allowed)(h)
+	return h
+}
+
+func originRequest(path, origin, body string, cookie string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	if origin != "" {
+		req.Header.Set(echo.HeaderOrigin, origin)
+	}
+	if cookie != "" {
+		req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: cookie})
+	}
+	return req
+}
+
+type originCase struct {
+	name    string
+	allowed []string
+	origin  string
+	want    int
+}
+
+// originCases apply to every endpoint that acts on the refresh cookie.
+var originCases = []originCase{
+	{"disallowed origin", []string{originAllowed}, originDisallowed, http.StatusForbidden},
+	{"allowed origin", []string{originAllowed}, originAllowed, http.StatusOK},
+	{"allowed origin with trailing slash in config", []string{originAllowed + "/"}, originAllowed, http.StatusOK},
+	{"allowed origin differing in case", []string{originAllowed}, "HTTPS://App.Example.com", http.StatusOK},
+	{"no origin header", []string{originAllowed}, "", http.StatusOK},
+	{"empty allowed list", nil, originDisallowed, http.StatusOK},
+	{"wildcard in list", []string{originAllowed, "*"}, originDisallowed, http.StatusOK},
+	{"null origin", []string{originAllowed}, "null", http.StatusForbidden},
+	{"scheme mismatch", []string{"https://cabinet.example.com"}, "http://cabinet.example.com", http.StatusForbidden},
+	{"port mismatch", []string{"https://cabinet.example.com"}, "https://cabinet.example.com:8443", http.StatusForbidden},
+	{"second configured entry matches", []string{"https://other.example.com", originAllowed}, originAllowed, http.StatusOK},
+	{"whitespace around configured entry", []string{"  " + originAllowed + "  "}, originAllowed, http.StatusOK},
+	{"suffix lookalike", []string{"https://cabinet.example.com"}, "https://cabinet.example.com.evil.test", http.StatusForbidden},
+}
+
+func TestRefresh_cookieOriginCheck(t *testing.T) {
+	for _, tc := range originCases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &recordingAuthService{}
+			e := echo.New()
+			h := originTestHandlers(svc, tc.allowed...)
+			e.POST("/auth/refresh", h.Refresh)
+
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, originRequest("/auth/refresh", tc.origin, "", "cookie-refresh"))
+
+			assertHTTPStatus(t, rec, tc.want)
+			if tc.want == http.StatusForbidden {
+				if len(svc.refreshed) != 0 {
+					t.Fatalf("refreshed = %v, want none", svc.refreshed)
+				}
+				if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+					t.Fatalf("Set-Cookie = %v, want none", got)
+				}
+				if !strings.Contains(rec.Body.String(), "origin not allowed") {
+					t.Fatalf("body = %s, want origin not allowed", rec.Body.String())
+				}
+			}
+		})
+	}
+}
+
+func TestLogout_cookieOriginCheck(t *testing.T) {
+	for _, tc := range originCases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &recordingAuthService{}
+			e := echo.New()
+			h := originTestHandlers(svc, tc.allowed...)
+			e.POST("/auth/logout", h.Logout)
+
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, originRequest("/auth/logout", tc.origin, "", "cookie-refresh"))
+
+			want := tc.want
+			if want == http.StatusOK {
+				want = http.StatusNoContent
+			}
+			assertHTTPStatus(t, rec, want)
+			if want == http.StatusForbidden {
+				if len(svc.loggedOut) != 0 {
+					t.Fatalf("loggedOut = %v, want none", svc.loggedOut)
+				}
+				if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+					t.Fatalf("Set-Cookie = %v, want none", got)
+				}
+				if !strings.Contains(rec.Body.String(), "origin not allowed") {
+					t.Fatalf("body = %s, want origin not allowed", rec.Body.String())
+				}
+			}
+		})
+	}
+}
+
+// Rejected cross-site requests must not spend the victim IP's rate-limit budget.
+func TestCookieRequests_disallowedOriginDoesNotConsumeRateLimit(t *testing.T) {
+	endpoints := []struct {
+		name    string
+		path    string
+		success int
+	}{
+		{"refresh", "/auth/refresh", http.StatusOK},
+		{"logout", "/auth/logout", http.StatusNoContent},
+	}
+	for _, ep := range endpoints {
+		t.Run(ep.name, func(t *testing.T) {
+			mr := miniredis.RunT(t)
+			rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+			h := originTestHandlers(&recordingAuthService{}, originAllowed)
+			h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+			e := echo.New()
+			e.POST("/auth/refresh", h.Refresh)
+			e.POST("/auth/logout", h.Logout)
+
+			for i := 0; i < 5; i++ {
+				rec := httptest.NewRecorder()
+				e.ServeHTTP(rec, originRequest(ep.path, originDisallowed, "", "cookie-refresh"))
+				assertHTTPStatus(t, rec, http.StatusForbidden)
+			}
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, originRequest(ep.path, originAllowed, "", "cookie-refresh"))
+			assertHTTPStatus(t, rec, ep.success)
+		})
+	}
+}
+
+func TestCookieRequests_allowedOriginStillRateLimited(t *testing.T) {
+	for _, path := range []string{"/auth/refresh", "/auth/logout"} {
+		t.Run(path, func(t *testing.T) {
+			mr := miniredis.RunT(t)
+			rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+			h := originTestHandlers(&recordingAuthService{}, originAllowed)
+			h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+			e := echo.New()
+			e.POST("/auth/refresh", h.Refresh)
+			e.POST("/auth/logout", h.Logout)
+
+			first := httptest.NewRecorder()
+			e.ServeHTTP(first, originRequest(path, originAllowed, "", "cookie-refresh"))
+			if first.Code >= 300 {
+				t.Fatalf("first status = %d", first.Code)
+			}
+			second := httptest.NewRecorder()
+			e.ServeHTTP(second, originRequest(path, originAllowed, "", "cookie-refresh"))
+			assertHTTPStatus(t, second, http.StatusTooManyRequests)
+		})
+	}
+}
+
+func TestOriginCheckDisabled(t *testing.T) {
+	cases := []struct {
+		name    string
+		origins []string
+		want    bool
+	}{
+		{"nil list", nil, true},
+		{"empty list", []string{}, true},
+		{"wildcard only", []string{"*"}, true},
+		{"wildcard among entries", []string{originAllowed, "*"}, true},
+		{"padded wildcard", []string{" * "}, true},
+		{"explicit origins", []string{originAllowed}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := OriginCheckDisabled(tc.origins); got != tc.want {
+				t.Fatalf("OriginCheckDisabled(%v) = %v, want %v", tc.origins, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRefresh_bodyTokenSkipsOriginCheck(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := originTestHandlers(svc, originAllowed)
+	e.POST("/auth/refresh", h.Refresh)
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, originRequest("/auth/refresh", originDisallowed, `{"refresh_token":"app-refresh"}`, ""))
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if len(svc.refreshed) != 1 || svc.refreshed[0] != "app-refresh" {
+		t.Fatalf("refreshed = %v, want [app-refresh]", svc.refreshed)
+	}
+}
+
+func TestLogout_bodyAndCookieDisallowedOriginForbidden(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := originTestHandlers(svc, originAllowed)
+	e.POST("/auth/logout", h.Logout)
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, originRequest("/auth/logout", originDisallowed, `{"refresh_token":"body-refresh"}`, "cookie-refresh"))
+
+	assertHTTPStatus(t, rec, http.StatusForbidden)
+	if len(svc.loggedOut) != 0 {
+		t.Fatalf("loggedOut = %v, want none", svc.loggedOut)
+	}
+}
+
+func TestLogout_bodyOnlyDisallowedOriginAllowed(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := originTestHandlers(svc, originAllowed)
+	e.POST("/auth/logout", h.Logout)
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, originRequest("/auth/logout", originDisallowed, `{"refresh_token":"app-refresh"}`, ""))
+
+	assertHTTPStatus(t, rec, http.StatusNoContent)
+	if len(svc.loggedOut) != 1 || svc.loggedOut[0] != "app-refresh" {
+		t.Fatalf("loggedOut = %v, want [app-refresh]", svc.loggedOut)
+	}
+}
+
+func TestLogout_cookieAllowedOriginAndNoOriginPass(t *testing.T) {
+	for _, origin := range []string{originAllowed, ""} {
+		svc := &recordingAuthService{}
+		e := echo.New()
+		h := originTestHandlers(svc, originAllowed)
+		e.POST("/auth/logout", h.Logout)
+
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, originRequest("/auth/logout", origin, "", "cookie-refresh"))
+
+		assertHTTPStatus(t, rec, http.StatusNoContent)
+		if len(svc.loggedOut) != 1 {
+			t.Fatalf("origin %q: loggedOut = %v, want one", origin, svc.loggedOut)
+		}
+	}
+}
+
+func TestRefresh_bodyAndCookieDisallowedOriginSkipsOriginCheck(t *testing.T) {
+	svc := &recordingAuthService{}
+	e := echo.New()
+	h := originTestHandlers(svc, originAllowed)
+	e.POST("/auth/refresh", h.Refresh)
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, originRequest("/auth/refresh", originDisallowed, `{"refresh_token":"body-refresh"}`, "cookie-refresh"))
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	if len(svc.refreshed) != 1 || svc.refreshed[0] != "body-refresh" {
+		t.Fatalf("refreshed = %v, want [body-refresh]", svc.refreshed)
+	}
+	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+		t.Fatalf("Set-Cookie = %v, want none", got)
+	}
+}
+
+func TestRefresh_rateLimitBackendError(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	h := testAuthHandlers(&fakeAuthService{})
+	h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	mr.Close()
+	e := echo.New()
+	e.POST("/auth/refresh", h.Refresh)
+
+	rec := postAuthJSON(e, "/auth/refresh", `{"refresh_token":"app-refresh"}`)
+
+	assertHTTPStatus(t, rec, http.StatusInternalServerError)
+}
+
+func TestRefresh_noTokenWhileRateLimited(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	h := testAuthHandlers(&fakeAuthService{})
+	h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	e := echo.New()
+	e.POST("/auth/refresh", h.Refresh)
+
+	first := postAuthJSON(e, "/auth/refresh", "")
+	assertHTTPStatus(t, first, http.StatusUnauthorized)
+	second := postAuthJSON(e, "/auth/refresh", "")
+
+	assertHTTPStatus(t, second, http.StatusTooManyRequests)
+}
