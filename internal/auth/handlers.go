@@ -2,9 +2,11 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -100,15 +102,27 @@ func (h *Handlers) clearRefreshCookie(c echo.Context) {
 	c.SetCookie(ck)
 }
 
-func (h *Handlers) writeAuthJSON(c echo.Context, status int, issued IssuedAuth) error {
-	h.setRefreshCookie(c, issued.RefreshToken)
-	return c.JSON(status, TokenResponse{
+// writeAuthJSON sends the refresh token in the JSON body when delivery is
+// TokenDeliveryBody and in the refresh cookie otherwise.
+func (h *Handlers) writeAuthJSON(c echo.Context, status int, issued IssuedAuth, delivery string) error {
+	resp := TokenResponse{
 		AccessToken: issued.AccessToken,
 		TokenType:   TokenTypeBearer,
 		ExpiresAt:   issued.AccessExpires.UTC(),
 		UserID:      issued.UserID.String(),
 		Email:       issued.Email,
-	})
+	}
+	if delivery == TokenDeliveryBody {
+		resp.RefreshToken = issued.RefreshToken
+	} else {
+		h.setRefreshCookie(c, issued.RefreshToken)
+	}
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
+	return c.JSON(status, resp)
+}
+
+func validTokenDelivery(v string) bool {
+	return v == "" || v == TokenDeliveryCookie || v == TokenDeliveryBody
 }
 
 func (h *Handlers) Register(c echo.Context) error {
@@ -121,6 +135,9 @@ func (h *Handlers) Register(c echo.Context) error {
 	var body RegisterRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	if !validTokenDelivery(body.TokenDelivery) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid token_delivery")
 	}
 	addr, err := mail.ParseAddress(body.Email)
 	if err != nil {
@@ -140,7 +157,7 @@ func (h *Handlers) Register(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "registration failed")
 	}
-	return h.writeAuthJSON(c, http.StatusCreated, issued)
+	return h.writeAuthJSON(c, http.StatusCreated, issued, body.TokenDelivery)
 }
 
 func (h *Handlers) Login(c echo.Context) error {
@@ -154,6 +171,9 @@ func (h *Handlers) Login(c echo.Context) error {
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
 	}
+	if !validTokenDelivery(body.TokenDelivery) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid token_delivery")
+	}
 	addr, err := mail.ParseAddress(body.Email)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidCredentials.Error())
@@ -166,7 +186,7 @@ func (h *Handlers) Login(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "login failed")
 	}
-	return h.writeAuthJSON(c, http.StatusOK, issued)
+	return h.writeAuthJSON(c, http.StatusOK, issued, body.TokenDelivery)
 }
 
 func (h *Handlers) Refresh(c echo.Context) error {
@@ -176,37 +196,67 @@ func (h *Handlers) Refresh(c echo.Context) error {
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
 	}
-	plain := h.refreshFromRequest(c)
+	bodyToken, cookieToken := h.refreshTokens(c)
+	fromBody := bodyToken != ""
+	plain := cookieToken
+	if fromBody {
+		plain = bodyToken
+	}
 	if plain == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "missing refresh token")
 	}
 	issued, err := h.svc.Refresh(c.Request().Context(), plain)
 	if err != nil {
 		if errors.Is(err, ErrInvalidRefresh) {
-			h.clearRefreshCookie(c)
+			if !fromBody {
+				h.clearRefreshCookie(c)
+			}
 			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidRefresh.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "refresh failed")
 	}
-	return h.writeAuthJSON(c, http.StatusOK, issued)
-}
-
-func (h *Handlers) refreshFromRequest(c echo.Context) string {
-	cc, err := c.Cookie(h.cookie.Name)
-	if err != nil || cc == nil {
-		return ""
+	// The response mode follows the token's origin: a cookie refresh never
+	// returns the new refresh token in JSON.
+	delivery := TokenDeliveryCookie
+	if fromBody {
+		delivery = TokenDeliveryBody
 	}
-	return cc.Value
+	return h.writeAuthJSON(c, http.StatusOK, issued, delivery)
 }
 
+// refreshTokens returns the refresh token from the optional JSON body and the
+// one from the cookie; either may be empty. A body that does not decode, or
+// whose token is blank, counts as no body token. The body is decoded directly
+// because clients may omit Content-Type.
+func (h *Handlers) refreshTokens(c echo.Context) (bodyToken, cookieToken string) {
+	var body RefreshRequest
+	if err := json.NewDecoder(c.Request().Body).Decode(&body); err == nil {
+		bodyToken = strings.TrimSpace(body.RefreshToken)
+	}
+	if cc, err := c.Cookie(h.cookie.Name); err == nil && cc != nil {
+		cookieToken = cc.Value
+	}
+	return bodyToken, cookieToken
+}
+
+// Logout revokes the body token and the cookie token when both are sent, and
+// clears the cookie unless only a body token was sent. Both revokes are
+// attempted even if the first fails; any failure skips the cookie clear.
 func (h *Handlers) Logout(c echo.Context) error {
-	plain := h.refreshFromRequest(c)
-	if plain != "" {
-		if err := h.svc.Logout(c.Request().Context(), plain); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "logout failed")
-		}
+	bodyToken, cookieToken := h.refreshTokens(c)
+	var revokeErr error
+	if bodyToken != "" {
+		revokeErr = h.svc.Logout(c.Request().Context(), bodyToken)
 	}
-	h.clearRefreshCookie(c)
+	if cookieToken != "" && cookieToken != bodyToken {
+		revokeErr = errors.Join(revokeErr, h.svc.Logout(c.Request().Context(), cookieToken))
+	}
+	if revokeErr != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "logout failed")
+	}
+	if bodyToken == "" || cookieToken != "" {
+		h.clearRefreshCookie(c)
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
