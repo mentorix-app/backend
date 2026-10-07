@@ -150,6 +150,12 @@ paths:
           description: >-
             Missing or invalid refresh token. The refresh cookie is cleared only
             when the rejected token came from the cookie.
+        "403":
+          description: Cookie request from an Origin outside CORS_ALLOW_ORIGINS; nothing is rotated
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          description: Rotating the session or the rate limiter failed
 
   /auth/logout:
     post:
@@ -171,6 +177,12 @@ paths:
       responses:
         "204":
           description: Logged out
+        "403":
+          description: Cookie request from an Origin outside CORS_ALLOW_ORIGINS; nothing is revoked
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          description: Revoking a session or the rate limiter failed; the cookie is kept
 
   /auth/logout-all:
     post:
@@ -179,8 +191,6 @@ paths:
       operationId: logoutAll
       security:
         - bearerAuth: []
-      parameters:
-        - $ref: "#/components/parameters/RefreshCookie"
       responses:
         "204":
           description: All sessions revoked
@@ -2174,6 +2184,15 @@ components:
             type: string
             enum: [ok, error, skipped]
 
+    TokenDelivery:
+      type: string
+      enum: [cookie, body]
+      default: cookie
+      description: >-
+        How the refresh token is returned. cookie sets the HttpOnly refresh cookie.
+        body returns refresh_token in the JSON response and sets no cookie.
+        An empty value means cookie.
+
     AuthCredentials:
       type: object
       required: [email, password]
@@ -2186,13 +2205,7 @@ components:
           minLength: 8
           maxLength: 72
         token_delivery:
-          type: string
-          enum: [cookie, body]
-          default: cookie
-          description: >-
-            How the refresh token is returned. cookie sets the HttpOnly refresh cookie.
-            body returns refresh_token in the JSON response and sets no cookie.
-            An empty value means cookie.
+          $ref: "#/components/schemas/TokenDelivery"
 
     RegisterRequest:
       type: object
@@ -2209,13 +2222,7 @@ components:
           type: string
           description: Optional display name; defaults to empty string
         token_delivery:
-          type: string
-          enum: [cookie, body]
-          default: cookie
-          description: >-
-            How the refresh token is returned. cookie sets the HttpOnly refresh cookie.
-            body returns refresh_token in the JSON response and sets no cookie.
-            An empty value means cookie.
+          $ref: "#/components/schemas/TokenDelivery"
 
     RefreshRequest:
       type: object

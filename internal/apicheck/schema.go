@@ -204,6 +204,7 @@ func enumBindings() []enumBinding {
 			string(program.BlockTypeComplex), string(program.BlockTypeSkillWork), string(program.BlockTypeStrength),
 			string(program.BlockTypeConditioning), string(program.BlockTypeGymnastics), string(program.BlockTypeWeightlifting),
 		}},
+		{name: "TokenDelivery", values: []string{auth.TokenDeliveryCookie, auth.TokenDeliveryBody}},
 		{name: "PlanCode", values: []string{
 			string(subscription.PlanFree), string(subscription.PlanAdvance), string(subscription.PlanElite),
 		}},

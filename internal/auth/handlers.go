@@ -40,6 +40,8 @@ type Handlers struct {
 	refreshTTL time.Duration
 	limiter    *RateLimiter
 	subs       SubscriptionProvider
+
+	allowedOrigins []string
 }
 
 type HandlersOption func(*Handlers)
@@ -47,6 +49,12 @@ type HandlersOption func(*Handlers)
 // WithSubscriptions enables the subscription block in /auth/me responses.
 func WithSubscriptions(p SubscriptionProvider) HandlersOption {
 	return func(h *Handlers) { h.subs = p }
+}
+
+// WithAllowedOrigins sets the origins allowed to send the refresh cookie to
+// refresh and logout. An empty list or a list containing "*" disables the check.
+func WithAllowedOrigins(origins []string) HandlersOption {
+	return func(h *Handlers) { h.allowedOrigins = origins }
 }
 
 func NewHandlers(svc *Service, jwtSecret string, cookie config.RefreshCookieSettings, refreshTTL time.Duration, limiter *RateLimiter, opts ...HandlersOption) *Handlers {
@@ -190,17 +198,22 @@ func (h *Handlers) Login(c echo.Context) error {
 }
 
 func (h *Handlers) Refresh(c echo.Context) error {
-	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
-		if errors.Is(err, ErrRateLimited) {
-			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
-	}
 	bodyToken, cookieToken := h.refreshTokens(c)
 	fromBody := bodyToken != ""
 	plain := cookieToken
 	if fromBody {
 		plain = bodyToken
+	}
+	// Rejected cross-site requests return before the rate limiter so they cannot
+	// spend the victim's budget.
+	if cookieToken != "" && !fromBody && !h.originAllowed(c) {
+		return echo.NewHTTPError(http.StatusForbidden, msgOriginNotAllowed)
+	}
+	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
 	}
 	if plain == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "missing refresh token")
@@ -224,6 +237,39 @@ func (h *Handlers) Refresh(c echo.Context) error {
 	return h.writeAuthJSON(c, http.StatusOK, issued, delivery)
 }
 
+const msgOriginNotAllowed = "origin not allowed"
+
+// OriginCheckDisabled reports whether the refresh cookie Origin check is off
+// for the configured origins: an empty list or a list containing "*".
+func OriginCheckDisabled(origins []string) bool {
+	if len(origins) == 0 {
+		return true
+	}
+	for _, o := range origins {
+		if strings.TrimSpace(o) == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// originAllowed guards requests that act on the refresh cookie. With SameSite=None
+// another site can make the browser send the cookie, so a request whose Origin
+// is outside the configured list is refused. A missing Origin header or a
+// disabled check (see OriginCheckDisabled) allows the request.
+func (h *Handlers) originAllowed(c echo.Context) bool {
+	origin := c.Request().Header.Get(echo.HeaderOrigin)
+	if origin == "" || OriginCheckDisabled(h.allowedOrigins) {
+		return true
+	}
+	for _, allowed := range h.allowedOrigins {
+		if strings.EqualFold(strings.TrimRight(strings.TrimSpace(allowed), "/"), origin) {
+			return true
+		}
+	}
+	return false
+}
+
 // refreshTokens returns the refresh token from the optional JSON body and the
 // one from the cookie; either may be empty. A body that does not decode, or
 // whose token is blank, counts as no body token. The body is decoded directly
@@ -244,6 +290,15 @@ func (h *Handlers) refreshTokens(c echo.Context) (bodyToken, cookieToken string)
 // attempted even if the first fails; any failure skips the cookie clear.
 func (h *Handlers) Logout(c echo.Context) error {
 	bodyToken, cookieToken := h.refreshTokens(c)
+	if cookieToken != "" && !h.originAllowed(c) {
+		return echo.NewHTTPError(http.StatusForbidden, msgOriginNotAllowed)
+	}
+	if err := h.limiter.AllowLogout(c.Request().Context(), c.RealIP()); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+	}
 	var revokeErr error
 	if bodyToken != "" {
 		revokeErr = h.svc.Logout(c.Request().Context(), bodyToken)

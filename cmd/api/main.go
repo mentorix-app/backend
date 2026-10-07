@@ -49,6 +49,9 @@ func main() {
 		logger.Error("config load failed", "error", err)
 		os.Exit(1)
 	}
+	if cfg.RefreshCookie.SameSite == http.SameSiteNoneMode && auth.OriginCheckDisabled(cfg.CORSAllowedOrigins) {
+		logger.Warn("refresh cookie is SameSite=None and CORS_ALLOW_ORIGINS is empty or contains *; cross-site cookie requests to refresh and logout are not checked")
+	}
 
 	ctx := context.Background()
 	pool, err := health.NewPool(ctx, cfg.DatabaseURL)
@@ -111,6 +114,7 @@ func main() {
 		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL())
 		auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter,
 			auth.WithSubscriptions(subsSvc),
+			auth.WithAllowedOrigins(cfg.CORSAllowedOrigins),
 		).Mount(e)
 
 		adminSvc := admin.NewService(pool)

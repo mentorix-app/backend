@@ -55,8 +55,11 @@ if [[ -z "${SMOKE_EMAIL:-}" || -z "${SMOKE_PASSWORD:-}" ]]; then
   exit 0
 fi
 
+COOKIE_JAR=$(mktemp)
+trap 'rm -f "$COOKIE_JAR"' EXIT
+
 TOKEN=$(
-  curl -sf -X POST "$BASE/auth/login" \
+  curl -sf -c "$COOKIE_JAR" -X POST "$BASE/auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\"}" \
     | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true
@@ -123,5 +126,11 @@ if ! curl -sf -X POST "$BASE/auth/logout" \
   exit 1
 fi
 echo "  POST /auth/logout (body) OK"
+
+if ! curl -sf -b "$COOKIE_JAR" -X POST "$BASE/auth/logout" >/dev/null; then
+  echo "FAIL: POST /auth/logout with the refresh cookie failed" >&2
+  exit 1
+fi
+echo "  POST /auth/logout (cookie) OK"
 
 echo "Smoke OK"
