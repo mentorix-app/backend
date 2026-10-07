@@ -56,3 +56,6 @@ tmp/
 
 # Claude Code local overrides (settings.json is shared)
 .claude/settings.local.json
+
+# ECC plan artifacts are per-task and go stale after merge; PRDs in .claude/prds are tracked
+.claude/plans/
