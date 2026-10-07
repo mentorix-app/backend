@@ -31,6 +31,7 @@ func schemaBindings() []schemaBinding {
 		{name: "RegisterRequest", typ: reflect.TypeOf(auth.RegisterRequest{})},
 		{name: "SocialLoginRequest", typ: reflect.TypeOf(auth.SocialLoginRequest{})},
 		{name: "AddRoleRequest", typ: reflect.TypeOf(auth.AddRoleRequest{})},
+		{name: "AttachIdentityRequest", typ: reflect.TypeOf(auth.AttachIdentityRequest{})},
 		{name: "RefreshRequest", typ: reflect.TypeOf(auth.RefreshRequest{})},
 		{name: "MePatchRequest", typ: reflect.TypeOf(auth.MePatchRequest{})},
 		{name: "TokenResponse", typ: reflect.TypeOf(auth.TokenResponse{})},
@@ -208,6 +209,7 @@ func enumBindings() []enumBinding {
 		}},
 		{name: "TokenDelivery", values: []string{auth.TokenDeliveryCookie, auth.TokenDeliveryBody}},
 		{name: "SocialProvider", values: []string{auth.ProviderApple, auth.ProviderGoogle}},
+		{name: "SignInMethod", values: []string{auth.ProviderEmailPassword, auth.ProviderTelegram, auth.ProviderApple, auth.ProviderGoogle}},
 		{name: "SelfAssignableRole", values: []string{auth.RoleTrainer, auth.RoleClient}},
 		{name: "PlanCode", values: []string{
 			string(subscription.PlanFree), string(subscription.PlanAdvance), string(subscription.PlanElite),

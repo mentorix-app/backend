@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mentorix-backend/internal/db/pgconv"
@@ -209,6 +211,74 @@ func (s *Store) AddRole(ctx context.Context, userID uuid.UUID, role string) erro
 	return nil
 }
 
+// AttachIdentity links the (provider, subject) identity to the user. It does
+// nothing when the user already owns it and fails with
+// ErrIdentityBelongsToAnotherAccount when another user does. A missing user is
+// pgx.ErrNoRows. The user's email and roles are not touched.
+func (s *Store) AttachIdentity(ctx context.Context, userID uuid.UUID, provider, subject string) error {
+	userPG := pgconv.ToPGUUID(userID)
+	identity := sqlc.GetAuthIdentityUserIDParams{Provider: provider, Subject: subject}
+
+	owner, err := s.q.GetAuthIdentityUserID(ctx, identity)
+	if err == nil {
+		return identityOwnerResult(owner, userPG)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("lookup %s identity: %w", provider, err)
+	}
+
+	err = s.q.InsertAuthIdentity(ctx, sqlc.InsertAuthIdentityParams{
+		UserID:   userPG,
+		Provider: provider,
+		Subject:  subject,
+	})
+	if err == nil {
+		return nil
+	}
+	if isUniqueViolation(err, identitySubjectUniqConstraint) {
+		// A concurrent attach or sign-in created the identity first.
+		owner, err = s.q.GetAuthIdentityUserID(ctx, identity)
+		if err != nil {
+			// A vanished row here is not "user not found", so it must not wrap pgx.ErrNoRows.
+			return fmt.Errorf("lookup %s identity after race: %v", provider, err)
+		}
+		return identityOwnerResult(owner, userPG)
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolationCode {
+		return pgx.ErrNoRows
+	}
+	return fmt.Errorf("insert %s identity: %w", provider, err)
+}
+
+// EmailPasswordHash returns the user's password hash, or an empty string when
+// the user has no email and password sign-in. A missing user is pgx.ErrNoRows.
+func (s *Store) EmailPasswordHash(ctx context.Context, userID uuid.UUID) (string, error) {
+	hash, err := s.q.GetEmailPasswordHashByUserID(ctx, sqlc.GetEmailPasswordHashByUserIDParams{
+		Provider: ProviderEmailPassword,
+		UserID:   pgconv.ToPGUUID(userID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", pgx.ErrNoRows
+		}
+		return "", fmt.Errorf("load password hash: %w", err)
+	}
+	return hash, nil
+}
+
+// UserIsAdmin reports whether the user has the admin role.
+func (s *Store) UserIsAdmin(ctx context.Context, userID uuid.UUID) (bool, error) {
+	return UserIsAdmin(ctx, s.q, userID)
+}
+
+func identityOwnerResult(owner, userPG pgtype.UUID) error {
+	if owner != userPG {
+		return ErrIdentityBelongsToAnotherAccount
+	}
+	return nil
+}
+
 type emailIdentityRow struct {
 	UserID       uuid.UUID
 	PasswordHash string
@@ -227,6 +297,8 @@ type UserProfile struct {
 	Name      string
 	CreatedAt time.Time
 	Roles     []string
+	// SignInMethods lists the distinct providers of the user's identities, sorted.
+	SignInMethods []string
 }
 
 func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
@@ -243,11 +315,20 @@ func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile,
 		return UserProfile{}, err
 	}
 
+	methods, err := s.q.ListUserSignInMethods(ctx, pgconv.ToPGUUID(userID))
+	if err != nil {
+		return UserProfile{}, fmt.Errorf("load sign-in methods: %w", err)
+	}
+
+	// Sort here too: the SQL order follows the database collation.
+	slices.Sort(methods)
+
 	return UserProfile{
-		Email:     row.PrimaryEmail,
-		Name:      row.DisplayName,
-		CreatedAt: row.CreatedAt.UTC(),
-		Roles:     roles,
+		Email:         row.PrimaryEmail,
+		Name:          row.DisplayName,
+		CreatedAt:     row.CreatedAt.UTC(),
+		Roles:         roles,
+		SignInMethods: methods,
 	}, nil
 }
 

@@ -25,6 +25,9 @@ type authStore interface {
 	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
 	SocialSignIn(ctx context.Context, provider string, claims IDTokenClaims, displayName string) (uuid.UUID, bool, error)
 	AddRole(ctx context.Context, userID uuid.UUID, role string) error
+	AttachIdentity(ctx context.Context, userID uuid.UUID, provider, subject string) error
+	EmailPasswordHash(ctx context.Context, userID uuid.UUID) (string, error)
+	UserIsAdmin(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
 type Service struct {
@@ -205,6 +208,47 @@ func (s *Service) SocialLogin(ctx context.Context, provider, rawIDToken, name st
 // AddRole gives the user the client or trainer role; see Store.AddRole.
 func (s *Service) AddRole(ctx context.Context, userID uuid.UUID, role string) error {
 	return s.store.AddRole(ctx, userID, role)
+}
+
+// AttachIdentity links the identity of a verified provider ID token to the user;
+// see Store.AttachIdentity. The token's email is ignored. The call is refused
+// for admin accounts, and for an account with a password it needs the current
+// password. Both checks run before the token is verified, so a stolen session
+// cannot make the server contact the provider. currentPassword is ignored for
+// an account without a password.
+func (s *Service) AttachIdentity(ctx context.Context, userID uuid.UUID, provider, rawIDToken, currentPassword string) error {
+	verifier, ok := s.verifiers[provider]
+	if !ok || verifier == nil {
+		return ErrProviderNotConfigured
+	}
+	hash, err := s.store.EmailPasswordHash(ctx, userID)
+	if err != nil {
+		return err
+	}
+	isAdmin, err := s.store.UserIsAdmin(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if isAdmin {
+		return ErrAdminCannotAttachIdentity
+	}
+	if hash != "" {
+		if currentPassword == "" {
+			return ErrPasswordRequired
+		}
+		matches, err := PasswordMatches(hash, currentPassword)
+		if err != nil {
+			return fmt.Errorf("verify password: %w", err)
+		}
+		if !matches {
+			return ErrPasswordIncorrect
+		}
+	}
+	claims, err := verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return err
+	}
+	return s.store.AttachIdentity(ctx, userID, provider, claims.Subject)
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error) {

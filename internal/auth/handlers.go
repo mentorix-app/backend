@@ -25,6 +25,7 @@ type credentialService interface {
 	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
 	SocialLogin(ctx context.Context, provider, idToken, name string) (IssuedAuth, bool, error)
 	AddRole(ctx context.Context, userID uuid.UUID, role string) error
+	AttachIdentity(ctx context.Context, userID uuid.UUID, provider, idToken, currentPassword string) error
 	Logout(ctx context.Context, refreshPlain string) error
 	LogoutAll(ctx context.Context, userID uuid.UUID) error
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
@@ -84,6 +85,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.GET("/auth/me", h.Me)
 	g.PATCH("/auth/me", h.UpdateMe)
 	g.POST("/auth/me/roles", h.AddRole)
+	g.POST("/auth/me/identities", h.AttachIdentity)
 	g.POST("/auth/logout-all", h.LogoutAll)
 }
 
@@ -450,6 +452,64 @@ func (h *Handlers) AddRole(c echo.Context) error {
 	return h.writeMeJSON(c, uid, profile)
 }
 
+// AttachIdentity links an Apple or Google sign-in to the signed-in account and
+// returns the updated profile. Repeating the call is harmless.
+func (h *Handlers) AttachIdentity(c echo.Context) error {
+	uid, ok := UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	var body AttachIdentityRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	if body.Provider != ProviderApple && body.Provider != ProviderGoogle {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid provider")
+	}
+	idToken := strings.TrimSpace(body.IDToken)
+	if idToken == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id_token is required")
+	}
+	if utf8.RuneCountInString(body.CurrentPassword) > maxPasswordLen {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid current_password")
+	}
+	if err := h.limiter.AllowAttachIdentity(c.Request().Context(), c.RealIP()); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+	}
+	if err := h.svc.AttachIdentity(c.Request().Context(), uid, body.Provider, idToken, body.CurrentPassword); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidIDToken):
+			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidIDToken.Error())
+		case errors.Is(err, ErrIDTokenProviderUnavailable):
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "sign-in provider unavailable").SetInternal(err)
+		case errors.Is(err, ErrProviderNotConfigured):
+			return echo.NewHTTPError(http.StatusBadRequest, ErrProviderNotConfigured.Error())
+		case errors.Is(err, ErrAdminCannotAttachIdentity):
+			return echo.NewHTTPError(http.StatusForbidden, ErrAdminCannotAttachIdentity.Error())
+		case errors.Is(err, ErrPasswordRequired):
+			return echo.NewHTTPError(http.StatusForbidden, ErrPasswordRequired.Error())
+		case errors.Is(err, ErrPasswordIncorrect):
+			return echo.NewHTTPError(http.StatusForbidden, ErrPasswordIncorrect.Error())
+		case errors.Is(err, ErrIdentityBelongsToAnotherAccount):
+			return echo.NewHTTPError(http.StatusConflict, "this sign-in already belongs to another account")
+		case errors.Is(err, pgx.ErrNoRows):
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "attach identity failed")
+	}
+	profile, err := h.svc.UserProfile(c.Request().Context(), uid)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	return h.writeMeJSON(c, uid, profile)
+}
+
 func (h *Handlers) writeMeJSON(c echo.Context, uid uuid.UUID, profile UserProfile) error {
 	resp := meResponse(uid, profile)
 	if h.subs != nil {
@@ -467,11 +527,16 @@ func meResponse(uid uuid.UUID, profile UserProfile) MeResponse {
 	if roles == nil {
 		roles = []string{}
 	}
+	methods := profile.SignInMethods
+	if methods == nil {
+		methods = []string{}
+	}
 	return MeResponse{
-		UserID:    uid.String(),
-		Email:     profile.Email,
-		Name:      profile.Name,
-		CreatedAt: profile.CreatedAt,
-		Roles:     roles,
+		UserID:        uid.String(),
+		Email:         profile.Email,
+		Name:          profile.Name,
+		CreatedAt:     profile.CreatedAt,
+		Roles:         roles,
+		SignInMethods: methods,
 	}
 }

@@ -39,6 +39,13 @@ type fakeAuthService struct {
 	socialCalls   []socialLoginCall
 	addRoleErr    error
 	addRoleCalls  []addRoleCall
+	attachErr     error
+	attachCalls   []attachCall
+}
+
+type attachCall struct {
+	userID                             uuid.UUID
+	provider, idToken, currentPassword string
 }
 
 type socialLoginCall struct {
@@ -159,6 +166,11 @@ func (f *fakeAuthService) SocialLogin(_ context.Context, provider, idToken, name
 func (f *fakeAuthService) AddRole(_ context.Context, userID uuid.UUID, role string) error {
 	f.addRoleCalls = append(f.addRoleCalls, addRoleCall{userID: userID, role: role})
 	return f.addRoleErr
+}
+
+func (f *fakeAuthService) AttachIdentity(_ context.Context, userID uuid.UUID, provider, idToken, currentPassword string) error {
+	f.attachCalls = append(f.attachCalls, attachCall{userID: userID, provider: provider, idToken: idToken, currentPassword: currentPassword})
+	return f.attachErr
 }
 
 func testAuthHandlers(svc credentialService) *Handlers {

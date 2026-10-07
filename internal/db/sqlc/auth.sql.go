@@ -12,6 +12,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getEmailPasswordHashByUserID = `-- name: GetEmailPasswordHashByUserID :one
+SELECT COALESCE(i.password_hash, '')::text AS password_hash
+FROM mentorix.users u
+LEFT JOIN mentorix.auth_identities i
+  ON i.user_id = u.id AND i.provider = $1::text
+WHERE u.id = $2
+ORDER BY (i.password_hash IS NULL), i.created_at
+LIMIT 1
+`
+
+type GetEmailPasswordHashByUserIDParams struct {
+	Provider string      `json:"provider"`
+	UserID   pgtype.UUID `json:"user_id"`
+}
+
+// No row means the user does not exist; an empty hash means no password identity.
+func (q *Queries) GetEmailPasswordHashByUserID(ctx context.Context, arg GetEmailPasswordHashByUserIDParams) (string, error) {
+	row := q.db.QueryRow(ctx, getEmailPasswordHashByUserID, arg.Provider, arg.UserID)
+	var password_hash string
+	err := row.Scan(&password_hash)
+	return password_hash, err
+}
+
 const getEmailPasswordIdentity = `-- name: GetEmailPasswordIdentity :one
 SELECT user_id, COALESCE(password_hash, '') AS password_hash
 FROM mentorix.auth_identities
@@ -226,6 +249,33 @@ func (q *Queries) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]stri
 			return nil, err
 		}
 		items = append(items, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserSignInMethods = `-- name: ListUserSignInMethods :many
+SELECT DISTINCT provider
+FROM mentorix.auth_identities
+WHERE user_id = $1
+ORDER BY provider
+`
+
+func (q *Queries) ListUserSignInMethods(ctx context.Context, userID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listUserSignInMethods, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var provider string
+		if err := rows.Scan(&provider); err != nil {
+			return nil, err
+		}
+		items = append(items, provider)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
