@@ -1200,8 +1200,8 @@ func TestSetBlockClients_refusesLastSharedBlockInLatestUnassignedVersion(t *test
 	if err != nil {
 		t.Fatalf("DeleteBlockExercise: %v", err)
 	}
-	if _, err := store.PublishFromDraft(ctx, programID, userID, afterDelete); err != nil {
-		t.Fatalf("PublishFromDraft (v2): %v", err)
+	if _, err := store.FreezePublishedVersion(ctx, programID, userID, afterDelete); err != nil {
+		t.Fatalf("FreezePublishedVersion (v2): %v", err)
 	}
 
 	// Add B' to the working copy after v2 was published: the working copy

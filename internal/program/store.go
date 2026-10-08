@@ -434,6 +434,53 @@ func (s *Store) SoftDelete(ctx context.Context, id, userID uuid.UUID) error {
 	return nil
 }
 
+// DeleteWithAssignments removes the program's assignments and soft-deletes the
+// program in one transaction, so a failure never leaves a live program without
+// its clients. Unused versions are cleaned up after the commit, best effort.
+// An already deleted program is left alone and reported as success.
+func (s *Store) DeleteWithAssignments(ctx context.Context, id, userID uuid.UUID) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	programPG := pgconv.ToPGUUID(id)
+	if err := qtx.LockProgramForUpdate(ctx, programPG); err != nil {
+		return fmt.Errorf("lock program: %w", err)
+	}
+	// A concurrent delete that won the lock has already done everything: the
+	// repeat is a no-op, matching a sequential repeat of the request.
+	current, err := s.getProgramRow(ctx, qtx, id)
+	if err != nil {
+		return err
+	}
+	if current.DeletedAt != nil {
+		return nil
+	}
+	if _, err := qtx.DeleteProgramAssignmentsByProgramID(ctx, programPG); err != nil {
+		return fmt.Errorf("delete program assignments: %w", err)
+	}
+	rows, err := qtx.SoftDeleteProgram(ctx, sqlc.SoftDeleteProgramParams{
+		ID:         programPG,
+		DeletedAt:  pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true},
+		ModifiedBy: pgconv.ToPGUUID(userID),
+	})
+	if err != nil {
+		return fmt.Errorf("soft delete program: %w", err)
+	}
+	if rows == 0 {
+		return pgx.ErrNoRows
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+
+	s.cleanupUnusedVersionsBestEffort(ctx, id)
+	return nil
+}
+
 func (s *Store) AddWeek(ctx context.Context, programID uuid.UUID) (Detail, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -443,6 +490,9 @@ func (s *Store) AddWeek(ctx context.Context, programID uuid.UUID) (Detail, error
 
 	qtx := s.q.WithTx(tx)
 	programPG := pgconv.ToPGUUID(programID)
+	if err := qtx.LockProgramForUpdate(ctx, programPG); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
 	nums, err := qtx.NextProgramWeekNumbers(ctx, programPG)
 	if err != nil {
 		return Detail{}, fmt.Errorf("next week number: %w", err)
@@ -471,7 +521,20 @@ func (s *Store) AddWeek(ctx context.Context, programID uuid.UUID) (Detail, error
 }
 
 func (s *Store) DeleteWeek(ctx context.Context, programID, weekID uuid.UUID) (Detail, error) {
-	count, err := s.q.CountProgramWeeks(ctx, pgconv.ToPGUUID(programID))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	// The program lock makes count-then-delete atomic: two concurrent deletes
+	// would otherwise both see two weeks and remove both.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	count, err := qtx.CountProgramWeeks(ctx, pgconv.ToPGUUID(programID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("count program weeks: %w", err)
 	}
@@ -479,7 +542,7 @@ func (s *Store) DeleteWeek(ctx context.Context, programID, weekID uuid.UUID) (De
 		return Detail{}, ErrLastWeek
 	}
 
-	rows, err := s.q.DeleteProgramWeek(ctx, sqlc.DeleteProgramWeekParams{
+	rows, err := qtx.DeleteProgramWeek(ctx, sqlc.DeleteProgramWeekParams{
 		ID:        pgconv.ToPGUUID(weekID),
 		ProgramID: pgconv.ToPGUUID(programID),
 	})
@@ -489,23 +552,39 @@ func (s *Store) DeleteWeek(ctx context.Context, programID, weekID uuid.UUID) (De
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
 	}
-	if err := normalizeProgramWeekSort(ctx, s.q, programID); err != nil {
+	if err := normalizeProgramWeekSort(ctx, qtx, programID); err != nil {
 		return Detail{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }
 
 func (s *Store) AddDay(ctx context.Context, programID, weekID uuid.UUID) (Detail, error) {
-	ok, err := s.WeekBelongsToProgram(ctx, programID, weekID)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return Detail{}, err
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	programPG := pgconv.ToPGUUID(programID)
+	// The program lock makes count-then-insert atomic against the weekly maximum.
+	if err := qtx.LockProgramForUpdate(ctx, programPG); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	weekPG := pgconv.ToPGUUID(weekID)
+	ok, err := qtx.WeekBelongsToProgram(ctx, sqlc.WeekBelongsToProgramParams{ID: weekPG, ProgramID: programPG})
+	if err != nil {
+		return Detail{}, fmt.Errorf("check program week: %w", err)
 	}
 	if !ok {
 		return Detail{}, pgx.ErrNoRows
 	}
 
-	weekPG := pgconv.ToPGUUID(weekID)
-	count, err := s.q.CountProgramDaysForWeek(ctx, weekPG)
+	count, err := qtx.CountProgramDaysForWeek(ctx, weekPG)
 	if err != nil {
 		return Detail{}, fmt.Errorf("count program days: %w", err)
 	}
@@ -513,13 +592,12 @@ func (s *Store) AddDay(ctx context.Context, programID, weekID uuid.UUID) (Detail
 		return Detail{}, ErrMaxDaysPerWeek
 	}
 
-	programPG := pgconv.ToPGUUID(programID)
-	nums, err := s.q.NextProgramDayNumbersForWeek(ctx, weekPG)
+	nums, err := qtx.NextProgramDayNumbersForWeek(ctx, weekPG)
 	if err != nil {
 		return Detail{}, fmt.Errorf("next day number: %w", err)
 	}
 
-	if err := s.q.InsertProgramDayAuto(ctx, sqlc.InsertProgramDayAutoParams{
+	if err := qtx.InsertProgramDayAuto(ctx, sqlc.InsertProgramDayAutoParams{
 		ProgramID: programPG,
 		WeekID:    weekPG,
 		DayNumber: nums.NextDayNumber,
@@ -527,11 +605,25 @@ func (s *Store) AddDay(ctx context.Context, programID, weekID uuid.UUID) (Detail
 	}); err != nil {
 		return Detail{}, fmt.Errorf("insert program day: %w", err)
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
+	}
 	return s.GetDetail(ctx, programID)
 }
 
 func (s *Store) DeleteDay(ctx context.Context, programID, weekID, dayID uuid.UUID) (Detail, error) {
-	count, err := s.q.CountProgramDaysForWeek(ctx, pgconv.ToPGUUID(weekID))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	count, err := qtx.CountProgramDaysForWeek(ctx, pgconv.ToPGUUID(weekID))
 	if err != nil {
 		return Detail{}, fmt.Errorf("count program days: %w", err)
 	}
@@ -539,7 +631,7 @@ func (s *Store) DeleteDay(ctx context.Context, programID, weekID, dayID uuid.UUI
 		return Detail{}, ErrLastDay
 	}
 
-	rows, err := s.q.DeleteProgramDay(ctx, sqlc.DeleteProgramDayParams{
+	rows, err := qtx.DeleteProgramDay(ctx, sqlc.DeleteProgramDayParams{
 		ID:        pgconv.ToPGUUID(dayID),
 		ProgramID: pgconv.ToPGUUID(programID),
 		WeekID:    pgconv.ToPGUUID(weekID),
@@ -550,8 +642,11 @@ func (s *Store) DeleteDay(ctx context.Context, programID, weekID, dayID uuid.UUI
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
 	}
-	if err := normalizeProgramDaySort(ctx, s.q, weekID); err != nil {
+	if err := normalizeProgramDaySort(ctx, qtx, weekID); err != nil {
 		return Detail{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }
@@ -634,6 +729,9 @@ func (s *Store) CreateDayBlock(ctx context.Context, userID, programID, weekID, d
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
 	dayPG := pgconv.ToPGUUID(dayID)
 	blockRow, err := qtx.InsertDayBlock(ctx, insertDayBlockParams(dayPG, string(blockType), "", 1, userID))
 	if err != nil {
@@ -739,6 +837,9 @@ func (s *Store) DeleteBlockExercise(ctx context.Context, programID, weekID, bloc
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
 	rows, err := qtx.DeleteBlockExercise(ctx, sqlc.DeleteBlockExerciseParams{
 		ID:                    pgconv.ToPGUUID(itemID),
 		ProgramWeekDayBlockID: pgconv.ToPGUUID(blockID),
@@ -771,10 +872,6 @@ func (s *Store) DeleteBlockExercise(ctx context.Context, programID, weekID, bloc
 }
 
 func (s *Store) ReorderWeeks(ctx context.Context, programID uuid.UUID, weekIDs []uuid.UUID) (Detail, error) {
-	if err := validateWeekReorder(ctx, s.q, programID, weekIDs); err != nil {
-		return Detail{}, err
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -782,6 +879,13 @@ func (s *Store) ReorderWeeks(ctx context.Context, programID uuid.UUID, weekIDs [
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+	// Validated after the lock: a delete that committed first changes the list.
+	if err := validateWeekReorder(ctx, qtx, programID, weekIDs); err != nil {
+		return Detail{}, err
+	}
 	programPG := pgconv.ToPGUUID(programID)
 	for i, weekID := range weekIDs {
 		temp := int32(10000 + i)
@@ -813,18 +917,6 @@ func (s *Store) ReorderWeeks(ctx context.Context, programID uuid.UUID, weekIDs [
 }
 
 func (s *Store) ReorderDays(ctx context.Context, programID, weekID uuid.UUID, dayIDs []uuid.UUID) (Detail, error) {
-	ok, err := s.WeekBelongsToProgram(ctx, programID, weekID)
-	if err != nil {
-		return Detail{}, err
-	}
-	if !ok {
-		return Detail{}, pgx.ErrNoRows
-	}
-
-	if err := validateDayReorder(ctx, s.q, weekID, dayIDs); err != nil {
-		return Detail{}, err
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -832,7 +924,22 @@ func (s *Store) ReorderDays(ctx context.Context, programID, weekID uuid.UUID, da
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	// Checked after the lock: a delete that committed first changes the week.
 	weekPG := pgconv.ToPGUUID(weekID)
+	ok, err := qtx.WeekBelongsToProgram(ctx, sqlc.WeekBelongsToProgramParams{ID: weekPG, ProgramID: pgconv.ToPGUUID(programID)})
+	if err != nil {
+		return Detail{}, fmt.Errorf("check program week: %w", err)
+	}
+	if !ok {
+		return Detail{}, pgx.ErrNoRows
+	}
+	if err := validateDayReorder(ctx, qtx, weekID, dayIDs); err != nil {
+		return Detail{}, err
+	}
 	for i, dayID := range dayIDs {
 		temp := int32(10000 + i)
 		if err := qtx.UpdateProgramDayOrder(ctx, sqlc.UpdateProgramDayOrderParams{
@@ -863,18 +970,6 @@ func (s *Store) ReorderDays(ctx context.Context, programID, weekID uuid.UUID, da
 }
 
 func (s *Store) ReorderDayBlocks(ctx context.Context, userID, programID, weekID, dayID uuid.UUID, blockIDs []uuid.UUID) (Detail, error) {
-	ok, err := s.DayBelongsToWeek(ctx, programID, weekID, dayID)
-	if err != nil {
-		return Detail{}, err
-	}
-	if !ok {
-		return Detail{}, pgx.ErrNoRows
-	}
-
-	if err := validateDayBlockReorder(ctx, s.q, dayID, blockIDs); err != nil {
-		return Detail{}, err
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -882,7 +977,26 @@ func (s *Store) ReorderDayBlocks(ctx context.Context, userID, programID, weekID,
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	// Checked after the lock: a delete that committed first changes the day.
 	dayPG := pgconv.ToPGUUID(dayID)
+	ok, err := qtx.DayBelongsToWeek(ctx, sqlc.DayBelongsToWeekParams{
+		ID:        dayPG,
+		WeekID:    pgconv.ToPGUUID(weekID),
+		ProgramID: pgconv.ToPGUUID(programID),
+	})
+	if err != nil {
+		return Detail{}, fmt.Errorf("check program day: %w", err)
+	}
+	if !ok {
+		return Detail{}, pgx.ErrNoRows
+	}
+	if err := validateDayBlockReorder(ctx, qtx, dayID, blockIDs); err != nil {
+		return Detail{}, err
+	}
 	modifiedAt, modifiedBy := dayBlockAudit(userID)
 	for i, blockID := range blockIDs {
 		pos := int32(i + 1)
@@ -904,18 +1018,6 @@ func (s *Store) ReorderDayBlocks(ctx context.Context, userID, programID, weekID,
 }
 
 func (s *Store) ReorderBlockExercises(ctx context.Context, userID, programID, weekID, blockID uuid.UUID, itemIDs []uuid.UUID) (Detail, error) {
-	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
-	if err != nil {
-		return Detail{}, err
-	}
-	if !ok {
-		return Detail{}, pgx.ErrNoRows
-	}
-
-	if err := validateBlockExerciseReorder(ctx, s.q, blockID, itemIDs); err != nil {
-		return Detail{}, err
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -923,6 +1025,21 @@ func (s *Store) ReorderBlockExercises(ctx context.Context, userID, programID, we
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+
+	// Checked after the lock: a delete that committed first changes the block.
+	ok, err := blockBelongsToWeekQ(ctx, qtx, programID, weekID, blockID)
+	if err != nil {
+		return Detail{}, err
+	}
+	if !ok {
+		return Detail{}, pgx.ErrNoRows
+	}
+	if err := validateBlockExerciseReorder(ctx, qtx, blockID, itemIDs); err != nil {
+		return Detail{}, err
+	}
 	now := time.Now().UTC()
 	userPG := pgconv.ToPGUUID(userID)
 	blockPG := pgconv.ToPGUUID(blockID)
@@ -983,7 +1100,11 @@ func validateBlockExerciseReorder(ctx context.Context, q *sqlc.Queries, blockID 
 }
 
 func (s *Store) blockBelongsToWeek(ctx context.Context, programID, weekID, blockID uuid.UUID) (bool, error) {
-	ok, err := s.q.BlockBelongsToProgram(ctx, sqlc.BlockBelongsToProgramParams{
+	return blockBelongsToWeekQ(ctx, s.q, programID, weekID, blockID)
+}
+
+func blockBelongsToWeekQ(ctx context.Context, q *sqlc.Queries, programID, weekID, blockID uuid.UUID) (bool, error) {
+	ok, err := q.BlockBelongsToProgram(ctx, sqlc.BlockBelongsToProgramParams{
 		ID:        pgconv.ToPGUUID(blockID),
 		ProgramID: pgconv.ToPGUUID(programID),
 	})
@@ -993,7 +1114,7 @@ func (s *Store) blockBelongsToWeek(ctx context.Context, programID, weekID, block
 	if !ok {
 		return false, nil
 	}
-	blocks, err := s.q.ListBlocksByWeek(ctx, pgconv.ToPGUUID(weekID))
+	blocks, err := q.ListBlocksByWeek(ctx, pgconv.ToPGUUID(weekID))
 	if err != nil {
 		return false, fmt.Errorf("list blocks by week: %w", err)
 	}

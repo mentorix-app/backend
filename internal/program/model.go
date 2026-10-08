@@ -28,6 +28,7 @@ var (
 	ErrInvalidSyncRequest      = errors.New("invalid sync request")
 	ErrVersionHasAssignments   = errors.New("version has assignments")
 	ErrSoleProgramVersion      = errors.New("cannot delete the only program version")
+	ErrLatestProgramVersion    = errors.New("cannot delete the latest program version")
 	ErrLastWeek                = errors.New("cannot delete the last week")
 	ErrLastDay                 = errors.New("cannot delete the last day in week")
 	ErrMaxDaysPerWeek          = errors.New("week cannot have more than 7 days")

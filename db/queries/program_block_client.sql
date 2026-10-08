@@ -31,7 +31,7 @@ WHERE program_id = $1 AND client_user_id = $2;
 SELECT id
 FROM mentorix.programs
 WHERE id = $1
-FOR UPDATE;
+FOR NO KEY UPDATE;
 
 -- name: CopyProgramBlockClients :exec
 INSERT INTO mentorix.program_block_clients (program_id, block_key, client_user_id, created_by)

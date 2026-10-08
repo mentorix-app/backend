@@ -2269,7 +2269,7 @@ type softDeleteNoRowsStore struct {
 	fakeProgramStore
 }
 
-func (s *softDeleteNoRowsStore) SoftDelete(context.Context, uuid.UUID, uuid.UUID) error {
+func (s *softDeleteNoRowsStore) DeleteWithAssignments(context.Context, uuid.UUID, uuid.UUID) error {
 	return pgx.ErrNoRows
 }
 

@@ -300,6 +300,7 @@ func TestMapProgramError_newCases(t *testing.T) {
 		{ErrInvalidSyncRequest, http.StatusUnprocessableEntity},
 		{ErrVersionHasAssignments, http.StatusConflict},
 		{ErrSoleProgramVersion, http.StatusConflict},
+		{ErrLatestProgramVersion, http.StatusConflict},
 	}
 	for _, tt := range tests {
 		t.Run(tt.err.Error(), func(t *testing.T) {

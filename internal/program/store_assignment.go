@@ -11,6 +11,7 @@ import (
 
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
+	"mentorix-backend/internal/subscription"
 )
 
 func (s *Store) TrainerIDForUser(ctx context.Context, userID uuid.UUID) (uuid.UUID, error) {
@@ -62,6 +63,15 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 	clientPG := pgconv.ToPGUUID(clientUserID)
 	trainerUserPG := pgconv.ToPGUUID(trainerUserID)
 
+	// Serialize assignment changes of one trainer, so two first assigns of the
+	// same client cannot both see "no assignment" and collide on the unique
+	// row. A concurrent repeat now reads the committed row and gets
+	// ErrAlreadyAssigned, as a sequential repeat does. Lock order across the
+	// package: trainer, then program, then assignment rows.
+	if err := subscription.LockTrainer(ctx, qtx, trainerID); err != nil {
+		return nil, err
+	}
+
 	existing, err := qtx.GetProgramAssignmentByTrainerClient(ctx, sqlc.GetProgramAssignmentByTrainerClientParams{
 		TrainerID:    trainerPG,
 		ClientUserID: clientPG,
@@ -107,7 +117,15 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 		return nil, ErrAlreadyAssigned
 	}
 
-	p, err := s.GetProgramRow(ctx, *programID)
+	// Lock the program before reading it: a concurrent DeleteWithAssignments
+	// holds this lock, and assigning to a program deleted in the meantime must
+	// fail rather than insert a row that deletion already swept past. Read
+	// through qtx: the pool would need a second connection while this
+	// transaction holds one.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(*programID)); err != nil {
+		return nil, fmt.Errorf("lock program: %w", err)
+	}
+	p, err := s.getProgramRow(ctx, qtx, *programID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -184,13 +202,6 @@ func (s *Store) SetClientProgramAssignment(ctx context.Context, trainerUserID, t
 	}
 
 	return s.assignmentFromDBWithVersion(ctx, row, latest)
-}
-
-func (s *Store) DeleteProgramAssignments(ctx context.Context, programID uuid.UUID) error {
-	if _, err := s.q.DeleteProgramAssignmentsByProgramID(ctx, pgconv.ToPGUUID(programID)); err != nil {
-		return fmt.Errorf("delete program assignments: %w", err)
-	}
-	return nil
 }
 
 func (s *Store) validateProgramForAssignment(ctx context.Context, trainerUserID, programID uuid.UUID) error {

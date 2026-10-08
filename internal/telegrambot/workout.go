@@ -185,6 +185,16 @@ func (b *Bot) tryHandleWorkoutResult(ctx context.Context, msg *tgbotapi.Message)
 		b.sendText(msg.Chat.ID, formatProgramSummary(resp), b.menu)
 		return true
 	}
+	// The day key can survive a reassignment; the ids tell whether the result
+	// would still land on the cycle the client started it in.
+	if resp.Assignment == nil ||
+		resp.Assignment.CompletionCycleID != pend.CompletionCycleID ||
+		resp.Assignment.ProgramVersionID != pend.ProgramVersionID ||
+		resp.Assignment.AssignmentID != pend.ProgramAssignmentID {
+		b.clearWorkoutPending(ctx, tgID)
+		b.sendText(msg.Chat.ID, formatProgramNotFoundMessage(), b.menu)
+		return true
+	}
 	week, ok := findWeek(resp.Program.Weeks, pend.WeekNumber)
 	if !ok {
 		b.clearWorkoutPending(ctx, tgID)

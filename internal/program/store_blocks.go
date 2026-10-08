@@ -47,6 +47,9 @@ func (s *Store) AddBlockExercise(ctx context.Context, userID, programID, weekID,
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
 	blockPG := pgconv.ToPGUUID(blockID)
 	nextSort, err := qtx.NextBlockExerciseSort(ctx, blockPG)
 	if err != nil {
@@ -348,6 +351,9 @@ func (s *Store) MoveDayBlock(ctx context.Context, userID, programID, weekID, blo
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
 	if sourceDayID != targetDayID {
 		sourceIDs, err := listDayBlockUUIDs(ctx, qtx, sourceDayID)
 		if err != nil {
@@ -528,6 +534,9 @@ func (s *Store) MoveExerciseToBlock(ctx context.Context, userID, programID, week
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
 	now := time.Now().UTC()
 	if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
 		ID:                    pgconv.ToPGUUID(itemID),
@@ -581,7 +590,17 @@ func (s *Store) DeleteDayBlock(ctx context.Context, programID, weekID, blockID u
 		return Detail{}, fmt.Errorf("%w: use delete exercise for single blocks", ErrValidation)
 	}
 
-	rows, err := s.q.DeleteDayBlock(ctx, sqlc.DeleteDayBlockParams{
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+	rows, err := qtx.DeleteDayBlock(ctx, sqlc.DeleteDayBlockParams{
 		ID:               pgconv.ToPGUUID(blockID),
 		ProgramWeekDayID: pgconv.ToPGUUID(dayID),
 	})
@@ -591,8 +610,11 @@ func (s *Store) DeleteDayBlock(ctx context.Context, programID, weekID, blockID u
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
 	}
-	if err := normalizeDayBlockSort(ctx, s.q, dayID); err != nil {
+	if err := normalizeDayBlockSort(ctx, qtx, dayID); err != nil {
 		return Detail{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }

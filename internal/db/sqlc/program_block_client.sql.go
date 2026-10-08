@@ -172,7 +172,7 @@ const lockProgramForUpdate = `-- name: LockProgramForUpdate :exec
 SELECT id
 FROM mentorix.programs
 WHERE id = $1
-FOR UPDATE
+FOR NO KEY UPDATE
 `
 
 func (q *Queries) LockProgramForUpdate(ctx context.Context, id pgtype.UUID) error {
