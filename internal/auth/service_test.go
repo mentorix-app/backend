@@ -25,6 +25,9 @@ type fakeAuthStore struct {
 	updateDisplayNameErr error
 	revokeErr            error
 	revokeAllErr         error
+	clientUserID         uuid.UUID
+	clientErr            error
+	clientCalls          []ClientIdentity
 }
 
 func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _, _ string) (uuid.UUID, error) {
@@ -35,6 +38,17 @@ func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _, _ 
 		f.registerUserID = uuid.New()
 	}
 	return f.registerUserID, nil
+}
+
+func (f *fakeAuthStore) FindOrCreateClientByIdentity(_ context.Context, id ClientIdentity) (uuid.UUID, error) {
+	f.clientCalls = append(f.clientCalls, id)
+	if f.clientErr != nil {
+		return uuid.Nil, f.clientErr
+	}
+	if f.clientUserID == uuid.Nil {
+		f.clientUserID = uuid.New()
+	}
+	return f.clientUserID, nil
 }
 
 func (f *fakeAuthStore) getEmailPasswordIdentity(_ context.Context, _ string) (emailIdentityRow, error) {

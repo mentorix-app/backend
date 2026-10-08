@@ -75,6 +75,8 @@ Stage: files not used, all from Render.
 
 Variables added to `render.yaml` with `sync: false` do not appear in Dashboard automatically — set them manually (Environment → Add).
 
+`GOOGLE_CLIENT_IDS` is not in `render.yaml`. Add it in the Dashboard once the Google client ids exist; until then `POST /auth/google` answers `503`.
+
 Datastore CLI: `make psql` / `make redis` (local), `make psql-stage` / `make redis-stage` (Render; `ARGS="-c 'select 1'"`).
 For `.env.stage` values: Dashboard → instance → External URL, or `render pg get` / `render kv get … --include-sensitive-connection-info`.
 

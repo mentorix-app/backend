@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/mail"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -20,6 +21,7 @@ import (
 type credentialService interface {
 	RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error)
 	Login(ctx context.Context, email, password string) (IssuedAuth, error)
+	SignInWithGoogle(ctx context.Context, rawIDToken string) (IssuedAuth, error)
 	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
 	Logout(ctx context.Context, refreshPlain string) error
 	LogoutAll(ctx context.Context, userID uuid.UUID) error
@@ -65,6 +67,7 @@ func NewHandlers(svc *Service, jwtSecret string, cookie config.RefreshCookieSett
 func (h *Handlers) Mount(e *echo.Echo) {
 	e.POST("/auth/register", h.Register)
 	e.POST("/auth/login", h.Login)
+	e.POST("/auth/google", h.Google)
 	e.POST("/auth/refresh", h.Refresh)
 	e.POST("/auth/logout", h.Logout)
 	// Per-route middleware: an empty-prefix Group would add a catch-all that answers 401 for unknown paths.
@@ -104,13 +107,24 @@ func (h *Handlers) clearRefreshCookie(c echo.Context) {
 
 func (h *Handlers) writeAuthJSON(c echo.Context, status int, issued IssuedAuth) error {
 	h.setRefreshCookie(c, issued.RefreshToken)
-	return c.JSON(status, TokenResponse{
+	return c.JSON(status, tokenResponse(issued))
+}
+
+// writeAuthBodyJSON returns the refresh token in the JSON body and leaves cookies alone.
+func (h *Handlers) writeAuthBodyJSON(c echo.Context, status int, issued IssuedAuth) error {
+	resp := tokenResponse(issued)
+	resp.RefreshToken = issued.RefreshToken
+	return c.JSON(status, resp)
+}
+
+func tokenResponse(issued IssuedAuth) TokenResponse {
+	return TokenResponse{
 		AccessToken: issued.AccessToken,
 		TokenType:   TokenTypeBearer,
 		ExpiresAt:   issued.AccessExpires.UTC(),
 		UserID:      issued.UserID.String(),
 		Email:       issued.Email,
-	})
+	}
 }
 
 func (h *Handlers) Register(c echo.Context) error {
@@ -168,23 +182,71 @@ func (h *Handlers) Login(c echo.Context) error {
 	return h.writeAuthJSON(c, http.StatusOK, issued)
 }
 
+func (h *Handlers) Google(c echo.Context) error {
+	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+	}
+	var body IDTokenRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	if body.IDToken == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id_token is required")
+	}
+	issued, err := h.svc.SignInWithGoogle(c.Request().Context(), body.IDToken)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrProviderNotConfigured):
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "google sign-in is not configured")
+		case errors.Is(err, ErrInvalidIDToken):
+			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidIDToken.Error()).SetInternal(err)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "google sign-in failed").SetInternal(err)
+	}
+	return h.writeAuthBodyJSON(c, http.StatusOK, issued)
+}
+
 func (h *Handlers) Refresh(c echo.Context) error {
 	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
 		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
 	}
-	plain := h.refreshFromRequest(c)
+	bodyToken := refreshFromBody(c)
+	inBody := bodyToken != ""
+	plain := bodyToken
+	if !inBody {
+		plain = h.refreshFromRequest(c)
+	}
 	if plain == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "missing refresh token")
 	}
 	issued, err := h.svc.Refresh(c.Request().Context(), plain)
 	if err != nil {
 		if errors.Is(err, ErrInvalidRefresh) {
-			h.clearRefreshCookie(c)
+			if !inBody {
+				h.clearRefreshCookie(c)
+			}
 			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidRefresh.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "refresh failed")
 	}
+	if inBody {
+		return h.writeAuthBodyJSON(c, http.StatusOK, issued)
+	}
 	return h.writeAuthJSON(c, http.StatusOK, issued)
+}
+
+// refreshFromBody reads the optional refresh token from a JSON body. A request
+// without a JSON content type, without a body, or with a body that cannot be
+// read yields "" and uses the cookie.
+func refreshFromBody(c echo.Context) string {
+	if !strings.HasPrefix(c.Request().Header.Get(echo.HeaderContentType), echo.MIMEApplicationJSON) {
+		return ""
+	}
+	var body RefreshRequest
+	if err := c.Bind(&body); err != nil {
+		return ""
+	}
+	return body.RefreshToken
 }
 
 func (h *Handlers) refreshFromRequest(c echo.Context) string {
@@ -196,6 +258,12 @@ func (h *Handlers) refreshFromRequest(c echo.Context) string {
 }
 
 func (h *Handlers) Logout(c echo.Context) error {
+	if bodyToken := refreshFromBody(c); bodyToken != "" {
+		if err := h.svc.Logout(c.Request().Context(), bodyToken); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "logout failed")
+		}
+		return c.NoContent(http.StatusNoContent)
+	}
 	plain := h.refreshFromRequest(c)
 	if plain != "" {
 		if err := h.svc.Logout(c.Request().Context(), plain); err != nil {

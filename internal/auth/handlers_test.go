@@ -32,6 +32,13 @@ type fakeAuthService struct {
 	logoutAllErr   error
 	profile        UserProfile
 	profileErr     error
+	googleIssued   IssuedAuth
+	googleErr      error
+
+	// Arguments of the last calls, for body-mode assertions.
+	googleToken  string
+	refreshToken string
+	logoutToken  string
 }
 
 func (f *fakeAuthService) RegisterTrainer(_ context.Context, email, _, _ string) (IssuedAuth, error) {
@@ -80,7 +87,29 @@ func (f *fakeAuthService) Login(_ context.Context, email, _ string) (IssuedAuth,
 	return out, nil
 }
 
-func (f *fakeAuthService) Refresh(_ context.Context, _ string) (IssuedAuth, error) {
+func (f *fakeAuthService) SignInWithGoogle(_ context.Context, rawIDToken string) (IssuedAuth, error) {
+	f.googleToken = rawIDToken
+	if f.googleErr != nil {
+		return IssuedAuth{}, f.googleErr
+	}
+	out := f.googleIssued
+	if out.UserID == uuid.Nil {
+		out.UserID = uuid.New()
+	}
+	if out.AccessToken == "" {
+		out.AccessToken = "google-access-token"
+	}
+	if out.RefreshToken == "" {
+		out.RefreshToken = "google-refresh-token"
+	}
+	if out.AccessExpires.IsZero() {
+		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	return out, nil
+}
+
+func (f *fakeAuthService) Refresh(_ context.Context, plain string) (IssuedAuth, error) {
+	f.refreshToken = plain
 	if f.refreshErr != nil {
 		return IssuedAuth{}, f.refreshErr
 	}
@@ -100,7 +129,8 @@ func (f *fakeAuthService) Refresh(_ context.Context, _ string) (IssuedAuth, erro
 	return out, nil
 }
 
-func (f *fakeAuthService) Logout(_ context.Context, _ string) error {
+func (f *fakeAuthService) Logout(_ context.Context, plain string) error {
+	f.logoutToken = plain
 	return f.logoutErr
 }
 

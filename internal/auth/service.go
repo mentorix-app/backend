@@ -16,6 +16,7 @@ import (
 type authStore interface {
 	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error)
 	getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error)
+	FindOrCreateClientByIdentity(ctx context.Context, id ClientIdentity) (uuid.UUID, error)
 	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
 	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, string, error)
 	RevokeRefreshSession(ctx context.Context, tokenHash []byte) error
@@ -29,6 +30,8 @@ type Service struct {
 	jwtSecret  []byte
 	accessTTL  time.Duration
 	refreshTTL time.Duration
+
+	googleVerifier IDTokenVerifier
 }
 
 type IssuedAuth struct {
@@ -39,13 +42,25 @@ type IssuedAuth struct {
 	Email         string
 }
 
-func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration) *Service {
-	return &Service{
+// ServiceOption configures optional Service features.
+type ServiceOption func(*Service)
+
+// WithGoogleVerifier enables SignInWithGoogle.
+func WithGoogleVerifier(v IDTokenVerifier) ServiceOption {
+	return func(s *Service) { s.googleVerifier = v }
+}
+
+func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration, opts ...ServiceOption) *Service {
+	s := &Service{
 		store:      NewStore(pool),
 		jwtSecret:  []byte(jwtSecret),
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func normalizeDisplayName(name string) string {
@@ -135,6 +150,66 @@ func (s *Service) Login(ctx context.Context, email, password string) (IssuedAuth
 	out.UserID = row.UserID
 	out.Email = email
 	return out, nil
+}
+
+// SignInWithGoogle verifies a Google ID token and signs in the matching client,
+// creating the account on the first sign-in.
+func (s *Service) SignInWithGoogle(ctx context.Context, rawIDToken string) (IssuedAuth, error) {
+	var out IssuedAuth
+	if s.googleVerifier == nil {
+		return out, ErrProviderNotConfigured
+	}
+	claims, err := s.googleVerifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return out, err
+	}
+	id := ClientIdentity{
+		Provider:    ProviderGoogle,
+		Subject:     claims.Subject,
+		DisplayName: truncateRunes(normalizeDisplayName(claims.Name), maxDisplayNameLen),
+	}
+	if claims.EmailVerified {
+		id.Email = NormalizeEmail(claims.Email)
+	}
+	userID, err := s.store.FindOrCreateClientByIdentity(ctx, id)
+	if err != nil {
+		return out, fmt.Errorf("find or create client: %w", err)
+	}
+	profile, err := s.store.UserProfile(ctx, userID)
+	if err != nil {
+		return out, fmt.Errorf("load profile: %w", err)
+	}
+	return s.issueSession(ctx, userID, profile.Email)
+}
+
+func (s *Service) issueSession(ctx context.Context, userID uuid.UUID, email string) (IssuedAuth, error) {
+	var out IssuedAuth
+	plain, h, err := newRefreshToken()
+	if err != nil {
+		return out, fmt.Errorf("refresh token: %w", err)
+	}
+	expiresAt := time.Now().UTC().Add(s.refreshTTL)
+	if err := s.store.InsertRefreshSession(ctx, userID, h, expiresAt); err != nil {
+		return out, fmt.Errorf("session: %w", err)
+	}
+	token, exp, err := signAccessToken(userID, s.jwtSecret, s.accessTTL)
+	if err != nil {
+		return out, fmt.Errorf("sign token: %w", err)
+	}
+	return IssuedAuth{
+		AccessToken:   token,
+		AccessExpires: exp,
+		RefreshToken:  plain,
+		UserID:        userID,
+		Email:         email,
+	}, nil
+}
+
+func truncateRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
 }
 
 func (s *Service) Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error) {

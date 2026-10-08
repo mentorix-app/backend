@@ -24,13 +24,26 @@ type MePatchRequest struct {
 	Name string `json:"name"`
 }
 
-// TokenResponse is the JSON body for successful register, login, and refresh.
+// IDTokenRequest is the JSON body for POST /auth/google.
+type IDTokenRequest struct {
+	IDToken string `json:"id_token"`
+}
+
+// RefreshRequest is the optional JSON body for POST /auth/refresh and POST /auth/logout.
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// TokenResponse is the JSON body for successful register, login, refresh, and Google sign-in.
+// RefreshToken is set only for clients that keep the refresh token themselves
+// (Google sign-in, body-mode refresh); cookie flows leave it out.
 type TokenResponse struct {
-	AccessToken string    `json:"access_token"`
-	TokenType   string    `json:"token_type"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	UserID      string    `json:"user_id"`
-	Email       string    `json:"email"`
+	AccessToken  string    `json:"access_token"`
+	TokenType    string    `json:"token_type"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	UserID       string    `json:"user_id"`
+	Email        string    `json:"email"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
 }
 
 // MeResponse is the JSON body for GET /auth/me and PATCH /auth/me.

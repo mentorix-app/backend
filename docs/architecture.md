@@ -32,3 +32,5 @@ api/openapi.yaml   — REST contract
 ```
 
 **Telegram SDK:** `github.com/go-telegram-bot-api/telegram-bot-api/v5` is the de facto Go standard; alternatives are `telebot` (higher level) or raw HTTP (too low level).
+
+**ID token verification:** `github.com/coreos/go-oidc/v3` checks signature, issuer and expiry of provider ID tokens, and the code matches the audience against `GOOGLE_CLIENT_IDS`. Alternatives were `google.golang.org/api/idtoken` (Google only, large dependency tree) and `golang-jwt` with a hand-written key fetch (more own code). go-oidc also fits Apple sign-in.

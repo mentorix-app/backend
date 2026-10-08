@@ -73,6 +73,88 @@ func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwor
 	return pgconv.FromPGUUID(userPG), nil
 }
 
+// ClientIdentity describes a provider account that signs in as a client.
+// Email is empty when the provider did not verify it.
+type ClientIdentity struct {
+	Provider    string
+	Subject     string
+	Email       string
+	DisplayName string
+}
+
+// FindOrCreateClientByIdentity returns the user behind (Provider, Subject) and
+// creates a client user with that identity when none exists. Concurrent first
+// sign-ins end with one user.
+func (s *Store) FindOrCreateClientByIdentity(ctx context.Context, id ClientIdentity) (uuid.UUID, error) {
+	lookup := sqlc.GetAuthIdentityUserIDParams{Provider: id.Provider, Subject: id.Subject}
+	existing, err := s.q.GetAuthIdentityUserID(ctx, lookup)
+	if err == nil {
+		return pgconv.FromPGUUID(existing), nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("load identity: %w", err)
+	}
+
+	created, userID, err := s.createClientWithIdentity(ctx, id)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if created {
+		return userID, nil
+	}
+	// A concurrent first sign-in won; its identity is committed now.
+	existing, err = s.q.GetAuthIdentityUserID(ctx, lookup)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("load identity after conflict: %w", err)
+	}
+	return pgconv.FromPGUUID(existing), nil
+}
+
+// createClientWithIdentity reports false, with the transaction rolled back,
+// when the identity already exists.
+func (s *Store) createClientWithIdentity(ctx context.Context, id ClientIdentity) (bool, uuid.UUID, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, uuid.Nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+
+	var email *string
+	if id.Email != "" {
+		email = &id.Email
+	}
+	userPG, err := qtx.InsertUser(ctx, sqlc.InsertUserParams{
+		PrimaryEmail: email,
+		DisplayName:  id.DisplayName,
+	})
+	if err != nil {
+		return false, uuid.Nil, fmt.Errorf("insert user: %w", err)
+	}
+	rows, err := qtx.InsertAuthIdentityIfAbsent(ctx, sqlc.InsertAuthIdentityIfAbsentParams{
+		UserID:   userPG,
+		Provider: id.Provider,
+		Subject:  id.Subject,
+	})
+	if err != nil {
+		return false, uuid.Nil, fmt.Errorf("insert auth identity: %w", err)
+	}
+	if rows == 0 {
+		return false, uuid.Nil, nil
+	}
+	if err := qtx.InsertUserRole(ctx, sqlc.InsertUserRoleParams{
+		UserID: userPG,
+		Role:   RoleClient,
+	}); err != nil {
+		return false, uuid.Nil, fmt.Errorf("insert user role: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, uuid.Nil, fmt.Errorf("commit: %w", err)
+	}
+	return true, pgconv.FromPGUUID(userPG), nil
+}
+
 type emailIdentityRow struct {
 	UserID       uuid.UUID
 	PasswordHash string
