@@ -1203,3 +1203,12 @@ CREATE UNIQUE INDEX auth_refresh_sessions_family_id_live_uniq
 -- The application code that relied on this index was reverted. Registration enforces
 -- unique emails through auth_identities (provider, subject), as it did before 000027.
 DROP INDEX IF EXISTS mentorix.users_primary_email_lower_uniq;
+
+-- >>> 000030_drop_auth_refresh_session_families.up.sql
+-- The code that used refresh session families was reverted. The running code names its
+-- columns explicitly and never reads these two, so they can go while it serves traffic.
+DROP INDEX IF EXISTS mentorix.auth_refresh_sessions_family_id_live_uniq;
+
+ALTER TABLE mentorix.auth_refresh_sessions
+  DROP COLUMN IF EXISTS rotated_at,
+  DROP COLUMN IF EXISTS family_id;
