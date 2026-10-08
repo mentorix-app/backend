@@ -10,6 +10,8 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/labstack/echo/v4"
+
+	"mentorix-backend/internal/telegram"
 )
 
 const telegramWebhookSecretHeader = "X-Telegram-Bot-Api-Secret-Token"
@@ -53,7 +55,7 @@ func RegisterWebhook(botToken string, cfg WebhookConfig) error {
 	endpoint := fmt.Sprintf(telegramAPIBase, token)
 	resp, err := http.Post(endpoint, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("set webhook request: %w", err)
+		return fmt.Errorf("set webhook request: %w", telegram.StripURL(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 command="${1:-up}"
+if [[ $# -gt 0 ]]; then shift; fi
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
@@ -22,4 +23,4 @@ if ! command -v migrate >/dev/null 2>&1; then
 fi
 
 echo "Running migrations ($command)..."
-migrate -path "db/migrations" -database "$database_url" "$command"
+migrate -path "db/migrations" -database "$database_url" "$command" "$@"

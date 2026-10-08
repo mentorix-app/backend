@@ -26,7 +26,7 @@ func (c *ProfilePhotoClient) ProfilePhotoFilePath(ctx context.Context, telegramU
 		Limit:  1,
 	})
 	if err != nil {
-		return "", false, fmt.Errorf("get user profile photos: %w", err)
+		return "", false, fmt.Errorf("get user profile photos: %w", StripURL(err))
 	}
 	if photos.TotalCount == 0 || len(photos.Photos) == 0 || len(photos.Photos[0]) == 0 {
 		return "", false, nil
@@ -42,7 +42,7 @@ func (c *ProfilePhotoClient) ProfilePhotoFilePath(ctx context.Context, telegramU
 
 	file, err := c.api.GetFile(tgbotapi.FileConfig{FileID: largest.FileID})
 	if err != nil {
-		return "", false, fmt.Errorf("get profile photo file: %w", err)
+		return "", false, fmt.Errorf("get profile photo file: %w", StripURL(err))
 	}
 	if file.FilePath == "" {
 		return "", false, nil

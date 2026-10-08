@@ -39,7 +39,7 @@ func StreamBotFile(w http.ResponseWriter, client *http.Client, botToken, filePat
 func streamHTTPFile(w http.ResponseWriter, client *http.Client, fileURL, filePath string) error {
 	resp, err := client.Get(fileURL)
 	if err != nil {
-		return fmt.Errorf("fetch telegram file: %w", err)
+		return fmt.Errorf("fetch telegram file: %w", StripURL(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
