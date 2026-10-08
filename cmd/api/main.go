@@ -35,6 +35,8 @@ const (
 	idleTimeout  = 60 * time.Second
 	bodyLimit    = "1M"
 	shutdownTTL  = 10 * time.Second
+
+	webhookRetryPause = 30 * time.Second
 )
 
 func main() {
@@ -51,6 +53,8 @@ func main() {
 	}
 
 	ctx := context.Background()
+	lifetimeCtx, cancelLifetime := context.WithCancel(ctx)
+	defer cancelLifetime()
 	pool, err := health.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
 		logger.Error("database pool failed", "error", err)
@@ -123,15 +127,10 @@ func main() {
 		var trainerNotifier trainerclient.ProgramNotifier
 		var commentNotifier workoutcomment.CommentNotifier
 		if cfg.BotToken != "" {
-			sender, err := telegramnotify.NewSender(cfg.BotToken)
-			if err != nil {
-				logger.Warn("telegram push disabled", "error", err)
-			} else {
-				n := telegramnotify.NewNotifier(pool, sender, logger)
-				programNotifier = n
-				trainerNotifier = n
-				commentNotifier = n
-			}
+			n := telegramnotify.NewNotifier(pool, telegramnotify.NewSender(cfg.BotToken), logger)
+			programNotifier = n
+			trainerNotifier = n
+			commentNotifier = n
 		}
 		progSvc := program.NewService(pool, program.WithProgramNotifier(programNotifier))
 
@@ -139,12 +138,7 @@ func main() {
 
 		var photoClient trainerclient.ProfilePhotoFetcher
 		if cfg.BotToken != "" {
-			pc, err := telegram.NewProfilePhotoClient(cfg.BotToken)
-			if err != nil {
-				logger.Warn("telegram profile photos disabled", "error", err)
-			} else {
-				photoClient = pc
-			}
+			photoClient = telegram.NewProfilePhotoClient(cfg.BotToken)
 		}
 		trainerClientSvc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
 			TelegramBotUsername: cfg.TelegramBotUsername,
@@ -174,20 +168,14 @@ func main() {
 			} else {
 				logger.Info("client analytics page not configured; stats button disabled")
 			}
-			tgBot, err := telegrambot.NewFromToken(cfg.BotToken, trainerClientSvc, botOpts...)
-			if err != nil {
-				logger.Error("telegram webhook bot init failed", "error", err)
-				os.Exit(1)
-			}
+			tgBot := telegrambot.NewFromToken(cfg.BotToken, trainerClientSvc, botOpts...)
 			e.POST("/telegram/webhook", telegrambot.WebhookHandler(cfg.BotWebhookSecret, tgBot))
-			if err := tgBot.RegisterWebhook(cfg.BotToken, telegrambot.WebhookConfig{
-				URL:         cfg.BotWebhookURL,
-				SecretToken: cfg.BotWebhookSecret,
-			}); err != nil {
-				logger.Error("telegram webhook registration failed", "error", err)
-				os.Exit(1)
-			}
-			logger.Info("telegram webhook registered", "url", cfg.BotWebhookURL)
+			go telegrambot.RegisterWebhookWithRetry(lifetimeCtx, logger, webhookRetryPause, cfg.BotWebhookURL, func(ctx context.Context) error {
+				return tgBot.RegisterWebhook(ctx, cfg.BotToken, telegrambot.WebhookConfig{
+					URL:         cfg.BotWebhookURL,
+					SecretToken: cfg.BotWebhookSecret,
+				})
+			})
 		} else if cfg.BotToken != "" {
 			logger.Warn("telegram bot webhook not configured; push enabled, incoming updates disabled")
 		}
@@ -217,6 +205,7 @@ func main() {
 	<-quit
 
 	logger.Info("shutting down")
+	cancelLifetime()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTTL)
 	defer cancel()
 	if err := e.Shutdown(shutdownCtx); err != nil {

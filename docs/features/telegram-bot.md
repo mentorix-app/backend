@@ -21,6 +21,7 @@ Client interface in Telegram: accept invite, menu, view program, mark workout da
   - With one trainer, selection is hidden; they're active by default.
   - No active trainer (2+ trainers, Redis key missing or stale): «Тренеры» still shows the list with inline selection; «Программа» asks to pick a trainer in «Тренеры».
 - **Program view:** summary, then inline week selection, then inline day selection, then exercises for the day. Only weeks and days with ≥1 exercise appear (empty blocks and rest days are hidden). A week with all workouts done shows «✅ Неделя N»; in day selection, «✅ День N». On the day screen: «Тренировка выполнена» or «✅ Тренировка выполнена»; «Следующий день» or «Следующая неделя»; the last day has no navigation buttons. Marking a workout is described in [workout-completions.md](workout-completions.md).
+- **Typed workout result:** while a result is pending, a transient error loading the program (for example a database failure) keeps the pending state and answers with the generic error text, so the user can send the result again. Pending state is cleared only when the program is confirmed missing or the day no longer matches. The «Тренировка выполнена» button shows the same error text on a transient failure instead of «no program».
 - **Block visibility:** clients see only blocks they can access; see [program-block-visibility.md](program-block-visibility.md). The `trainerclient.clientProgramView` calls `program.GetVersionDetailForClient`, which fetches the version and removes blocks the client cannot see. The `day_snapshot` created when marking a workout comes from the already-filtered day, so hidden blocks never enter the log.
 
 ## Push notifications (outgoing)
@@ -55,7 +56,9 @@ Stage URL: `https://mentorix-api-stage.onrender.com/telegram/webhook` (see [`ren
 | ----- | ---- | ---------- |
 | POST | `/telegram/webhook` | Updates from Telegram (verified with `X-Telegram-Bot-Api-Secret-Token`) |
 
-The API registers the webhook with Telegram on startup via `setWebhook`.
+The API starts without contacting Telegram: the bot clients are built without a `getMe` call and the webhook route is mounted immediately. `setWebhook` runs in a background goroutine that retries every 30 seconds until it succeeds or the process stops, logging each failed attempt as a warning. A slow or unreachable Telegram never blocks or stops the API.
+
+Every Telegram HTTP call (Bot API, `setWebhook`, avatar file download) uses one shared client with a 10 second timeout. `setWebhook` keeps pending updates (`drop_pending_updates: false`), so messages sent while the API restarts are delivered afterwards.
 
 ## Phases
 

@@ -369,8 +369,11 @@ func TestBot_completeGenericError(t *testing.T) {
 	bot.handleMessage(context.Background(), &tgbotapi.Message{
 		Chat: &tgbotapi.Chat{ID: 1}, From: &tgbotapi.User{ID: 42}, Text: "done",
 	})
-	if len(api.sent) == 0 {
-		t.Fatal("expected error message")
+	if _, ok, _ := pending.Get(context.Background(), "42"); !ok {
+		t.Fatal("pending must survive a transient completion error")
+	}
+	if len(api.sent) != 1 || api.sent[0].Text != menuErrorText(errors.New("x")) {
+		t.Fatalf("want generic error text, sent=%+v", api.sent)
 	}
 }
 
@@ -416,5 +419,66 @@ func TestBot_resultNoProgram(t *testing.T) {
 	})
 	if _, ok, _ := pending.Get(context.Background(), "42"); ok {
 		t.Fatal("cleared")
+	}
+}
+
+func TestBot_resultText_programErrorKeepsPending(t *testing.T) {
+	dayKey := uuid.New()
+	api := &fakeTelegramAPI{}
+	clients := &fakeTrainerClient{programErr: errors.New("db: connection reset")}
+	pending := workoutcompletion.NewMemoryPendingStore()
+	bot := New(api, clients, WithWorkoutCompletions(workoutcompletion.New(&fakeWorkoutStore{}), pending))
+	_ = pending.Set(context.Background(), "42", workoutcompletion.Pending{WeekNumber: 1, DayNumber: 1, DayKey: dayKey})
+
+	bot.handleMessage(context.Background(), &tgbotapi.Message{
+		Chat: &tgbotapi.Chat{ID: 1},
+		From: &tgbotapi.User{ID: 42},
+		Text: "heavy squats",
+	})
+
+	if _, ok, _ := pending.Get(context.Background(), "42"); !ok {
+		t.Fatal("pending must survive a transient error")
+	}
+	if len(api.sent) != 1 || api.sent[0].Text != menuErrorText(errors.New("x")) {
+		t.Fatalf("want generic error text, sent=%+v", api.sent)
+	}
+}
+
+func TestBot_resultText_noProgramClearsPending(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	clients := &fakeTrainerClient{program: trainerclient.TelegramProgramResponse{TrainerDisplayName: "Anna"}}
+	pending := workoutcompletion.NewMemoryPendingStore()
+	bot := New(api, clients, WithWorkoutCompletions(workoutcompletion.New(&fakeWorkoutStore{}), pending))
+	_ = pending.Set(context.Background(), "42", workoutcompletion.Pending{WeekNumber: 1, DayNumber: 1})
+
+	bot.handleMessage(context.Background(), &tgbotapi.Message{
+		Chat: &tgbotapi.Chat{ID: 1},
+		From: &tgbotapi.User{ID: 42},
+		Text: "heavy squats",
+	})
+
+	if _, ok, _ := pending.Get(context.Background(), "42"); ok {
+		t.Fatal("pending should be cleared when no program is assigned")
+	}
+	if len(api.sent) != 1 || api.sent[0].Text == menuErrorText(errors.New("x")) {
+		t.Fatalf("want program summary, sent=%+v", api.sent)
+	}
+}
+
+func TestBot_dayDone_programErrorShowsErrorText(t *testing.T) {
+	api := &fakeTelegramAPI{}
+	clients := &fakeTrainerClient{programErr: errors.New("db: connection reset")}
+	pending := workoutcompletion.NewMemoryPendingStore()
+	bot := New(api, clients, WithWorkoutCompletions(workoutcompletion.New(&fakeWorkoutStore{}), pending))
+
+	bot.handleCallbackQuery(context.Background(), &tgbotapi.CallbackQuery{
+		ID:      "cb-done",
+		Data:    programDayDoneCallbackData(1, 1),
+		From:    &tgbotapi.User{ID: 42},
+		Message: &tgbotapi.Message{Chat: &tgbotapi.Chat{ID: 1}},
+	})
+
+	if len(api.sent) != 1 || api.sent[0].Text != menuErrorText(errors.New("x")) {
+		t.Fatalf("want generic error text, sent=%+v", api.sent)
 	}
 }

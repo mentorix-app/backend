@@ -27,7 +27,7 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 		svc:        svc,
 		pool:       pool,
 		jwtSecret:  jwtSecret,
-		httpClient: http.DefaultClient,
+		httpClient: telegram.HTTPClient,
 	}
 }
 

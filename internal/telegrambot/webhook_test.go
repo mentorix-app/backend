@@ -2,14 +2,21 @@ package telegrambot
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/labstack/echo/v4"
+
+	"mentorix-backend/internal/telegram"
 )
 
 func TestWebhookHandler_rejectsBadSecret(t *testing.T) {
@@ -47,14 +54,14 @@ func TestWebhookHandler_acceptsUpdate(t *testing.T) {
 }
 
 func TestRegisterWebhook_requiresURL(t *testing.T) {
-	err := RegisterWebhook("token", WebhookConfig{})
+	err := RegisterWebhook(t.Context(), "token", WebhookConfig{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestRegisterWebhook_requiresToken(t *testing.T) {
-	err := RegisterWebhook("", WebhookConfig{URL: "https://example.com/hook"})
+	err := RegisterWebhook(t.Context(), "", WebhookConfig{URL: "https://example.com/hook"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -65,6 +72,13 @@ func TestRegisterWebhook_success(t *testing.T) {
 		if r.URL.Path != "/bot123/setWebhook" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		if got, ok := payload["drop_pending_updates"]; ok && got != false {
+			t.Errorf("drop_pending_updates = %v, want false or absent", got)
+		}
 		_ = json.NewEncoder(w).Encode(setWebhookResponse{OK: true})
 	}))
 	defer srv.Close()
@@ -73,7 +87,7 @@ func TestRegisterWebhook_success(t *testing.T) {
 	telegramAPIBase = srv.URL + "/bot%s/setWebhook"
 	t.Cleanup(func() { telegramAPIBase = old })
 
-	err := RegisterWebhook("123", WebhookConfig{URL: "https://example.com/hook", SecretToken: "sec"})
+	err := RegisterWebhook(t.Context(), "123", WebhookConfig{URL: "https://example.com/hook", SecretToken: "sec"})
 	if err != nil {
 		t.Fatalf("RegisterWebhook: %v", err)
 	}
@@ -89,7 +103,7 @@ func TestRegisterWebhook_telegramError(t *testing.T) {
 	telegramAPIBase = srv.URL + "/bot%s/setWebhook"
 	t.Cleanup(func() { telegramAPIBase = old })
 
-	err := RegisterWebhook("123", WebhookConfig{URL: "https://example.com/hook"})
+	err := RegisterWebhook(t.Context(), "123", WebhookConfig{URL: "https://example.com/hook"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -161,11 +175,77 @@ func TestRegisterWebhook_requestErrorHasNoToken(t *testing.T) {
 	t.Cleanup(func() { telegramAPIBase = old })
 
 	const token = "123456:SECRET-token"
-	err := RegisterWebhook(token, WebhookConfig{URL: "https://example.com/hook"})
+	err := RegisterWebhook(t.Context(), token, WebhookConfig{URL: "https://example.com/hook"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if strings.Contains(err.Error(), token) {
 		t.Fatalf("error leaks the bot token: %q", err)
+	}
+}
+
+func TestRegisterWebhook_timesOutOnHangingServer(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+
+	old := telegramAPIBase
+	telegramAPIBase = srv.URL + "/bot%s/setWebhook"
+	oldClient := telegram.HTTPClient
+	telegram.HTTPClient = &http.Client{Timeout: 50 * time.Millisecond}
+	t.Cleanup(func() {
+		telegramAPIBase = old
+		telegram.HTTPClient = oldClient
+	})
+
+	start := time.Now()
+	err := RegisterWebhook(t.Context(), "123", WebhookConfig{URL: "https://example.com/hook"})
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("took %v, want about the client timeout", elapsed)
+	}
+}
+
+func TestRegisterWebhookWithRetry_retriesUntilSuccess(t *testing.T) {
+	calls := 0
+	register := func(context.Context) error {
+		calls++
+		if calls < 3 {
+			return errors.New("telegram down")
+		}
+		return nil
+	}
+
+	RegisterWebhookWithRetry(t.Context(), slog.New(slog.NewTextHandler(io.Discard, nil)), 0, "https://example.test/hook", register)
+
+	if calls != 3 {
+		t.Fatalf("calls = %d, want 3", calls)
+	}
+}
+
+func TestRegisterWebhookWithRetry_stopsOnContextCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	calls := 0
+	register := func(context.Context) error {
+		calls++
+		cancel()
+		return errors.New("telegram down")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		RegisterWebhookWithRetry(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Hour, "https://example.test/hook", register)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("did not return after cancel")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want 1", calls)
 	}
 }

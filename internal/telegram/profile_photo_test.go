@@ -88,13 +88,6 @@ func TestProfilePhotoFilePath_nilAPI(t *testing.T) {
 	}
 }
 
-func TestNewProfilePhotoClient_invalidToken(t *testing.T) {
-	_, err := NewProfilePhotoClient("not-a-valid-token")
-	if err == nil {
-		t.Fatal("expected error for invalid token")
-	}
-}
-
 type fakeProfilePhotoAPI struct {
 	photos  tgbotapi.UserProfilePhotos
 	file    tgbotapi.File

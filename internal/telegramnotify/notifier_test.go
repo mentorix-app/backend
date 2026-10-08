@@ -50,10 +50,7 @@ func (f *fakeNotifyStore) GetProgramVersionDisplayByID(context.Context, pgtype.U
 }
 
 func TestNewSender_emptyTokenIsNoop(t *testing.T) {
-	sender, err := telegramnotify.NewSender("")
-	if err != nil {
-		t.Fatalf("NewSender: %v", err)
-	}
+	sender := telegramnotify.NewSender("")
 	if err := sender.SendMessage(context.Background(), 123, "hi"); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
@@ -211,13 +208,6 @@ func TestNotifier_notifyWorkoutCommented_nilSenderNoop(t *testing.T) {
 	err := n.NotifyWorkoutCommented(context.Background(), uuid.New(), uuid.New(), telegramnotify.WorkoutComment{CommentText: "ok"})
 	if err != nil {
 		t.Fatalf("NotifyWorkoutCommented: %v", err)
-	}
-}
-
-func TestNewSender_invalidToken(t *testing.T) {
-	_, err := telegramnotify.NewSender("invalid-token")
-	if err == nil {
-		t.Fatal("expected error for invalid token")
 	}
 }
 

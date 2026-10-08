@@ -73,13 +73,8 @@ func New(api telegramAPI, clients trainerClient, opts ...BotOption) *Bot {
 	return b
 }
 
-func NewFromToken(token string, clients trainerClient, opts ...BotOption) (*Bot, error) {
-	api, err := tgbotapi.NewBotAPI(token)
-	if err != nil {
-		return nil, fmt.Errorf("telegram bot api: %w", telegram.StripURL(err))
-	}
-	api.Debug = false
-	return New(api, clients, opts...), nil
+func NewFromToken(token string, clients trainerClient, opts ...BotOption) *Bot {
+	return New(telegram.NewBotAPI(token), clients, opts...)
 }
 
 func (b *Bot) HandleUpdate(ctx context.Context, update tgbotapi.Update) {

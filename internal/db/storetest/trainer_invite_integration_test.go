@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1055,5 +1056,88 @@ func TestTrainerInvite_storeEmptyToken(t *testing.T) {
 	_, err := store.AcceptInvite(ctx, "  ", "12345", "Name")
 	if !errors.Is(err, trainerclient.ErrInviteNotFound) {
 		t.Fatalf("error = %v, want ErrInviteNotFound", err)
+	}
+}
+
+// Two first-time accepts for one Telegram user race on the identity insert. Both must
+// succeed and leave one user and one identity. The race window is the time between the
+// identity lookup and the commit, so the test repeats it instead of forcing the order.
+func TestTrainerInvite_concurrentFirstAcceptSameTelegramUser(t *testing.T) {
+	pool := NewPool(t)
+	ctx := context.Background()
+
+	authStore := auth.NewStore(pool)
+	pwHash, err := auth.HashPassword("password123")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	svc := trainerclient.NewService(pool, program.NewService(pool), trainerclient.InviteSettings{
+		TelegramBotUsername: "mentorix_bot",
+		InviteTTL:           7 * 24 * time.Hour,
+	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
+
+	const iterations = 20
+	for i := range iterations {
+		subject := fmt.Sprintf("880%03d", i)
+		tokens := make([]string, 0, 2)
+		// Fresh trainers per iteration keep each one under the free-plan client limit.
+		for _, who := range []string{"a", "b"} {
+			trainer, err := authStore.RegisterTrainerEmailPassword(ctx, fmt.Sprintf("race-%s-%d@test.com", who, i), pwHash, "Trainer "+who)
+			if err != nil {
+				t.Fatalf("register trainer: %v", err)
+			}
+			inv, err := svc.CreateInvite(ctx, trainer)
+			if err != nil {
+				t.Fatalf("create invite: %v", err)
+			}
+			tokens = append(tokens, strings.TrimPrefix(strings.Split(inv.InviteURL, "start=")[1], "inv_"))
+		}
+
+		start := make(chan struct{})
+		results := make([]trainerclient.AcceptInviteResult, len(tokens))
+		errs := make([]error, len(tokens))
+		var wg sync.WaitGroup
+		for j, token := range tokens {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				results[j], errs[j] = svc.AcceptInvite(ctx, trainerclient.AcceptInviteRequest{
+					Token:          token,
+					TelegramUserID: subject,
+					DisplayName:    "Racer",
+				})
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		for j, err := range errs {
+			if err != nil {
+				t.Fatalf("iteration %d accept %d: %v", i, j, err)
+			}
+		}
+		if results[0].UserID != results[1].UserID {
+			t.Fatalf("iteration %d: accepts resolved to different users", i)
+		}
+
+		var identities int
+		if err := pool.QueryRow(ctx,
+			`SELECT count(*) FROM mentorix.auth_identities WHERE provider = $1 AND subject = $2`,
+			auth.ProviderTelegram, subject,
+		).Scan(&identities); err != nil {
+			t.Fatalf("count identities: %v", err)
+		}
+		if identities != 1 {
+			t.Fatalf("iteration %d: identities = %d, want 1", i, identities)
+		}
+	}
+
+	var users int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM mentorix.users`).Scan(&users); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if want := 3 * iterations; users != want {
+		t.Fatalf("users = %d, want %d (no orphan user rows)", users, want)
 	}
 }
