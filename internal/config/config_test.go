@@ -124,6 +124,32 @@ func TestLoad_corsOrigins(t *testing.T) {
 	}
 }
 
+func TestLoad_googleClientIDs(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("GOOGLE_CLIENT_IDS", " web.id , ios.id ,, ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.GoogleClientIDs) != 2 || cfg.GoogleClientIDs[0] != "web.id" || cfg.GoogleClientIDs[1] != "ios.id" {
+		t.Fatalf("GoogleClientIDs = %v", cfg.GoogleClientIDs)
+	}
+}
+
+func TestLoad_googleClientIDsDefaultEmpty(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("GOOGLE_CLIENT_IDS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.GoogleClientIDs) != 0 {
+		t.Fatalf("GoogleClientIDs = %v, want empty", cfg.GoogleClientIDs)
+	}
+}
+
 func TestLoad_invalidAppEnv(t *testing.T) {
 	setMinimalEnv(t)
 	t.Setenv("APP_ENV", "staging")

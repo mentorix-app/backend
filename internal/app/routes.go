@@ -72,7 +72,11 @@ func Mount(e *echo.Echo, d Deps) Result {
 	subsSvc := subscription.NewService(pool)
 	subscription.NewHandlers(auth.JWTMiddleware(cfg.JWTSecret)).Mount(e)
 
-	svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL())
+	var authOpts []auth.ServiceOption
+	if len(cfg.GoogleClientIDs) > 0 {
+		authOpts = append(authOpts, auth.WithGoogleVerifier(auth.NewGoogleIDTokenVerifier(cfg.GoogleClientIDs)))
+	}
+	svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL(), authOpts...)
 	auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter,
 		auth.WithSubscriptions(subsSvc),
 	).Mount(e)

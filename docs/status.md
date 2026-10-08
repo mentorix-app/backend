@@ -10,6 +10,7 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Per-client block visibility (`block_key`, client list on block) | [features/program-block-visibility.md](features/program-block-visibility.md) |
 | Infrastructure (health, config, slog, CORS, proxy) | [features/health.md](features/health.md), [architecture.md](architecture.md) |
 | Auth (register, login, refresh, logout, me, rate limit) | [features/auth.md](features/auth.md) |
+| Google sign-in for the mobile app (client account, refresh token in the body) | [features/auth.md](features/auth.md) |
 | Admin (separate role from trainer; global exercises, plans, view-only) | [features/admin.md](features/admin.md) |
 | Trainer plans (free/advance/elite, quotas, read-only, admin grant, `/plans`, subscription in `/auth/me`) | [features/subscriptions.md](features/subscriptions.md) |
 | Exercises (global + trainer, scope, quota, soft delete) | [features/exercises.md](features/exercises.md) |

@@ -112,13 +112,53 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /auth/google:
+    post:
+      tags: [auth]
+      summary: Sign in with a Google ID token (mobile app)
+      description: >
+        Verifies the token, creates a client account on the first sign-in and
+        returns the refresh token in the JSON body. No cookie is set.
+      operationId: googleSignIn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IDTokenRequest"
+      responses:
+        "200":
+          description: Authenticated; refresh_token is in the body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid ID token
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          description: Google sign-in is not configured (GOOGLE_CLIENT_IDS is empty)
+
   /auth/refresh:
     post:
       tags: [auth]
-      summary: Rotate access token using refresh cookie
+      summary: Rotate access token using refresh cookie or body token
+      description: >
+        Cookie mode (no body): reads the refresh cookie and sets a new one.
+        Body mode (refresh_token in the JSON body): returns the new refresh
+        token in the body and never sets or clears a cookie.
       operationId: refresh
       parameters:
         - $ref: "#/components/parameters/RefreshCookie"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
       responses:
         "200":
           description: New access token issued
@@ -128,14 +168,25 @@ paths:
                 $ref: "#/components/schemas/TokenResponse"
         "401":
           description: Missing or invalid refresh token
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /auth/logout:
     post:
       tags: [auth]
       summary: Revoke current refresh session
+      description: >
+        With refresh_token in the JSON body the session is revoked and no
+        cookie is touched; without it the refresh cookie is used and cleared.
       operationId: logout
       parameters:
         - $ref: "#/components/parameters/RefreshCookie"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
       responses:
         "204":
           description: Logged out
@@ -2179,6 +2230,21 @@ components:
           maxLength: 100
           description: Optional display name; defaults to empty string
 
+    IDTokenRequest:
+      type: object
+      required: [id_token]
+      properties:
+        id_token:
+          type: string
+          description: Google ID token from the app
+
+    RefreshRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+          description: Refresh token kept by the app; empty or absent means cookie mode
+
     MePatchRequest:
       type: object
       required: [name]
@@ -2206,6 +2272,9 @@ components:
         email:
           type: string
           format: email
+        refresh_token:
+          type: string
+          description: Present for Google sign-in and body-mode refresh; absent when the cookie carries it
 
     MeResponse:
       type: object
