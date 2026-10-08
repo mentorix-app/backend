@@ -26,8 +26,6 @@ type MentorixAuthRefreshSession struct {
 	ExpiresAt time.Time          `json:"expires_at"`
 	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
 	CreatedAt time.Time          `json:"created_at"`
-	FamilyID  pgtype.UUID        `json:"family_id"`
-	RotatedAt pgtype.Timestamptz `json:"rotated_at"`
 }
 
 type MentorixClientWorkoutCompletion struct {

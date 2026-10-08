@@ -27,5 +27,5 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |
 | Garbage cleanup (one-row assignments, auto version purge, orphaned block visibility rules, invites, stale Redis, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Migrations: version 29 (`./scripts/migrate-check.sh`)._
+_Migrations: version 30 (`./scripts/migrate-check.sh`)._
 
