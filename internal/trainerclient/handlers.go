@@ -1,6 +1,7 @@
 package trainerclient
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -15,8 +16,14 @@ import (
 	"mentorix-backend/internal/telegram"
 )
 
+// clientInviteAcceptor is the part of Service that POST /client/invites/accept uses.
+type clientInviteAcceptor interface {
+	AcceptInviteAsUser(ctx context.Context, userID uuid.UUID, rawToken string) (AcceptInviteResult, error)
+}
+
 type Handlers struct {
 	svc        *Service
+	invites    clientInviteAcceptor
 	pool       *pgxpool.Pool
 	jwtSecret  string
 	httpClient *http.Client
@@ -25,6 +32,7 @@ type Handlers struct {
 func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 	return &Handlers{
 		svc:        svc,
+		invites:    svc,
 		pool:       pool,
 		jwtSecret:  jwtSecret,
 		httpClient: telegram.HTTPClient,
@@ -45,6 +53,30 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	clients.GET("/:client_user_id/program-assignment", h.GetProgramAssignment, auth.TrainerMiddleware(h.pool))
 
 	e.GET("/trainer/clients/:client_user_id/avatar", h.GetClientAvatar)
+
+	// Per-route middleware: a /client group would also guard the public signed-link
+	// GET /client/analytics and answer 401 for unknown paths.
+	e.POST("/client/invites/accept", h.ClientAcceptInvite, auth.JWTMiddleware(h.jwtSecret))
+}
+
+func (h *Handlers) ClientAcceptInvite(c echo.Context) error {
+	userID, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	var body ClientAcceptInviteRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	result, err := h.invites.AcceptInviteAsUser(c.Request().Context(), userID, body.Token)
+	if err != nil {
+		return HTTPErrorFrom(err)
+	}
+	return c.JSON(http.StatusOK, ClientAcceptInviteResponse{
+		TrainerID:          result.TrainerID,
+		TrainerDisplayName: result.TrainerDisplayName,
+		AlreadyLinked:      result.AlreadyLinked,
+	})
 }
 
 func (h *Handlers) CreateInvite(c echo.Context) error {

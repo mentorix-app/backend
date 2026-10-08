@@ -28,11 +28,11 @@ func HTTPErrorFrom(err error) *echo.HTTPError {
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
 	case errors.Is(err, ErrInviteNotConfigured):
 		return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
-	case errors.Is(err, program.ErrForbidden), errors.Is(err, program.ErrClientNotLinked), errors.Is(err, ErrTrainerNotLinked):
+	case errors.Is(err, program.ErrForbidden), errors.Is(err, program.ErrClientNotLinked), errors.Is(err, ErrTrainerNotLinked), errors.Is(err, ErrAdminCannotAccept):
 		return echo.NewHTTPError(http.StatusForbidden, err.Error())
 	case errors.Is(err, ErrActiveTrainerNotSet):
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
-	case errors.Is(err, ErrTelegramUserNotFound):
+	case errors.Is(err, ErrTelegramUserNotFound), errors.Is(err, ErrUserNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, err.Error())
 	case errors.Is(err, program.ErrClientBlocked), errors.Is(err, program.ErrProgramNotPublished):
 		return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())

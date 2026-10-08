@@ -19,7 +19,15 @@ import (
 const (
 	pgUniqueViolationCode     = "23505"
 	pgForeignKeyViolationCode = "23503"
+	pgCheckViolationCode      = "23514"
 )
+
+// isReferenceOrCheckViolation reports a foreign key or check violation: the
+// database refuses a change that the rest of the data does not allow.
+func isReferenceOrCheckViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && (pgErr.Code == pgForeignKeyViolationCode || pgErr.Code == pgCheckViolationCode)
+}
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -256,11 +264,14 @@ func (s *Store) LinkTelegram(ctx context.Context, appUserID uuid.UUID, telegramU
 		return uuid.Nil, fmt.Errorf("fill primary email: %w", err)
 	}
 	if err := qtx.GrantUserRole(ctx, sqlc.GrantUserRoleParams{UserID: ownerPG, Role: RoleClient}); err != nil {
+		if isReferenceOrCheckViolation(err) {
+			// The Telegram account is an admin, and an admin cannot hold the client role.
+			return uuid.Nil, ErrTelegramLinkConflict
+		}
 		return uuid.Nil, fmt.Errorf("grant client role: %w", err)
 	}
 	if _, err := qtx.DeleteUserByID(ctx, appPG); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolationCode {
+		if isReferenceOrCheckViolation(err) {
 			// Something still references the app user; the rollback undoes the identity move.
 			return uuid.Nil, ErrTelegramLinkConflict
 		}

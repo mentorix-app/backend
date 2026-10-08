@@ -14,6 +14,8 @@ var (
 	ErrInviteNotConfigured = errors.New("telegram invite not configured")
 	ErrClientLimitReached  = errors.New("client limit reached")
 	ErrSelfInvite          = errors.New("trainer cannot accept own invite")
+	ErrUserNotFound        = errors.New("user not found")
+	ErrAdminCannotAccept   = errors.New("admin cannot accept an invite")
 )
 
 type Invite struct {
@@ -61,6 +63,18 @@ type AcceptInviteRequest struct {
 
 type AcceptInviteResult struct {
 	UserID             uuid.UUID `json:"user_id"`
+	TrainerID          uuid.UUID `json:"trainer_id"`
+	TrainerDisplayName string    `json:"trainer_display_name"`
+	AlreadyLinked      bool      `json:"already_linked"`
+}
+
+// ClientAcceptInviteRequest is the body of POST /client/invites/accept. Token is
+// the bare invite token, inv_<token>, or the whole invite link.
+type ClientAcceptInviteRequest struct {
+	Token string `json:"token"`
+}
+
+type ClientAcceptInviteResponse struct {
 	TrainerID          uuid.UUID `json:"trainer_id"`
 	TrainerDisplayName string    `json:"trainer_display_name"`
 	AlreadyLinked      bool      `json:"already_linked"`

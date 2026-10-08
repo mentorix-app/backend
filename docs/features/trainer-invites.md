@@ -25,6 +25,7 @@ Non-obvious rules:
 - Accepting the same invite again with the same user is idempotent and returns ok with `already_linked: true` if the link already existed.
 - If the invite is consumed by another user, accept returns `409`; if expired, `410`.
 - `GET /trainer/clients` returns a paginated list with optional active `program_assignment`, supports search by name (`q`), and sorting by `name` or `linked_at`. Admins see all linked clients deduplicated by `client_user_id`, prioritizing their own relationship; see [trainer-clients.md](trainer-clients.md).
+- The app accepts the same invite with `POST /client/invites/accept`. `token` may be the bare token, `inv_<token>`, or the whole invite link. Any signed-in user except an admin may call it (an admin gets `403`); the `client` role is added when missing, and a trainer may accept another trainer's invite. The refusals are the bot's: unknown invite or account `404`, used by someone else or no free places `409`, expired `410`, own invite `422`. The app path does not set the bot's active trainer or sync the Telegram avatar.
 - Program assignment only works after accept; see [trainer-clients.md](trainer-clients.md).
 
 ## Phases (Telegram client)
