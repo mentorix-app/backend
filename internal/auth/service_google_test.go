@@ -147,3 +147,69 @@ func TestService_SignInWithGoogle_storeErrors(t *testing.T) {
 		})
 	}
 }
+
+func testAppleService(store authStore, v IDTokenVerifier) *Service {
+	svc := testAuthService(store)
+	svc.appleVerifier = v
+	return svc
+}
+
+func TestService_SignInWithApple_usesRequestName(t *testing.T) {
+	tests := []struct {
+		name      string
+		tokenName string
+		reqName   string
+		want      string
+	}{
+		{"request name", "", "  Apple Person ", "Apple Person"},
+		{"token name wins", "Token Name", "Request Name", "Token Name"},
+		{"no name", "", "", ""},
+		{"NUL removed from request name", "", "An\x00na", "Anna"},
+		{"NUL removed from token name", "Jo\x00hn", "Request", "John"},
+		{"only NUL and spaces falls back to empty", "", " \x00 \x00", ""},
+		{"request name cut to 100 runes", "", strings.Repeat("я", 150), strings.Repeat("я", 100)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeAuthStore{profile: UserProfile{Email: "a@b.com"}}
+			svc := testAppleService(store, fakeIDTokenVerifier{claims: IDTokenClaims{
+				Subject: "apple-sub", Email: "A@B.com", EmailVerified: true, Name: tt.tokenName,
+			}})
+			issued, err := svc.SignInWithApple(context.Background(), "raw", tt.reqName)
+			if err != nil {
+				t.Fatalf("SignInWithApple() error = %v", err)
+			}
+			if issued.AccessToken == "" || issued.RefreshToken == "" {
+				t.Fatal("expected access and refresh tokens")
+			}
+			want := ClientIdentity{Provider: ProviderApple, Subject: "apple-sub", Email: "a@b.com", DisplayName: tt.want}
+			if len(store.clientCalls) != 1 || store.clientCalls[0] != want {
+				t.Errorf("store call = %+v, want [%+v]", store.clientCalls, want)
+			}
+		})
+	}
+}
+
+func TestService_SignInWithApple_notConfigured(t *testing.T) {
+	store := &fakeAuthStore{}
+	// A Google verifier alone must not enable Apple.
+	svc := testGoogleService(store, fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s"}})
+	_, err := svc.SignInWithApple(context.Background(), "raw", "")
+	if !errors.Is(err, ErrProviderNotConfigured) {
+		t.Fatalf("error = %v, want ErrProviderNotConfigured", err)
+	}
+	if len(store.clientCalls) != 0 {
+		t.Error("store must not be called")
+	}
+}
+
+func TestService_SignInWithApple_invalidToken(t *testing.T) {
+	store := &fakeAuthStore{}
+	svc := testAppleService(store, fakeIDTokenVerifier{err: ErrInvalidIDToken})
+	if _, err := svc.SignInWithApple(context.Background(), "raw", "Name"); !errors.Is(err, ErrInvalidIDToken) {
+		t.Fatalf("error = %v, want ErrInvalidIDToken", err)
+	}
+	if len(store.clientCalls) != 0 {
+		t.Error("store must not be called")
+	}
+}

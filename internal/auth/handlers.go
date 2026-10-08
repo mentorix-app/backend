@@ -22,6 +22,7 @@ type credentialService interface {
 	RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error)
 	Login(ctx context.Context, email, password string) (IssuedAuth, error)
 	SignInWithGoogle(ctx context.Context, rawIDToken string) (IssuedAuth, error)
+	SignInWithApple(ctx context.Context, rawIDToken, name string) (IssuedAuth, error)
 	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
 	Logout(ctx context.Context, refreshPlain string) error
 	LogoutAll(ctx context.Context, userID uuid.UUID) error
@@ -68,6 +69,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	e.POST("/auth/register", h.Register)
 	e.POST("/auth/login", h.Login)
 	e.POST("/auth/google", h.Google)
+	e.POST("/auth/apple", h.Apple)
 	e.POST("/auth/refresh", h.Refresh)
 	e.POST("/auth/logout", h.Logout)
 	// Per-route middleware: an empty-prefix Group would add a catch-all that answers 401 for unknown paths.
@@ -202,6 +204,30 @@ func (h *Handlers) Google(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidIDToken.Error()).SetInternal(err)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "google sign-in failed").SetInternal(err)
+	}
+	return h.writeAuthBodyJSON(c, http.StatusOK, issued)
+}
+
+func (h *Handlers) Apple(c echo.Context) error {
+	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+	}
+	var body AppleSignInRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	if body.IDToken == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "id_token is required")
+	}
+	issued, err := h.svc.SignInWithApple(c.Request().Context(), body.IDToken, body.Name)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrProviderNotConfigured):
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "apple sign-in is not configured")
+		case errors.Is(err, ErrInvalidIDToken):
+			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidIDToken.Error()).SetInternal(err)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "apple sign-in failed").SetInternal(err)
 	}
 	return h.writeAuthBodyJSON(c, http.StatusOK, issued)
 }

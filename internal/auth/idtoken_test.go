@@ -195,3 +195,62 @@ func TestIDTokenVerifier_noAllowedAudiences(t *testing.T) {
 		t.Fatalf("error = %v, want ErrInvalidIDToken", err)
 	}
 }
+
+func TestIDTokenVerifier_emailVerifiedForms(t *testing.T) {
+	f := newIDTokenFixture(t)
+	tests := []struct {
+		name    string
+		value   any
+		want    bool
+		wantErr bool
+	}{
+		{"boolean true", true, true, false},
+		{"boolean false", false, false, false},
+		{"string true", "true", true, false},
+		{"string false", "false", false, false},
+		{"null", nil, false, false},
+		{"bad string", "yes", false, true},
+		{"number", 1, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := validIDTokenClaims()
+			c["email_verified"] = tt.value
+			got, err := f.verifier(testIDTokenClientID).Verify(context.Background(), f.sign(t, f.key, c))
+			if tt.wantErr {
+				if !errors.Is(err, ErrInvalidIDToken) {
+					t.Fatalf("error = %v, want ErrInvalidIDToken", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Verify() error = %v", err)
+			}
+			if got.EmailVerified != tt.want {
+				t.Errorf("EmailVerified = %v, want %v", got.EmailVerified, tt.want)
+			}
+		})
+	}
+}
+
+func TestIDTokenVerifier_appleIssuer(t *testing.T) {
+	f := newIDTokenFixture(t)
+	v := newOIDCVerifier(appleIssuer, f.server.URL, []string{testIDTokenClientID})
+	c := validIDTokenClaims()
+	c["iss"] = appleIssuer
+	c["email_verified"] = "true"
+
+	got, err := v.Verify(context.Background(), f.sign(t, f.key, c))
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	if got.Subject != "subject-123" || !got.EmailVerified {
+		t.Errorf("claims = %+v", got)
+	}
+	if _, err := v.Verify(context.Background(), f.sign(t, f.key, validIDTokenClaims())); !errors.Is(err, ErrInvalidIDToken) {
+		t.Errorf("token with another issuer: error = %v, want ErrInvalidIDToken", err)
+	}
+	if NewAppleIDTokenVerifier([]string{"x"}) == nil {
+		t.Error("NewAppleIDTokenVerifier returned nil")
+	}
+}

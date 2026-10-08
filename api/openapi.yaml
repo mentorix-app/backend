@@ -142,6 +142,37 @@ paths:
         "503":
           description: Google sign-in is not configured (GOOGLE_CLIENT_IDS is empty)
 
+  /auth/apple:
+    post:
+      tags: [auth]
+      summary: Sign in with an Apple ID token (mobile app)
+      description: >
+        Verifies the token, creates a client account on the first sign-in and
+        returns the refresh token in the JSON body. No cookie is set. The
+        optional name is used only when the account is created.
+      operationId: appleSignIn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppleSignInRequest"
+      responses:
+        "200":
+          description: Authenticated; refresh_token is in the body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid ID token
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          description: Apple sign-in is not configured (APPLE_CLIENT_IDS is empty)
+
   /auth/refresh:
     post:
       tags: [auth]
@@ -2237,6 +2268,17 @@ components:
         id_token:
           type: string
           description: Google ID token from the app
+
+    AppleSignInRequest:
+      type: object
+      required: [id_token]
+      properties:
+        id_token:
+          type: string
+          description: Apple ID token from the app
+        name:
+          type: string
+          description: Display name the app received from Apple; optional, cut to 100 characters, used only when the account is created
 
     RefreshRequest:
       type: object
