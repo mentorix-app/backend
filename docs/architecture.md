@@ -23,6 +23,7 @@ Migrations: version **32**, checked by `./scripts/migrate-check.sh`.
 ```text
 cmd/api/           — REST + Telegram webhook + push
 cmd/janitor/       — one-off cleanup of stale rows
+internal/app/      — mounts all OpenAPI routes; shared by cmd/api and the contract test
 internal/<feature>/ — domain
 internal/db/sqlc/  — generated
 db/migrations/     — SQL

@@ -77,7 +77,7 @@ FOR UPDATE;
 -- name: RevokeRefreshSessionByHash :exec
 UPDATE mentorix.auth_refresh_sessions
 SET revoked_at = now()
-WHERE token_hash = $1;
+WHERE token_hash = $1 AND revoked_at IS NULL;
 
 -- name: RevokeAllUserRefreshSessions :exec
 UPDATE mentorix.auth_refresh_sessions

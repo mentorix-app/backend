@@ -130,7 +130,7 @@ func (f *fakeProgramStore) DeleteWithAssignments(context.Context, uuid.UUID, uui
 	return f.err
 }
 
-func (f *fakeProgramStore) AddWeek(context.Context, uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) AddWeek(context.Context, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
@@ -154,7 +154,7 @@ func (f *fakeProgramStore) UpdateBlockExercise(context.Context, uuid.UUID, uuid.
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) DeleteBlockExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) DeleteBlockExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 
@@ -194,7 +194,7 @@ func (f *fakeProgramStore) MoveExerciseToBlock(context.Context, uuid.UUID, uuid.
 	return f.detail, f.err
 }
 
-func (f *fakeProgramStore) DeleteDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+func (f *fakeProgramStore) DeleteDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }
 

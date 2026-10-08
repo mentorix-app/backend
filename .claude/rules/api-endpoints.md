@@ -95,7 +95,7 @@ Include `created_at` when column exists (except health).
 
 ## New endpoint checklist
 
-1. Echo route (match patterns above)
+1. Echo route (match patterns above), mounted from `internal/app/routes.go` (shared by `cmd/api` and the contract test)
 2. `api/openapi.yaml`
 3. `internal/apicheck/schema.go` if new schemas (every request body schema needs a binding); bind the handler's exported body type, never an anonymous struct copy
 4. `docs/features/<feature>.md`: behavior only, not path inventory
