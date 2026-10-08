@@ -85,14 +85,9 @@ func Load() (Config, error) {
 	}
 	cookieDomain := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_DOMAIN"))
 
-	secure := false
-	if v := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_SECURE")); v == "true" {
-		secure = true
-	} else if v == "false" {
-		secure = false
-	}
+	secure := strings.TrimSpace(os.Getenv("REFRESH_COOKIE_SECURE")) == "true"
 
-	sameSite, err := sameSiteFromEnv(strings.TrimSpace(os.Getenv("REFRESH_COOKIE_SAMESITE")), appEnv)
+	sameSite, err := sameSiteFromEnv(strings.TrimSpace(os.Getenv("REFRESH_COOKIE_SAMESITE")))
 	if err != nil {
 		return Config{}, err
 	}
@@ -162,7 +157,7 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
-func sameSiteFromEnv(raw, _ string) (http.SameSite, error) {
+func sameSiteFromEnv(raw string) (http.SameSite, error) {
 	if raw == "" {
 		return http.SameSiteLaxMode, nil
 	}

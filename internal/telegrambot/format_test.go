@@ -11,55 +11,6 @@ import (
 	"mentorix-backend/internal/trainerclient"
 )
 
-func TestFormatToday_noProgram(t *testing.T) {
-	text := formatToday(trainerclient.TelegramTodayResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         false,
-	})
-	if text == "" {
-		t.Fatal("expected text")
-	}
-}
-
-func TestFormatToday_restDay(t *testing.T) {
-	text := formatToday(trainerclient.TelegramTodayResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         true,
-		ProgramNameRu:      "Сила",
-		WeekNumber:         1,
-		DayNumber:          1,
-		IsRestDay:          true,
-	})
-	if !strings.Contains(text, "😴 День отдыха") {
-		t.Fatalf("expected rest day, got %q", text)
-	}
-	if !strings.Contains(text, "Неделя: 1 / День: 1") {
-		t.Fatalf("expected week/day header, got %q", text)
-	}
-}
-
-func TestFormatToday_header(t *testing.T) {
-	text := formatToday(trainerclient.TelegramTodayResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         true,
-		ProgramNameRu:      "Сила",
-		WeekNumber:         2,
-		DayNumber:          3,
-		IsRestDay:          true,
-	})
-	want := []string{
-		"📋 Сегодня",
-		"👤 Тренер: Anna",
-		"💪 Программа: Сила",
-		"📆 Неделя: 2 / День: 3",
-	}
-	for _, part := range want {
-		if !strings.Contains(text, part) {
-			t.Fatalf("missing %q in %q", part, text)
-		}
-	}
-}
-
 func TestFormatProgramSummary_noProgram(t *testing.T) {
 	text := formatProgramSummary(trainerclient.TelegramProgramResponse{
 		TrainerDisplayName: "Anna",
@@ -436,28 +387,6 @@ func TestFormatBlocks(t *testing.T) {
 	}})
 	if text == "" {
 		t.Fatal("expected formatted blocks")
-	}
-}
-
-func TestFormatToday_withBlocks(t *testing.T) {
-	sets, reps := "3", "10"
-	text := formatToday(trainerclient.TelegramTodayResponse{
-		TrainerDisplayName: "Anna",
-		HasProgram:         true,
-		ProgramNameRu:      "Сила",
-		ProgramDayNumber:   2,
-		WeekNumber:         1,
-		DayNumber:          2,
-		Blocks: []program.DayBlock{{
-			Exercises: []program.DayExercise{{
-				ExerciseNameRu: "Присед",
-				Sets:           &sets,
-				Reps:           &reps,
-			}},
-		}},
-	})
-	if text == "" {
-		t.Fatal("expected text")
 	}
 }
 

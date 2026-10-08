@@ -102,37 +102,6 @@ func (s *Service) GetTelegramProgram(ctx context.Context, telegramUserID string,
 	return resp, nil
 }
 
-func (s *Service) GetTelegramToday(ctx context.Context, telegramUserID string, trainerID *uuid.UUID) (TelegramTodayResponse, error) {
-	trainer, name, assignment, detail, err := s.clientProgramView(ctx, telegramUserID, trainerID)
-	if err != nil {
-		return TelegramTodayResponse{}, err
-	}
-	resp := TelegramTodayResponse{
-		TrainerID:          trainer,
-		TrainerDisplayName: name,
-		HasProgram:         assignment != nil,
-	}
-	if assignment == nil {
-		return resp, nil
-	}
-
-	resp.ProgramName = detail.Name
-	resp.ProgramNameRu = detail.NameRu
-	assignedAt := assignment.AssignedAt.UTC()
-	resp.AssignedAt = &assignedAt
-
-	flatDay, programDayNumber, ok := program.TodayFlatDay(assignment.AssignedAt, nowUTC(), detail.Weeks)
-	if !ok {
-		return resp, nil
-	}
-	resp.ProgramDayNumber = programDayNumber
-	resp.WeekNumber = flatDay.WeekNumber
-	resp.DayNumber = flatDay.DayNumber
-	resp.IsRestDay = program.IsRestDay(flatDay.Day)
-	resp.Blocks = flatDay.Day.Blocks
-	return resp, nil
-}
-
 func (s *Service) clientProgramView(ctx context.Context, telegramUserID string, trainerID *uuid.UUID) (uuid.UUID, string, *program.Assignment, program.Detail, error) {
 	clientUserID, err := s.store.ClientUserIDByTelegram(ctx, telegramUserID)
 	if err != nil {

@@ -328,8 +328,9 @@ func TestProgramStore_RestoreWorkingTreeFromLatestVersion_errors(t *testing.T) {
 	if _, err := svc.Publish(ctx, trainerID, draft.ID); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	if err := progStore.SoftDelete(ctx, draft.ID, trainerID); err != nil {
-		t.Fatalf("SoftDelete: %v", err)
+	if _, err := pool.Exec(ctx,
+		`UPDATE mentorix.programs SET deleted_at = now() WHERE id = $1`, draft.ID); err != nil {
+		t.Fatalf("mark program deleted: %v", err)
 	}
 	_, err = progStore.RestoreWorkingTreeFromLatestVersion(ctx, draft.ID, trainerID)
 	if !errors.Is(err, pgx.ErrNoRows) {

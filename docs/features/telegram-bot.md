@@ -1,11 +1,11 @@
 # Telegram bot (client)
 
-**Status:** implemented (MVP, phases 1–4)  
+**Status:** implemented (MVP, phases 1 to 5)  
 **Code:** `internal/telegrambot/`, `internal/telegramnotify/` (incoming updates and push in `cmd/api`)
 
 ## Purpose
 
-Client interface in Telegram: accept invite, menu, view program, mark workout day («Тренировка выполнена»), push on assignment and program update.
+Client interface in Telegram: accept invite, menu, view program, mark workout day («Тренировка выполнена»), push on assignment, program update and trainer reply.
 
 ## Design
 
@@ -26,12 +26,13 @@ Client interface in Telegram: accept invite, menu, view program, mark workout da
 
 ## Push notifications (outgoing)
 
-Two events only; best-effort (skipped if `BOT_TOKEN` is missing or client has no Telegram link). Notifications are queued and sent after the HTTP response by four background workers, so the request never waits for Telegram. A full queue (256 jobs) drops the notification with a warning; on shutdown the queue is drained for up to 10 seconds.
+Three events; best-effort (skipped if `BOT_TOKEN` is missing or client has no Telegram link). Notifications are queued and sent after the HTTP response by four background workers, so the request never waits for Telegram. A full queue (256 jobs) drops the notification with a warning; on shutdown the queue is drained for up to 10 seconds.
 
 | Event | Trigger |
 | ------- | ------- |
 | Program assigned | `PUT /trainer/clients/program-assignment` with `program_id` and `client_user_ids` |
 | Program updated | `POST /programs/{id}/assignments/sync`, assignment moves to `synced` |
+| Workout commented | `POST /trainer/clients/{client_user_id}/completions/{completion_id}/comments`; see [workout-comments.md](workout-comments.md) |
 
 No push for: program removal (`program_id: null`), invite acceptance (welcome shown in bot), skipped sync.
 
@@ -41,7 +42,7 @@ No push for: program removal (`program_id: null`), invite acceptance (welcome sh
 | ------ | --------- |
 | «Программа» | Summary, then inline week selection → day selection → exercises; on day screen: mark workout, «Следующий день» or «Следующая неделя» |
 | «Тренеры» | 1 trainer: card; 2+: list with inline selection for active trainer |
-| «Статистика» | Inline URL button to trainer's analytics page; link valid 30 minutes — [client-analytics.md](client-analytics.md) |
+| «Статистика» | Inline URL button to the client's analytics page; link valid 30 minutes — [client-analytics.md](client-analytics.md) |
 | «Помощь» | Help text |
 
 Format for «Программа» and «Тренеры»: icons in header (`📅` or `👤`, `💪`, `📆`); exercises shown as `🏋 name - 3x8` with instructions in italics. Group blocks show a type icon (`🧩 Комплекс:`, `🔗 Суперсет:`, `🎯 Skill Work:`, `🦾 Сила:`, `🏃 Кондишн:`, `🤸 Гимнастика:`, `🏅 Тяжёлая атлетика:`, etc.), block instructions, and exercises labeled `А.` and `Б.`. «Тренеры» shows a trainer card `👤 Тренер:` plus `💪 Программа:`; with multiple trainers, a `✓` marks the active one, with inline selection.
@@ -74,9 +75,9 @@ Every Telegram HTTP call (Bot API, `setWebhook`, avatar file download) uses one 
 
 | Variable | Required | Purpose |
 | ---------- | ----------- | ---------- |
-| `BOT_TOKEN` | yes | Telegram Bot API; push and webhook |
-| `BOT_WEBHOOK_URL` | yes | `https://<host>/telegram/webhook` |
-| `BOT_WEBHOOK_SECRET` | yes | Secret for Telegram header |
+| `BOT_TOKEN` | for push or webhook | Telegram Bot API; without it the bot and push are off; required when `BOT_WEBHOOK_URL` is set |
+| `BOT_WEBHOOK_URL` | no | `https://<host>/telegram/webhook`; without it push still works and incoming updates are not handled |
+| `BOT_WEBHOOK_SECRET` | with `BOT_WEBHOOK_URL` | Secret for Telegram header |
 | `TELEGRAM_BOT_USERNAME` | yes | Invite URL |
 | `REDIS_URL` | yes | Active trainer storage |
 | `CLIENT_ANALYTICS_PAGE_URL` | no | Enables «Статистика» button; empty = no button |

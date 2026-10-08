@@ -38,7 +38,7 @@ for f in docs/architecture.md docs/status.md; do
     fail "missing $f"
     continue
   fi
-  if ! grep -qE "(версия|version).*\*\*${expected_mig}\*\*|версия ${expected_mig}|version ${expected_mig}" "$f"; then
+  if ! grep -qE "version.*\*\*${expected_mig}\*\*|version ${expected_mig}" "$f"; then
     fail "$f does not mention migration version $expected_mig (update after new migration)"
   fi
 done
@@ -80,7 +80,7 @@ done
 check_lines "CLAUDE.md" 120 "root memory"
 
 echo ""
-echo "=== Markdown links (docs/, CLAUDE.md, .claude/) ==="
+echo "=== Markdown links (docs/, README.md, CLAUDE.md, .claude/) ==="
 
 python3 <<'PY' || failed=1
 import re
@@ -92,8 +92,9 @@ link_re = re.compile(r"\]\(([^)]+)\)")
 
 targets = sorted((root / "docs").rglob("*.md"))
 targets += sorted(root.glob(".claude/**/*.md"))
-if (root / "CLAUDE.md").is_file():
-    targets.append(root / "CLAUDE.md")
+for name in ("CLAUDE.md", "README.md"):
+    if (root / name).is_file():
+        targets.append(root / name)
 
 errors = []
 for md in targets:

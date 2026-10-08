@@ -71,16 +71,6 @@ func (f *fakeAuthStore) RevokeAllUserRefreshSessions(context.Context, uuid.UUID)
 	return f.revokeAllErr
 }
 
-func (f *fakeAuthStore) UserPrimaryEmail(context.Context, uuid.UUID) (string, error) {
-	if f.primaryErr != nil {
-		return "", f.primaryErr
-	}
-	if f.primaryEmail == "" {
-		return "user@test.com", nil
-	}
-	return f.primaryEmail, nil
-}
-
 func (f *fakeAuthStore) UserProfile(context.Context, uuid.UUID) (UserProfile, error) {
 	return f.profile, f.profileErr
 }
@@ -265,25 +255,6 @@ func TestService_UserProfile(t *testing.T) {
 	}
 	if got.Email != want.Email {
 		t.Errorf("email = %q, want %q", got.Email, want.Email)
-	}
-}
-
-func TestService_UserPrimaryEmail(t *testing.T) {
-	svc := testAuthService(&fakeAuthStore{primaryEmail: "primary@test.com"})
-	email, err := svc.UserPrimaryEmail(context.Background(), uuid.New())
-	if err != nil {
-		t.Fatalf("UserPrimaryEmail() error = %v", err)
-	}
-	if email != "primary@test.com" {
-		t.Errorf("email = %q", email)
-	}
-}
-
-func TestService_UserPrimaryEmail_error(t *testing.T) {
-	svc := testAuthService(&fakeAuthStore{primaryErr: errors.New("db down")})
-	_, err := svc.UserPrimaryEmail(context.Background(), uuid.New())
-	if err == nil {
-		t.Fatal("expected error")
 	}
 }
 

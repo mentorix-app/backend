@@ -45,15 +45,6 @@ Deploy Hook: Render → `mentorix-api-stage` → Settings → Deploy Hook.
 
 If `mentorix-api` / `mentorix-db` / `mentorix-redis` already appear in Dashboard, delete them manually (Blueprint sync will not remove them).
 
-### Legacy cutover to stage
-
-```bash
-pg_dump --no-owner --format=custom -f mentorix_stage.dump "$OLD_DATABASE_URL"
-pg_restore --no-owner --clean --if-exists -d "$NEW_DATABASE_URL" mentorix_stage.dump
-```
-
-Do not migrate Redis. Then update frontend/CORS to stage URL, bot webhook, and delete legacy `mentorix-backend` / `mentorix-dev-*`.
-
 ### Runbook
 
 | Problem | Action |

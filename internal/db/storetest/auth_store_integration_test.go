@@ -44,14 +44,6 @@ func TestAuthStore_RegisterTrainerEmailPassword(t *testing.T) {
 		t.Errorf("roles = %v, want [%q]", profile.Roles, auth.RoleTrainer)
 	}
 
-	primary, err := store.UserPrimaryEmail(ctx, userID)
-	if err != nil {
-		t.Fatalf("UserPrimaryEmail() error = %v", err)
-	}
-	if primary != email {
-		t.Errorf("primary email = %q, want %q", primary, email)
-	}
-
 	if profile.Name != "Viktor" {
 		t.Errorf("name = %q, want %q", profile.Name, "Viktor")
 	}

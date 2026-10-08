@@ -83,9 +83,11 @@ Day id **only** where the operation is about the day's block list (create, reord
 | ------ | ----- |
 | `/auth/*` | auth actions + `/auth/me` |
 | `/exercises` | catalog CRUD |
-| `/admin/users/{user_id}/roles/admin` | admin grant |
+| `/admin/trainers/{user_id}/plan` | grant (`PUT`) or revoke (`DELETE`) a trainer plan |
 | `/trainer/clients/program-assignment` | bulk assign (`PUT`); read one client via `GET …/{client_user_id}/program-assignment` |
 | `/health`, `/health/ready` | no `created_at` |
+
+`POST /telegram/webhook` (`cmd/api/main.go`) is called only by Telegram. It is deliberately outside `api/openapi.yaml` and the contract test.
 
 ## GET entities
 

@@ -78,14 +78,6 @@ type emailIdentityRow struct {
 	PasswordHash string
 }
 
-func (s *Store) UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error) {
-	profile, err := s.UserProfile(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-	return profile.Email, nil
-}
-
 type UserProfile struct {
 	Email     string
 	Name      string
