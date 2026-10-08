@@ -151,6 +151,16 @@ func (s *Service) AcceptInvite(ctx context.Context, req AcceptInviteRequest) (Ac
 	return result, nil
 }
 
+// AcceptInviteAsUser accepts a trainer invite for a signed-in user. rawToken may
+// be the bare token, inv_<token>, or the whole invite link.
+func (s *Service) AcceptInviteAsUser(ctx context.Context, userID uuid.UUID, rawToken string) (AcceptInviteResult, error) {
+	token, err := inviteTokenFromInput(rawToken)
+	if err != nil {
+		return AcceptInviteResult{}, err
+	}
+	return s.store.AcceptInviteAsUser(ctx, token, userID)
+}
+
 func (s *Service) RefreshTelegramAvatar(ctx context.Context, telegramUserID string) error {
 	userID, err := s.store.UserIDByTelegram(ctx, telegramUserID)
 	if err != nil {

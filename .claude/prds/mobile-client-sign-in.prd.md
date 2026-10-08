@@ -61,8 +61,8 @@ We believe that Google and Apple sign-in, plus a Telegram link in settings, will
 |---|---|---|---|---|
 | 1 | Google sign-in | A person signs in to the app with Google, gets a client account, stays signed in after a restart, can sign out | complete | `.claude/plans/mobile-client-sign-in-google.plan.md` |
 | 2 | Apple sign-in | The same with Apple | complete | `.claude/plans/mobile-client-sign-in-apple.plan.md` |
-| 3 | Telegram link | A client links Telegram from settings; an existing Telegram client lands in the old account | in-progress | `.claude/plans/mobile-client-sign-in-telegram-link.plan.md` |
-| 4 | Invite in the app | A client without Telegram joins a trainer with the trainer's invite | pending | |
+| 3 | Telegram link | A client links Telegram from settings; an existing Telegram client lands in the old account | complete | `.claude/plans/mobile-client-sign-in-telegram-link.plan.md` |
+| 4 | Invite in the app | A client without Telegram joins a trainer with the trainer's invite | complete | `.claude/plans/mobile-client-sign-in-invite.plan.md` |
 
 ## Open Questions
 

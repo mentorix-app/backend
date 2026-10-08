@@ -1023,6 +1023,48 @@ paths:
         "503":
           description: Telegram invite not configured
 
+  /client/invites/accept:
+    post:
+      tags: [trainer]
+      summary: Accept a trainer invite as the signed-in user
+      description: >
+        The app sends the invite the trainer shared. `token` may be the bare
+        token, `inv_<token>`, or the whole invite link. Same rules as accepting
+        in the Telegram bot: the invite works once, expires, and counts against
+        the trainer's client limit. The caller gets the `client` role when
+        missing. Repeating the call with an invite the caller already used
+        returns `already_linked: true`.
+      operationId: clientAcceptInvite
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientAcceptInviteRequest"
+      responses:
+        "200":
+          description: The caller is now the trainer's client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientAcceptInviteResponse"
+        "400":
+          description: Invalid JSON
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller is an admin, and an admin cannot become a client
+        "404":
+          description: The invite does not exist, or the signed-in account no longer exists
+        "409":
+          description: The invite was used by someone else, or the trainer has no free client places (`quota_exceeded`)
+        "410":
+          description: The invite expired
+        "422":
+          description: The invite is the caller's own, or the trainer blocked the caller
+
   /trainer/clients:
     get:
       tags: [trainer]
@@ -3415,6 +3457,26 @@ components:
         created_at:
           type: string
           format: date-time
+
+    ClientAcceptInviteRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Bare invite token, `inv_<token>`, or the whole invite link; surrounding spaces are ignored
+
+    ClientAcceptInviteResponse:
+      type: object
+      required: [trainer_id, trainer_display_name, already_linked]
+      properties:
+        trainer_id:
+          type: string
+          format: uuid
+        trainer_display_name:
+          type: string
+        already_linked:
+          type: boolean
 
     TrainerClientProgramSummary:
       type: object

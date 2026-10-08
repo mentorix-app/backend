@@ -425,3 +425,28 @@ func TestAuthStore_LinkTelegram_fillsEmailStoredAsEmptyString(t *testing.T) {
 		t.Errorf("email = %q, want app@test.com", profile.Email)
 	}
 }
+
+func TestAuthStore_LinkTelegram_adminTelegramAccountIsConflict(t *testing.T) {
+	pool := NewPool(t)
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+	old := newClientWithIdentity(t, store, auth.ProviderTelegram, "tg-100", "")
+	if _, err := pool.Exec(ctx, `DELETE FROM mentorix.user_roles WHERE user_id = $1`, old); err != nil {
+		t.Fatalf("drop role: %v", err)
+	}
+	if err := store.GrantRole(ctx, old, auth.RoleAdmin); err != nil {
+		t.Fatalf("grant admin: %v", err)
+	}
+	app := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-1", "")
+
+	_, err := store.LinkTelegram(ctx, app, "tg-100")
+	assertLinkRefused(t, pool, err, auth.ErrTelegramLinkConflict, app, old)
+
+	roles, err := store.UserRoles(ctx, old)
+	if err != nil {
+		t.Fatalf("UserRoles() error = %v", err)
+	}
+	if len(roles) != 1 || roles[0] != auth.RoleAdmin {
+		t.Errorf("owner roles = %v, want [admin]", roles)
+	}
+}

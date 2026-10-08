@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -20,6 +22,11 @@ import (
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/subscription"
 )
+
+// inviteTokenPrefix starts the Telegram deep-link payload: start=inv_<token>.
+const inviteTokenPrefix = "inv_"
+
+const pgCheckViolationCode = "23514"
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -270,6 +277,39 @@ func (s *Store) UserAvatarFilePath(ctx context.Context, userID uuid.UUID) (strin
 }
 
 func (s *Store) AcceptInvite(ctx context.Context, token, telegramUserID, displayName string) (AcceptInviteResult, error) {
+	return s.acceptInvite(ctx, token, func(ctx context.Context, q *sqlc.Queries) (uuid.UUID, error) {
+		userID, _, err := s.resolveTelegramUser(ctx, q, telegramUserID, displayName)
+		return userID, err
+	})
+}
+
+// AcceptInviteAsUser accepts the invite for an existing account (the signed-in
+// app user) and grants it the client role when missing. ErrUserNotFound means
+// the account does not exist.
+func (s *Store) AcceptInviteAsUser(ctx context.Context, token string, userID uuid.UUID) (AcceptInviteResult, error) {
+	return s.acceptInvite(ctx, token, func(ctx context.Context, q *sqlc.Queries) (uuid.UUID, error) {
+		userPG := pgconv.ToPGUUID(userID)
+		if _, err := q.GetUserByID(ctx, userPG); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return uuid.Nil, ErrUserNotFound
+			}
+			return uuid.Nil, fmt.Errorf("load user: %w", err)
+		}
+		if err := q.GrantUserRole(ctx, sqlc.GrantUserRoleParams{UserID: userPG, Role: auth.RoleClient}); err != nil {
+			// The admin-exclusive trigger refuses the client role for an admin.
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == pgCheckViolationCode {
+				return uuid.Nil, ErrAdminCannotAccept
+			}
+			return uuid.Nil, fmt.Errorf("grant client role: %w", err)
+		}
+		return userID, nil
+	})
+}
+
+// acceptInvite runs the accept transaction shared by the bot and the app.
+// resolveUser says who accepts, inside the transaction and after the invite is locked.
+func (s *Store) acceptInvite(ctx context.Context, token string, resolveUser func(ctx context.Context, q *sqlc.Queries) (uuid.UUID, error)) (AcceptInviteResult, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return AcceptInviteResult{}, ErrInviteNotFound
@@ -298,7 +338,7 @@ func (s *Store) AcceptInvite(ctx context.Context, token, telegramUserID, display
 		return AcceptInviteResult{}, fmt.Errorf("trainer display name: %w", err)
 	}
 
-	userID, _, err := s.resolveTelegramUser(ctx, qtx, telegramUserID, displayName)
+	userID, err := resolveUser(ctx, qtx)
 	if err != nil {
 		return AcceptInviteResult{}, err
 	}
@@ -471,9 +511,36 @@ func normalizeDisplayName(name string) string {
 	return name
 }
 
+// inviteTokenFromInput pulls the invite token out of what a client pasted: the
+// bare token, inv_<token>, or an invite link carrying start=inv_<token>.
+func inviteTokenFromInput(raw string) (string, error) {
+	text := strings.TrimSpace(raw)
+	if _, after, found := strings.Cut(text, "start="); found {
+		text = after
+		if end := strings.IndexFunc(text, func(r rune) bool { return r == '&' || unicode.IsSpace(r) }); end >= 0 {
+			text = text[:end]
+		}
+	}
+	token := strings.TrimPrefix(text, inviteTokenPrefix)
+	if token == "" {
+		return "", ErrInviteNotFound
+	}
+	for _, r := range token {
+		if !isInviteTokenRune(r) {
+			return "", ErrInviteNotFound
+		}
+	}
+	return token, nil
+}
+
+// isInviteTokenRune reports whether r is in the base64 URL alphabet that newInviteToken uses.
+func isInviteTokenRune(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_'
+}
+
 func inviteURL(botUsername, token string) string {
 	username := strings.TrimPrefix(strings.TrimSpace(botUsername), "@")
-	return fmt.Sprintf("https://t.me/%s?start=inv_%s", username, token)
+	return fmt.Sprintf("https://t.me/%s?start=%s%s", username, inviteTokenPrefix, token)
 }
 
 func stringFromPtr(s *string) string {
