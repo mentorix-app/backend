@@ -36,6 +36,30 @@ func TestParseListParams_nameSortAsc(t *testing.T) {
 	}
 }
 
+func TestParseListParams_pageBounds(t *testing.T) {
+	tests := []struct {
+		name    string
+		page    string
+		limit   string
+		wantErr bool
+	}{
+		{"page at max", "100000", "", false},
+		{"page over max", "100001", "", true},
+		{"page overflowing int32 offset", "21474838", "100", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := trainerclient.ParseListParams(tt.page, tt.limit, "", "", "")
+			if tt.wantErr != errors.Is(err, trainerclient.ErrValidation) {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestParseListParams_invalidSortBy(t *testing.T) {
 	_, err := trainerclient.ParseListParams("", "", "invalid", "", "")
 	if err == nil || !errors.Is(err, trainerclient.ErrValidation) {

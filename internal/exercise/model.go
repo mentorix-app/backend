@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 )
@@ -104,6 +105,11 @@ type Exercise struct {
 // OwnerTrainerID returns the internal trainers.id owner (nil for global).
 func (e Exercise) OwnerTrainerID() *uuid.UUID { return e.ownerTrainerID }
 
+const (
+	maxNameLen = 1000
+	maxTextLen = 5000
+)
+
 type UpsertInput struct {
 	Name            string
 	NameRu          string
@@ -135,6 +141,20 @@ func (in UpsertInput) Validate() error {
 	}
 	if err := validateYouTubeVideoURL(in.VideoURL); err != nil {
 		return err
+	}
+	for _, f := range []struct {
+		name string
+		v    string
+		max  int
+	}{
+		{"name", in.Name, maxNameLen},
+		{"name_ru", in.NameRu, maxNameLen},
+		{"description", in.Description, maxTextLen},
+		{"description_ru", in.DescriptionRu, maxTextLen},
+	} {
+		if utf8.RuneCountInString(f.v) > f.max {
+			return fmt.Errorf("%w: %s exceeds %d characters", ErrValidation, f.name, f.max)
+		}
 	}
 	return nil
 }

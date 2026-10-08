@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/mail"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -66,10 +67,11 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	e.POST("/auth/login", h.Login)
 	e.POST("/auth/refresh", h.Refresh)
 	e.POST("/auth/logout", h.Logout)
-	g := e.Group("", JWTMiddleware(h.jwtSecret))
-	g.GET("/auth/me", h.Me)
-	g.PATCH("/auth/me", h.UpdateMe)
-	g.POST("/auth/logout-all", h.LogoutAll)
+	// Per-route middleware: an empty-prefix Group would add a catch-all that answers 401 for unknown paths.
+	jwt := JWTMiddleware(h.jwtSecret)
+	e.GET("/auth/me", h.Me, jwt)
+	e.PATCH("/auth/me", h.UpdateMe, jwt)
+	e.POST("/auth/logout-all", h.LogoutAll, jwt)
 }
 
 func (h *Handlers) setRefreshCookie(c echo.Context, value string) {
@@ -113,10 +115,7 @@ func (h *Handlers) writeAuthJSON(c echo.Context, status int, issued IssuedAuth) 
 
 func (h *Handlers) Register(c echo.Context) error {
 	if err := h.limiter.AllowRegister(c.Request().Context(), c.RealIP()); err != nil {
-		if errors.Is(err, ErrRateLimited) {
-			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
 	}
 	var body RegisterRequest
 	if err := c.Bind(&body); err != nil {
@@ -127,10 +126,13 @@ func (h *Handlers) Register(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid email")
 	}
 	email := NormalizeEmail(addr.Address)
-	if email == "" {
+	if email == "" || utf8.RuneCountInString(email) > maxEmailLen {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid email")
 	}
 	if err := ValidatePassword(body.Password); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if err := ValidateDisplayName(body.Name); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	issued, err := h.svc.RegisterTrainer(c.Request().Context(), email, body.Password, body.Name)
@@ -145,10 +147,7 @@ func (h *Handlers) Register(c echo.Context) error {
 
 func (h *Handlers) Login(c echo.Context) error {
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		if errors.Is(err, ErrRateLimited) {
-			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
 	}
 	var body AuthCredentials
 	if err := c.Bind(&body); err != nil {
@@ -171,10 +170,7 @@ func (h *Handlers) Login(c echo.Context) error {
 
 func (h *Handlers) Refresh(c echo.Context) error {
 	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
-		if errors.Is(err, ErrRateLimited) {
-			return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "rate limit failed")
+		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
 	}
 	plain := h.refreshFromRequest(c)
 	if plain == "" {
@@ -245,6 +241,9 @@ func (h *Handlers) UpdateMe(c echo.Context) error {
 	var body MePatchRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	if err := ValidateDisplayName(body.Name); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	profile, err := h.svc.UpdateProfileName(c.Request().Context(), uid, body.Name)
 	if err != nil {

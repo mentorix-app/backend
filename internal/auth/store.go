@@ -172,10 +172,10 @@ func (s *Store) InsertRefreshSession(ctx context.Context, userID uuid.UUID, toke
 	return nil
 }
 
-func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, error) {
+func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("begin tx: %w", err)
+		return uuid.Nil, "", fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -184,25 +184,29 @@ func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byt
 	userPG, err := qtx.GetRefreshSessionUserForUpdate(ctx, oldHash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return uuid.Nil, ErrInvalidRefresh
+			return uuid.Nil, "", ErrInvalidRefresh
 		}
-		return uuid.Nil, fmt.Errorf("load refresh session: %w", err)
+		return uuid.Nil, "", fmt.Errorf("load refresh session: %w", err)
 	}
 
 	if err := qtx.RevokeRefreshSessionByHash(ctx, oldHash); err != nil {
-		return uuid.Nil, fmt.Errorf("revoke refresh session: %w", err)
+		return uuid.Nil, "", fmt.Errorf("revoke refresh session: %w", err)
 	}
 	if err := qtx.InsertRefreshSession(ctx, sqlc.InsertRefreshSessionParams{
 		UserID:    userPG,
 		TokenHash: newHash,
 		ExpiresAt: newExpiresAt,
 	}); err != nil {
-		return uuid.Nil, fmt.Errorf("insert rotated refresh session: %w", err)
+		return uuid.Nil, "", fmt.Errorf("insert rotated refresh session: %w", err)
+	}
+	user, err := qtx.GetUserByID(ctx, userPG)
+	if err != nil {
+		return uuid.Nil, "", fmt.Errorf("load user email: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return uuid.Nil, fmt.Errorf("commit: %w", err)
+		return uuid.Nil, "", fmt.Errorf("commit: %w", err)
 	}
-	return pgconv.FromPGUUID(userPG), nil
+	return pgconv.FromPGUUID(userPG), user.PrimaryEmail, nil
 }
 
 func (s *Store) RevokeRefreshSession(ctx context.Context, tokenHash []byte) error {

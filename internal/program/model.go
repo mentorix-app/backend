@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -199,12 +200,38 @@ func (c Category) valid() bool {
 	}
 }
 
+const (
+	maxNameLen = 1000
+	maxTextLen = 5000
+)
+
+func validateMaxRunes(name string, v *string, max int) error {
+	if v != nil && utf8.RuneCountInString(*v) > max {
+		return fmt.Errorf("%w: %s exceeds %d characters", ErrValidation, name, max)
+	}
+	return nil
+}
+
 func (in UpdateInput) Validate() error {
 	if in.Category != nil && !in.Category.valid() {
 		return fmt.Errorf("%w: invalid category", ErrValidation)
 	}
 	if in.Difficulty != nil && !difficultyValid(*in.Difficulty) {
 		return fmt.Errorf("%w: invalid difficulty", ErrValidation)
+	}
+	for _, f := range []struct {
+		name string
+		v    *string
+		max  int
+	}{
+		{"name", in.Name, maxNameLen},
+		{"name_ru", in.NameRu, maxNameLen},
+		{"description", in.Description, maxTextLen},
+		{"description_ru", in.DescriptionRu, maxTextLen},
+	} {
+		if err := validateMaxRunes(f.name, f.v, f.max); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -219,7 +246,7 @@ func (in DayExerciseInput) ValidateDraft() error {
 	if err := validateVolumeField("reps", in.Reps); err != nil {
 		return err
 	}
-	return nil
+	return validateMaxRunes("instruction", in.Instruction, maxTextLen)
 }
 
 func validateVolumeField(name string, v *string) error {
@@ -258,7 +285,7 @@ func (in BlockPatchInput) Validate() error {
 			return fmt.Errorf("%w: single block_type cannot be set via patch", ErrValidation)
 		}
 	}
-	return nil
+	return validateMaxRunes("instruction", in.Instruction, maxTextLen)
 }
 
 func (in DayExerciseInput) ValidatePublish() error {

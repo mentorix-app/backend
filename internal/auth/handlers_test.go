@@ -737,3 +737,78 @@ func TestUpdateMe_success(t *testing.T) {
 		t.Fatalf("name = %q, want Coach", resp.Name)
 	}
 }
+
+func TestRegister_textLimits(t *testing.T) {
+	emailOfLen := func(n int) string {
+		const domain = "@example.com"
+		return strings.Repeat("a", n-len(domain)) + domain
+	}
+	tests := []struct {
+		name  string
+		email string
+		dname string
+		want  int
+	}{
+		{"name at limit", "user@example.com", strings.Repeat("a", 100), http.StatusCreated},
+		{"name at limit in runes", "user@example.com", strings.Repeat("я", 100), http.StatusCreated},
+		{"name over limit", "user@example.com", strings.Repeat("a", 101), http.StatusBadRequest},
+		{"name over limit in runes", "user@example.com", strings.Repeat("я", 101), http.StatusBadRequest},
+		{"email at limit", emailOfLen(254), "", http.StatusCreated},
+		{"email over limit", emailOfLen(255), "", http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			h := testAuthHandlers(&fakeAuthService{})
+			e.POST("/auth/register", h.Register)
+
+			body, err := json.Marshal(RegisterRequest{Email: tt.email, Password: "password123", Name: tt.dname})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(string(body)))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			assertHTTPStatus(t, rec, tt.want)
+		})
+	}
+}
+
+func TestUpdateMe_nameLimit(t *testing.T) {
+	tests := []struct {
+		name  string
+		dname string
+		want  int
+	}{
+		{"name at limit", strings.Repeat("я", 100), http.StatusOK},
+		{"name over limit", strings.Repeat("я", 101), http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			h := testAuthHandlers(&fakeAuthService{profile: UserProfile{Email: "trainer@test.com"}})
+			body, err := json.Marshal(MePatchRequest{Name: tt.dname})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPatch, "/auth/me", strings.NewReader(string(body)))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.Set(ContextUserIDKey, uuid.New())
+
+			err = h.UpdateMe(c)
+			if tt.want == http.StatusOK {
+				if err != nil {
+					t.Fatalf("UpdateMe: %v", err)
+				}
+				return
+			}
+			he, ok := err.(*echo.HTTPError)
+			if !ok || he.Code != tt.want {
+				t.Fatalf("error = %v, want %d", err, tt.want)
+			}
+		})
+	}
+}

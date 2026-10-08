@@ -46,6 +46,8 @@ func TestParseListParams_invalidPagination(t *testing.T) {
 		{"zero page", "0", ""},
 		{"negative page", "-1", ""},
 		{"bad page", "abc", ""},
+		{"page over max", "100001", ""},
+		{"page overflowing int32 offset", "21474838", "100"},
 		{"zero limit", "", "0"},
 		{"over max limit", "", "101"},
 	}
@@ -56,6 +58,16 @@ func TestParseListParams_invalidPagination(t *testing.T) {
 				t.Fatalf("expected ErrValidation, got %v", err)
 			}
 		})
+	}
+}
+
+func TestParseListParams_maxPage(t *testing.T) {
+	params, err := ParseListParams("100000", "", "", "", "", "", "", "", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if params.Page != 100000 {
+		t.Errorf("page = %d, want 100000", params.Page)
 	}
 }
 

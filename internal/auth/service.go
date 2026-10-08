@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -16,7 +17,7 @@ type authStore interface {
 	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error)
 	getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error)
 	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
-	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, error)
+	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, string, error)
 	RevokeRefreshSession(ctx context.Context, tokenHash []byte) error
 	RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error
 	UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error)
@@ -50,6 +51,19 @@ func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time
 
 func normalizeDisplayName(name string) string {
 	return strings.TrimSpace(name)
+}
+
+const (
+	maxDisplayNameLen = 100
+	maxEmailLen       = 254
+)
+
+// ValidateDisplayName rejects names longer than maxDisplayNameLen runes after trimming.
+func ValidateDisplayName(name string) error {
+	if utf8.RuneCountInString(normalizeDisplayName(name)) > maxDisplayNameLen {
+		return fmt.Errorf("name must be at most %d characters", maxDisplayNameLen)
+	}
+	return nil
 }
 
 func (s *Service) RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error) {
@@ -135,13 +149,9 @@ func (s *Service) Refresh(ctx context.Context, refreshPlain string) (IssuedAuth,
 		return out, fmt.Errorf("refresh token: %w", err)
 	}
 	newExpires := time.Now().UTC().Add(s.refreshTTL)
-	userID, err := s.store.RotateRefreshSession(ctx, oldHash, newHash, newExpires)
+	userID, email, err := s.store.RotateRefreshSession(ctx, oldHash, newHash, newExpires)
 	if err != nil {
 		return out, err
-	}
-	email, err := s.store.UserPrimaryEmail(ctx, userID)
-	if err != nil {
-		return out, fmt.Errorf("load user email: %w", err)
 	}
 	token, exp, err := signAccessToken(userID, s.jwtSecret, s.accessTTL)
 	if err != nil {

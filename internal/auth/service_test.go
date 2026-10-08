@@ -45,14 +45,22 @@ func (f *fakeAuthStore) InsertRefreshSession(context.Context, uuid.UUID, []byte,
 	return f.insertSession
 }
 
-func (f *fakeAuthStore) RotateRefreshSession(context.Context, []byte, []byte, time.Time) (uuid.UUID, error) {
+func (f *fakeAuthStore) RotateRefreshSession(context.Context, []byte, []byte, time.Time) (uuid.UUID, string, error) {
 	if f.rotateErr != nil {
-		return uuid.Nil, f.rotateErr
+		return uuid.Nil, "", f.rotateErr
+	}
+	// The email is read inside the rotation transaction: a failure rolls it back.
+	if f.primaryErr != nil {
+		return uuid.Nil, "", f.primaryErr
+	}
+	email := f.primaryEmail
+	if email == "" {
+		email = "user@test.com"
 	}
 	if f.rotateUserID == uuid.Nil {
 		f.rotateUserID = uuid.New()
 	}
-	return f.rotateUserID, nil
+	return f.rotateUserID, email, nil
 }
 
 func (f *fakeAuthStore) RevokeRefreshSession(context.Context, []byte) error {
@@ -184,6 +192,18 @@ func TestService_Refresh(t *testing.T) {
 	}
 	if issued.AccessToken == "" || issued.RefreshToken == "" {
 		t.Fatal("expected tokens")
+	}
+}
+
+func TestService_Refresh_rotationErrorIsPropagatedWithoutTokens(t *testing.T) {
+	store := &fakeAuthStore{primaryErr: errors.New("db down")}
+	svc := testAuthService(store)
+	issued, err := svc.Refresh(context.Background(), "refresh-plain-token")
+	if !errors.Is(err, store.primaryErr) {
+		t.Fatalf("Refresh() error = %v, want %v", err, store.primaryErr)
+	}
+	if issued.AccessToken != "" || issued.RefreshToken != "" {
+		t.Error("Refresh() issued tokens although rotation failed")
 	}
 }
 

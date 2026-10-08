@@ -1,6 +1,7 @@
 package program
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -48,6 +49,30 @@ func TestParseListParams_invalidStatus(t *testing.T) {
 	_, err := ParseListParams("", "", "", "", "", "active", "", "")
 	if err == nil {
 		t.Fatal("expected error for invalid status")
+	}
+}
+
+func TestParseListParams_pageBounds(t *testing.T) {
+	tests := []struct {
+		name    string
+		page    string
+		limit   string
+		wantErr bool
+	}{
+		{"page at max", "100000", "", false},
+		{"page over max", "100001", "", true},
+		{"page overflowing int32 offset", "21474838", "100", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseListParams(tt.page, tt.limit, "", "", "", "", "", "")
+			if tt.wantErr != errors.Is(err, ErrValidation) {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

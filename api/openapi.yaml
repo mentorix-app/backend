@@ -1951,6 +1951,7 @@ components:
       schema:
         type: integer
         minimum: 1
+        maximum: 100000
         default: 1
 
     Limit:
@@ -2160,6 +2161,7 @@ components:
       properties:
         email:
           type: string
+          maxLength: 254
           format: email
         password:
           type: string
@@ -2167,6 +2169,7 @@ components:
           maxLength: 72
         name:
           type: string
+          maxLength: 100
           description: Optional display name; defaults to empty string
 
     MePatchRequest:
@@ -2175,6 +2178,7 @@ components:
       properties:
         name:
           type: string
+          maxLength: 100
           description: Display name; empty string clears the name
 
     TokenResponse:
@@ -2468,8 +2472,10 @@ components:
       properties:
         name:
           type: string
+          maxLength: 1000
         name_ru:
           type: string
+          maxLength: 1000
         equipment:
           $ref: "#/components/schemas/Equipment"
         type:
@@ -2478,8 +2484,10 @@ components:
           $ref: "#/components/schemas/MuscleGroup"
         description:
           type: string
+          maxLength: 5000
         description_ru:
           type: string
+          maxLength: 5000
         difficulty:
           $ref: "#/components/schemas/Difficulty"
         video_url:
@@ -2890,6 +2898,7 @@ components:
           $ref: "#/components/schemas/ProgramBlockGroupType"
         instruction:
           type: string
+          maxLength: 5000
       description: Patch group block metadata. At least one field required.
 
     ProgramDayBlockMove:
@@ -2956,12 +2965,16 @@ components:
       properties:
         name:
           type: string
+          maxLength: 1000
         name_ru:
           type: string
+          maxLength: 1000
         description:
           type: string
+          maxLength: 5000
         description_ru:
           type: string
+          maxLength: 5000
         category:
           $ref: "#/components/schemas/ProgramCategory"
         difficulty:
@@ -2998,6 +3011,7 @@ components:
           example: "10"
         instruction:
           type: string
+          maxLength: 5000
 
     ProgramAssignmentStatus:
       type: string
