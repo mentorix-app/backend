@@ -138,6 +138,8 @@ type fakeTrainerClient struct {
 
 	activeTrainer    *trainerclient.ActiveTrainerResponse
 	activeTrainerErr error
+
+	avatarRefreshes []string
 }
 
 func (f *fakeTrainerClient) AcceptInvite(_ context.Context, req trainerclient.AcceptInviteRequest) (trainerclient.AcceptInviteResult, error) {
@@ -145,7 +147,8 @@ func (f *fakeTrainerClient) AcceptInvite(_ context.Context, req trainerclient.Ac
 	return f.result, f.err
 }
 
-func (f *fakeTrainerClient) RefreshTelegramAvatar(context.Context, string) error {
+func (f *fakeTrainerClient) RefreshTelegramAvatar(_ context.Context, telegramUserID string) error {
+	f.avatarRefreshes = append(f.avatarRefreshes, telegramUserID)
 	return nil
 }
 

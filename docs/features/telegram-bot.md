@@ -11,7 +11,7 @@ Client interface in Telegram: accept invite, menu, view program, mark workout da
 
 - Invites use deep links only (`inv_<token>`), no `@username` entry.
 - Accept via `/start inv_<token>` calls `trainerclient.Service.AcceptInvite` in-process; saves Telegram profile photo (`avatar_file_path`) if present.
-- Avatar updates when the user sends a message if they've changed their photo.
+- Avatar updates when the user sends a message if they've changed their photo; the check runs at most once a day per Telegram user (Redis, in-memory without Redis). If Redis fails, the check is skipped for that message.
 - **Webhook** on API (`POST /telegram/webhook`) runs in one Render Web Service, no separate worker.
 - Library: `go-telegram-bot-api/v5` (see [architecture.md](../architecture.md)).
 - Menu: reply keyboard («Программа», «Тренеры», «Помощь») plus inline buttons for trainer selection and program navigation, plus «Статистика» when `CLIENT_ANALYTICS_PAGE_URL` is set.
@@ -26,7 +26,7 @@ Client interface in Telegram: accept invite, menu, view program, mark workout da
 
 ## Push notifications (outgoing)
 
-Two events only; best-effort (skipped if `BOT_TOKEN` is missing or client has no Telegram link).
+Two events only; best-effort (skipped if `BOT_TOKEN` is missing or client has no Telegram link). Notifications are queued and sent after the HTTP response by four background workers, so the request never waits for Telegram. A full queue (256 jobs) drops the notification with a warning; on shutdown the queue is drained for up to 10 seconds.
 
 | Event | Trigger |
 | ------- | ------- |

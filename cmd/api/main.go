@@ -36,6 +36,8 @@ const (
 	bodyLimit    = "1M"
 	shutdownTTL  = 10 * time.Second
 
+	notifierCloseTTL = 10 * time.Second
+
 	webhookRetryPause = 30 * time.Second
 )
 
@@ -78,6 +80,8 @@ func main() {
 			}
 		}()
 	}
+
+	var notifier *telegramnotify.Notifier
 
 	e := echo.New()
 	apphttp.ConfigureIPExtractor(e, cfg.TrustedProxyCIDRs)
@@ -128,6 +132,7 @@ func main() {
 		var commentNotifier workoutcomment.CommentNotifier
 		if cfg.BotToken != "" {
 			n := telegramnotify.NewNotifier(pool, telegramnotify.NewSender(cfg.BotToken), logger)
+			notifier = n
 			programNotifier = n
 			trainerNotifier = n
 			commentNotifier = n
@@ -160,6 +165,7 @@ func main() {
 		if cfg.BotToken != "" && cfg.BotWebhookURL != "" {
 			botOpts := []telegrambot.BotOption{
 				telegrambot.WithWorkoutCompletions(workoutSvc, workoutPending),
+				telegrambot.WithAvatarCheckStore(trainerclient.NewAvatarCheckStore(rdb)),
 			}
 			if cfg.ClientAnalyticsPageURL != "" {
 				botOpts = append(botOpts, telegrambot.WithClientAnalyticsLink(
@@ -208,8 +214,18 @@ func main() {
 	cancelLifetime()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTTL)
 	defer cancel()
-	if err := e.Shutdown(shutdownCtx); err != nil {
-		logger.Error("shutdown failed", "error", err)
+	shutdownErr := e.Shutdown(shutdownCtx)
+
+	// Requests have stopped, so no new notifications arrive; send what is
+	// queued before the deferred pool close.
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), notifierCloseTTL)
+	defer cancelClose()
+	if err := notifier.Close(closeCtx); err != nil {
+		logger.Error("notifier close failed", "error", err)
+	}
+
+	if shutdownErr != nil {
+		logger.Error("shutdown failed", "error", shutdownErr)
 		os.Exit(1)
 	}
 }

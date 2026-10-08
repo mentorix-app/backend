@@ -45,6 +45,7 @@ type Bot struct {
 	workouts *workoutcompletion.Service
 	pending  workoutcompletion.PendingStore
 	links    ClientAnalyticsLinker
+	avatars  trainerclient.AvatarCheckStore
 	menu     tgbotapi.ReplyKeyboardMarkup
 }
 
@@ -54,6 +55,14 @@ func WithWorkoutCompletions(svc *workoutcompletion.Service, pending workoutcompl
 	return func(b *Bot) {
 		b.workouts = svc
 		b.pending = pending
+	}
+}
+
+// WithAvatarCheckStore limits the avatar refresh to once per store window per
+// user; without it the avatar is refreshed on every message.
+func WithAvatarCheckStore(s trainerclient.AvatarCheckStore) BotOption {
+	return func(b *Bot) {
+		b.avatars = s
 	}
 }
 
@@ -90,7 +99,7 @@ func (b *Bot) HandleUpdate(ctx context.Context, update tgbotapi.Update) {
 
 func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 	tgID := telegramUserID(msg.From)
-	if tgID != "" {
+	if tgID != "" && b.avatarCheckDue(ctx, tgID) {
 		_ = b.clients.RefreshTelegramAvatar(ctx, tgID)
 	}
 
@@ -133,6 +142,16 @@ func (b *Bot) handleMessage(ctx context.Context, msg *tgbotapi.Message) {
 			b.sendText(msg.Chat.ID, "Выберите пункт меню или отправьте /menu.", b.menu)
 		}
 	}
+}
+
+// avatarCheckDue is false when the avatar was checked recently or the check
+// state is unavailable (Redis error): the refresh is optional, the update is not.
+func (b *Bot) avatarCheckDue(ctx context.Context, tgID string) bool {
+	if b.avatars == nil {
+		return true
+	}
+	due, err := b.avatars.Claim(ctx, tgID)
+	return err == nil && due
 }
 
 func (b *Bot) handleStart(ctx context.Context, msg *tgbotapi.Message) {

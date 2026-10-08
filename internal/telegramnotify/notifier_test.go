@@ -1,10 +1,14 @@
 package telegramnotify_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -15,6 +19,7 @@ import (
 )
 
 type recordingSender struct {
+	mu     sync.Mutex
 	chatID int64
 	text   string
 	calls  int
@@ -22,10 +27,45 @@ type recordingSender struct {
 }
 
 func (r *recordingSender) SendMessage(_ context.Context, chatID int64, text string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.calls++
 	r.chatID = chatID
 	r.text = text
 	return r.err
+}
+
+// syncBuffer is a log sink that is safe for concurrent writers.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func newTestLogger() (*slog.Logger, *syncBuffer) {
+	buf := &syncBuffer{}
+	return slog.New(slog.NewTextHandler(buf, nil)), buf
+}
+
+// drain waits until every queued notification has been handled.
+func drain(t *testing.T, n *telegramnotify.Notifier) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := n.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
 }
 
 type fakeNotifyStore struct {
@@ -73,6 +113,7 @@ func TestNotifier_skipsWithoutTelegramIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NotifyProgramAssigned: %v", err)
 	}
+	drain(t, n)
 	if sender.calls != 0 {
 		t.Fatalf("sender calls = %d, want 0", sender.calls)
 	}
@@ -92,6 +133,7 @@ func TestNotifier_notifyAssigned_success(t *testing.T) {
 	if err := n.NotifyProgramAssigned(context.Background(), clientID, trainerID, versionID); err != nil {
 		t.Fatalf("NotifyProgramAssigned: %v", err)
 	}
+	drain(t, n)
 	if sender.calls != 1 || sender.chatID != 424242 {
 		t.Fatalf("sender = %+v", sender)
 	}
@@ -112,34 +154,44 @@ func TestNotifier_notifySynced_success(t *testing.T) {
 	if err := n.NotifyProgramSynced(context.Background(), uuid.New(), uuid.New(), uuid.New()); err != nil {
 		t.Fatalf("NotifyProgramSynced: %v", err)
 	}
+	drain(t, n)
 	if sender.calls != 1 {
 		t.Fatalf("sender calls = %d", sender.calls)
 	}
 }
 
 func TestNotifier_invalidTelegramSubject(t *testing.T) {
-	n := telegramnotify.NewNotifierWithStore(&fakeNotifyStore{
-		subject: "not-a-number",
-	}, &recordingSender{}, nil)
+	log, logs := newTestLogger()
+	sender := &recordingSender{}
+	n := telegramnotify.NewNotifierWithStore(&fakeNotifyStore{subject: "not-a-number"}, sender, log)
 
-	err := n.NotifyProgramAssigned(context.Background(), uuid.New(), uuid.New(), uuid.New())
-	if err == nil {
-		t.Fatal("expected error for invalid subject")
+	if err := n.NotifyProgramAssigned(context.Background(), uuid.New(), uuid.New(), uuid.New()); err != nil {
+		t.Fatalf("NotifyProgramAssigned: %v", err)
+	}
+	drain(t, n)
+	if sender.calls != 0 {
+		t.Fatalf("sender calls = %d, want 0", sender.calls)
+	}
+	if !strings.Contains(logs.String(), "telegram notify lookup failed") {
+		t.Fatalf("logs = %q", logs.String())
 	}
 }
 
-func TestNotifier_sendErrorReturned(t *testing.T) {
-	wantErr := errors.New("telegram down")
-	sender := &recordingSender{err: wantErr}
+func TestNotifier_sendErrorLogged(t *testing.T) {
+	log, logs := newTestLogger()
+	sender := &recordingSender{err: errors.New("telegram down")}
 	n := telegramnotify.NewNotifierWithStore(&fakeNotifyStore{
 		subject:     "1",
 		trainerName: "Иван",
 		version:     sqlc.GetProgramVersionDisplayByIDRow{NameRu: "Сила"},
-	}, sender, nil)
+	}, sender, log)
 
-	err := n.NotifyProgramAssigned(context.Background(), uuid.New(), uuid.New(), uuid.New())
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("error = %v, want %v", err, wantErr)
+	if err := n.NotifyProgramAssigned(context.Background(), uuid.New(), uuid.New(), uuid.New()); err != nil {
+		t.Fatalf("NotifyProgramAssigned: %v", err)
+	}
+	drain(t, n)
+	if !strings.Contains(logs.String(), "telegram notify failed") || !strings.Contains(logs.String(), "telegram down") {
+		t.Fatalf("logs = %q", logs.String())
 	}
 }
 
@@ -154,6 +206,7 @@ func TestNotifier_versionFallbackName(t *testing.T) {
 	if err := n.NotifyProgramAssigned(context.Background(), uuid.New(), uuid.New(), uuid.New()); err != nil {
 		t.Fatalf("NotifyProgramAssigned: %v", err)
 	}
+	drain(t, n)
 	if !strings.Contains(sender.text, "программа") {
 		t.Fatalf("text = %q", sender.text)
 	}
@@ -177,6 +230,7 @@ func TestNotifier_notifyWorkoutCommented_success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NotifyWorkoutCommented: %v", err)
 	}
+	drain(t, n)
 	if sender.calls != 1 || sender.chatID != 777 {
 		t.Fatalf("sender = %+v", sender)
 	}
@@ -198,6 +252,7 @@ func TestNotifier_notifyWorkoutCommented_skipsWithoutIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NotifyWorkoutCommented: %v", err)
 	}
+	drain(t, n)
 	if sender.calls != 0 {
 		t.Fatalf("sender calls = %d, want 0", sender.calls)
 	}
@@ -222,43 +277,33 @@ func TestNotifier_trainerLookupUsesFallback(t *testing.T) {
 	if err := n.NotifyProgramAssigned(context.Background(), uuid.New(), uuid.New(), uuid.New()); err != nil {
 		t.Fatalf("NotifyProgramAssigned: %v", err)
 	}
+	drain(t, n)
 	if !strings.Contains(sender.text, "ваш тренер") {
 		t.Fatalf("text = %q", sender.text)
 	}
 }
 
-func TestNotifier_storeErrors(t *testing.T) {
-	ctx := context.Background()
-	ids := func() (uuid.UUID, uuid.UUID, uuid.UUID) { return uuid.New(), uuid.New(), uuid.New() }
-
-	t.Run("subject lookup", func(t *testing.T) {
-		n := telegramnotify.NewNotifierWithStore(&fakeNotifyStore{subjectErr: errors.New("db")}, &recordingSender{}, nil)
-		c, tr, v := ids()
-		if err := n.NotifyProgramAssigned(ctx, c, tr, v); err == nil {
-			t.Fatal("expected error")
-		}
-	})
-
-	t.Run("trainer lookup", func(t *testing.T) {
-		n := telegramnotify.NewNotifierWithStore(&fakeNotifyStore{
-			subject:    "1",
-			trainerErr: errors.New("db"),
-		}, &recordingSender{}, nil)
-		c, tr, v := ids()
-		if err := n.NotifyProgramAssigned(ctx, c, tr, v); err == nil {
-			t.Fatal("expected error")
-		}
-	})
-
-	t.Run("version lookup", func(t *testing.T) {
-		n := telegramnotify.NewNotifierWithStore(&fakeNotifyStore{
-			subject:     "1",
-			trainerName: "Иван",
-			versionErr:  errors.New("db"),
-		}, &recordingSender{}, nil)
-		c, tr, v := ids()
-		if err := n.NotifyProgramAssigned(ctx, c, tr, v); err == nil {
-			t.Fatal("expected error")
-		}
-	})
+func TestNotifier_storeErrorsAreLogged(t *testing.T) {
+	cases := map[string]*fakeNotifyStore{
+		"subject lookup": {subjectErr: errors.New("db")},
+		"trainer lookup": {subject: "1", trainerErr: errors.New("db")},
+		"version lookup": {subject: "1", trainerName: "Иван", versionErr: errors.New("db")},
+	}
+	for name, store := range cases {
+		t.Run(name, func(t *testing.T) {
+			log, logs := newTestLogger()
+			sender := &recordingSender{}
+			n := telegramnotify.NewNotifierWithStore(store, sender, log)
+			if err := n.NotifyProgramAssigned(context.Background(), uuid.New(), uuid.New(), uuid.New()); err != nil {
+				t.Fatalf("NotifyProgramAssigned: %v", err)
+			}
+			drain(t, n)
+			if sender.calls != 0 {
+				t.Fatalf("sender calls = %d, want 0", sender.calls)
+			}
+			if !strings.Contains(logs.String(), "telegram notify lookup failed") {
+				t.Fatalf("logs = %q", logs.String())
+			}
+		})
+	}
 }
