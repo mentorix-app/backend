@@ -13,6 +13,9 @@
 #
 # --ci skips: migrate-check, live smoke (does include docs-check, integration, coverage).
 # --quick runs only gofmt, go vet, go test, golangci-lint.
+# The coverage gate is the test run for the unit and integration suites. Standalone
+# "go test" and "store integration tests" steps run only when coverage is skipped
+# (--quick, --no-coverage).
 #
 # Prerequisites (full suite):
 #   - Go toolchain, DATABASE_URL in .env (migrate-check)
@@ -45,7 +48,7 @@ for arg in "$@"; do
     --no-coverage) skip_coverage=1 ;;
     --no-docs-check) skip_docs_check=1 ;;
     -h|--help)
-      sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -120,8 +123,12 @@ fi
 step "go vet (incl. integration tag)"
 if go vet -tags integration ./...; then ok; else fail "go vet (incl. integration tag)"; fi
 
-step "go test"
-if go test ./... -count=1; then ok; else fail "go test"; fi
+# With coverage on, scripts/coverage.sh is the test run (unit and integration suites,
+# non-zero exit on any failing test), so the plain runs below happen only without it.
+if (( skip_coverage )); then
+  step "go test"
+  if go test ./... -count=1; then ok; else fail "go test"; fi
+fi
 
 if (( ! skip_build )); then
   step "go build"
@@ -136,11 +143,18 @@ fi
 if (( ! skip_sqlc )); then
   step "sqlc generate (up to date)"
   ensure_sqlc
-  if sqlc generate && git diff --exit-code internal/db/sqlc/; then
+  # Drift = generation changes (or adds, or removes) a file compared with the directory as
+  # it was just before generating. Comparing with the git index instead flagged generated
+  # files the developer had not staged yet and missed new untracked files. In CI the
+  # checkout is clean, so "before" is HEAD and any difference is drift.
+  sqlc_before="$(mktemp -d)"
+  cp -R internal/db/sqlc/. "$sqlc_before/"
+  if sqlc generate && diff -ru "$sqlc_before" internal/db/sqlc; then
     ok
   else
     fail "sqlc generate (up to date)"
   fi
+  rm -rf "$sqlc_before"
 fi
 
 step "golangci-lint"
@@ -153,7 +167,14 @@ fi
 
 if (( ! skip_smoke )); then
   step "live API smoke"
-  if ./scripts/smoke.sh; then ok; else fail "live API smoke"; fi
+  smoke_log="$(mktemp)"
+  if ./scripts/smoke.sh 2>&1 | tee "$smoke_log"; then
+    # smoke.sh exits 0 when it skips itself and prints a line starting with "  SKIP:".
+    if grep -q '^  SKIP:' "$smoke_log"; then echo "SKIPPED (API not running)"; else ok; fi
+  else
+    fail "live API smoke"
+  fi
+  rm -f "$smoke_log"
 fi
 
 if (( ! skip_docs_check )); then
@@ -166,7 +187,7 @@ if (( ! skip_migrate_check )); then
   if ./scripts/migrate-check.sh; then ok; else fail "migrate-check"; fi
 fi
 
-if (( ! skip_integration )); then
+if (( ! skip_integration && skip_coverage )); then
   step "store integration tests"
   if go test -tags integration -timeout 5m ./internal/db/storetest/... -count=1; then
     ok

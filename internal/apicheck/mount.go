@@ -24,7 +24,7 @@ const contractJWTSecret = "contract-check-jwt-secret-min-32-chars"
 // MountRoutes registers the full HTTP API the same way as cmd/api when DATABASE_URL is set.
 // pool may be nil; handlers are only registered for route discovery.
 func MountRoutes(e *echo.Echo, pool *pgxpool.Pool) {
-	health.RegisterLiveness(e)
+	health.RegisterLiveness(e, "")
 	health.RegisterReady(e, pool, nil)
 
 	cookie := config.RefreshCookieSettings{

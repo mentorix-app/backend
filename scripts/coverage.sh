@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Measure test coverage for internal packages (excludes internal/db/sqlc, cmd/api).
+# Run the unit and store integration suites with coverage (internal packages, excludes
+# internal/db/sqlc, cmd/api). Exits non-zero when any test fails, not only on low coverage;
+# scripts/check.sh relies on this instead of running the suites a second time.
 #
 # Usage:
 #   ./scripts/coverage.sh              report only
@@ -28,7 +30,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -51,10 +53,12 @@ if ((${#packages[@]} == 0)); then
 fi
 
 coverpkg="$(IFS=,; echo "${packages[*]}")"
-integration_coverpkg="mentorix-backend/internal/auth,mentorix-backend/internal/admin,mentorix-backend/internal/analytics,mentorix-backend/internal/cleanup,mentorix-backend/internal/exercise,mentorix-backend/internal/program,mentorix-backend/internal/subscription,mentorix-backend/internal/trainerclient,mentorix-backend/internal/workoutcompletion,mentorix-backend/internal/db/pgconv,mentorix-backend/internal/health"
 
 echo "=== Unit test coverage ==="
-go test -count=1 -covermode=atomic -coverprofile="$tmp/unit.out" "${packages[@]}"
+if ! go test -count=1 -covermode=atomic -coverprofile="$tmp/unit.out" "${packages[@]}"; then
+  echo "FAIL: unit tests failed" >&2
+  exit 1
+fi
 
 echo ""
 echo "=== Store integration coverage ==="
@@ -70,11 +74,14 @@ if [[ -z "${TEST_DATABASE_URL:-}" && -z "${DATABASE_URL:-}" ]]; then
   echo "WARN: TEST_DATABASE_URL/DATABASE_URL not set — skipping integration coverage merge" >&2
   cp "$tmp/unit.out" "$tmp/merged.out"
 else
-  go test -tags integration -count=1 -timeout 5m \
+  if ! go test -tags integration -count=1 -timeout 5m \
     -covermode=atomic \
-    -coverpkg="$integration_coverpkg" \
+    -coverpkg="$coverpkg" \
     -coverprofile="$tmp/int.out" \
-    ./internal/db/storetest/...
+    ./internal/db/storetest/...; then
+    echo "FAIL: store integration tests failed" >&2
+    exit 1
+  fi
   # shellcheck source=scripts/lib/covmerge.sh
   source "$root/scripts/lib/covmerge.sh"
   merge_coverprofiles "$tmp/merged.out" "$tmp/unit.out" "$tmp/int.out"

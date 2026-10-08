@@ -102,7 +102,7 @@ func main() {
 		}))
 	}
 
-	health.RegisterLiveness(e)
+	health.RegisterLiveness(e, cfg.GitCommit)
 	health.RegisterReady(e, pool, rdb)
 
 	if pool != nil {

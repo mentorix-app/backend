@@ -24,6 +24,9 @@ feature/* → PR → develop → CI → Deploy stage → smoke
 
 - Required check: `check` job (`make check-ci`).
 - Migrations: [`scripts/render-migrate.sh`](../scripts/render-migrate.sh) in `preDeployCommand`.
+- The deploy job calls the Render deploy hook with `ref` set to the commit that passed CI, so stage always gets that exact commit. A manual run of the workflow deploys the head of the branch it was started from.
+- Post-deploy smoke ([`scripts/smoke.sh`](../scripts/smoke.sh)) polls `GET /health` for up to `SMOKE_WAIT_SECONDS` and passes only when its `commit` equals the commit under deploy (`SMOKE_EXPECT_COMMIT`, set by the workflows). A failed build or pre-deploy migration leaves the previous instance serving the old commit, so the smoke job fails on timeout and names the expected and last seen commit.
+- `commit` in `/health` is `RENDER_GIT_COMMIT`, which Render sets at runtime. It is omitted when the variable is empty (local runs) and is not part of `/health/ready`.
 - Local: pre-commit runs `make check-quick`; before push run `make check`.
 - Workflow [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) — manual only (`workflow_dispatch`), no prod on Render yet.
 

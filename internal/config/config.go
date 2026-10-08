@@ -41,6 +41,9 @@ type Config struct {
 	// ClientAnalyticsPageURL is the frontend page the Telegram bot links to for
 	// client self-analytics. Empty disables the "Статистика" button.
 	ClientAnalyticsPageURL string
+	// GitCommit is the commit the binary was deployed from (RENDER_GIT_COMMIT on
+	// Render). Empty locally; reported by GET /health when set.
+	GitCommit string
 }
 
 func (c Config) AccessTokenTTL() time.Duration {
@@ -128,6 +131,7 @@ func Load() (Config, error) {
 		BotWebhookURL:          strings.TrimRight(strings.TrimSpace(os.Getenv("BOT_WEBHOOK_URL")), "/"),
 		BotWebhookSecret:       strings.TrimSpace(os.Getenv("BOT_WEBHOOK_SECRET")),
 		ClientAnalyticsPageURL: strings.TrimSpace(os.Getenv("CLIENT_ANALYTICS_PAGE_URL")),
+		GitCommit:              strings.TrimSpace(os.Getenv("RENDER_GIT_COMMIT")),
 	}
 
 	if cfg.AppEnv != AppEnvDevelopment {
