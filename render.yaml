@@ -68,7 +68,3 @@ services:
         sync: false
       - key: CLIENT_ANALYTICS_PAGE_URL
         sync: false
-      - key: APPLE_CLIENT_IDS
-        sync: false
-      - key: GOOGLE_CLIENT_IDS
-        sync: false

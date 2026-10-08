@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -17,17 +16,12 @@ type authStore interface {
 	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error)
 	getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error)
 	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
-	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time, reuseGrace time.Duration) (uuid.UUID, error)
+	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, error)
 	RevokeRefreshSession(ctx context.Context, tokenHash []byte) error
 	RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error
 	UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error)
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
-	SocialSignIn(ctx context.Context, provider string, claims IDTokenClaims, displayName string) (uuid.UUID, bool, error)
-	AddRole(ctx context.Context, userID uuid.UUID, role string) error
-	AttachIdentity(ctx context.Context, userID uuid.UUID, provider, subject string) error
-	EmailPasswordHash(ctx context.Context, userID uuid.UUID) (string, error)
-	UserIsAdmin(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
 type Service struct {
@@ -35,9 +29,6 @@ type Service struct {
 	jwtSecret  []byte
 	accessTTL  time.Duration
 	refreshTTL time.Duration
-	verifiers  map[string]IDTokenVerifier
-	// refreshReuseGrace is how long a rotated refresh token can still be retried.
-	refreshReuseGrace time.Duration
 }
 
 type IssuedAuth struct {
@@ -48,52 +39,17 @@ type IssuedAuth struct {
 	Email         string
 }
 
-type ServiceOption func(*Service)
-
-// WithIDTokenVerifiers sets the ID token verifier for each social provider,
-// keyed by provider name. A provider without an entry cannot be used to sign in.
-func WithIDTokenVerifiers(verifiers map[string]IDTokenVerifier) ServiceOption {
-	return func(s *Service) { s.verifiers = verifiers }
-}
-
-// WithRefreshReuseGrace sets how long a rotated refresh token can still be
-// retried. The value is clamped to 0 through MaxRefreshReuseGrace, and 0 turns the retry off.
-func WithRefreshReuseGrace(d time.Duration) ServiceOption {
-	return func(s *Service) { s.refreshReuseGrace = min(max(d, 0), MaxRefreshReuseGrace) }
-}
-
-func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration, opts ...ServiceOption) *Service {
-	s := &Service{
+func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration) *Service {
+	return &Service{
 		store:      NewStore(pool),
 		jwtSecret:  []byte(jwtSecret),
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
-
-		refreshReuseGrace: DefaultRefreshReuseGrace,
 	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
 }
 
 func normalizeDisplayName(name string) string {
 	return strings.TrimSpace(name)
-}
-
-// maxSocialNameRunes is the longest display name social login accepts.
-const maxSocialNameRunes = 100
-
-// usableName reports whether Postgres can store s: valid UTF-8 without NUL.
-func usableName(s string) bool {
-	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
-}
-
-func truncateRunes(s string, limit int) string {
-	if utf8.RuneCountInString(s) <= limit {
-		return s
-	}
-	return string([]rune(s)[:limit])
 }
 
 func (s *Service) RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error) {
@@ -168,99 +124,6 @@ func (s *Service) Login(ctx context.Context, email, password string) (IssuedAuth
 	return out, nil
 }
 
-// SocialLogin verifies the provider's ID token and signs the person in, creating
-// an account with no roles on the first sign-in (created is true then). name is
-// the display name for a new account; the token's name is the fallback.
-func (s *Service) SocialLogin(ctx context.Context, provider, rawIDToken, name string) (IssuedAuth, bool, error) {
-	var out IssuedAuth
-	verifier, ok := s.verifiers[provider]
-	if !ok || verifier == nil {
-		return out, false, ErrProviderNotConfigured
-	}
-	claims, err := verifier.Verify(ctx, rawIDToken)
-	if err != nil {
-		return out, false, err
-	}
-	displayName := normalizeDisplayName(name)
-	if displayName == "" {
-		if tokenName := normalizeDisplayName(claims.Name); usableName(tokenName) {
-			displayName = truncateRunes(tokenName, maxSocialNameRunes)
-		}
-	}
-	userID, created, err := s.store.SocialSignIn(ctx, provider, claims, displayName)
-	if err != nil {
-		return out, false, err
-	}
-	email, err := s.store.UserPrimaryEmail(ctx, userID)
-	if err != nil {
-		return out, false, fmt.Errorf("load user email: %w", err)
-	}
-	plain, h, err := newRefreshToken()
-	if err != nil {
-		return out, false, fmt.Errorf("refresh token: %w", err)
-	}
-	expiresAt := time.Now().UTC().Add(s.refreshTTL)
-	if err := s.store.InsertRefreshSession(ctx, userID, h, expiresAt); err != nil {
-		return out, false, fmt.Errorf("session: %w", err)
-	}
-	token, exp, err := signAccessToken(userID, s.jwtSecret, s.accessTTL)
-	if err != nil {
-		return out, false, fmt.Errorf("sign token: %w", err)
-	}
-	out.AccessToken = token
-	out.AccessExpires = exp
-	out.RefreshToken = plain
-	out.UserID = userID
-	out.Email = email
-	return out, created, nil
-}
-
-// AddRole gives the user the client or trainer role; see Store.AddRole.
-func (s *Service) AddRole(ctx context.Context, userID uuid.UUID, role string) error {
-	return s.store.AddRole(ctx, userID, role)
-}
-
-// AttachIdentity links the identity of a verified provider ID token to the user;
-// see Store.AttachIdentity. The token's email is ignored. The call is refused
-// for admin accounts, and for an account with a password it needs the current
-// password. Both checks run before the token is verified, so a stolen session
-// cannot make the server contact the provider. currentPassword is ignored for
-// an account without a password.
-func (s *Service) AttachIdentity(ctx context.Context, userID uuid.UUID, provider, rawIDToken, currentPassword string) error {
-	verifier, ok := s.verifiers[provider]
-	if !ok || verifier == nil {
-		return ErrProviderNotConfigured
-	}
-	hash, err := s.store.EmailPasswordHash(ctx, userID)
-	if err != nil {
-		return err
-	}
-	isAdmin, err := s.store.UserIsAdmin(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if isAdmin {
-		return ErrAdminCannotAttachIdentity
-	}
-	if hash != "" {
-		if currentPassword == "" {
-			return ErrPasswordRequired
-		}
-		matches, err := PasswordMatches(hash, currentPassword)
-		if err != nil {
-			return fmt.Errorf("verify password: %w", err)
-		}
-		if !matches {
-			return ErrPasswordIncorrect
-		}
-	}
-	claims, err := verifier.Verify(ctx, rawIDToken)
-	if err != nil {
-		return err
-	}
-	return s.store.AttachIdentity(ctx, userID, provider, claims.Subject)
-}
-
 func (s *Service) Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error) {
 	var out IssuedAuth
 	if refreshPlain == "" {
@@ -272,7 +135,7 @@ func (s *Service) Refresh(ctx context.Context, refreshPlain string) (IssuedAuth,
 		return out, fmt.Errorf("refresh token: %w", err)
 	}
 	newExpires := time.Now().UTC().Add(s.refreshTTL)
-	userID, err := s.store.RotateRefreshSession(ctx, oldHash, newHash, newExpires, s.refreshReuseGrace)
+	userID, err := s.store.RotateRefreshSession(ctx, oldHash, newHash, newExpires)
 	if err != nil {
 		return out, err
 	}

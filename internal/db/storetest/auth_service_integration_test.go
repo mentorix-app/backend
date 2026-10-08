@@ -45,30 +45,7 @@ func TestAuthService_RegisterLoginRefreshLogout(t *testing.T) {
 		t.Fatal("expected rotated refresh token")
 	}
 
-	// A spent token can be retried once inside the window and gets a fresh token.
-	retried, err := svc.Refresh(ctx, loggedIn.RefreshToken)
-	if err != nil {
-		t.Fatalf("Refresh() retry inside the window error = %v", err)
-	}
-	if retried.RefreshToken == refreshed.RefreshToken || retried.RefreshToken == loggedIn.RefreshToken {
-		t.Fatal("expected a new refresh token for the retry")
-	}
-
-	// A sign-in started after the first one has its own family and is not affected.
-	secondSignIn, err := svc.Login(ctx, email, password)
-	if err != nil {
-		t.Fatalf("second Login() error = %v", err)
-	}
-	if _, err := svc.Refresh(ctx, secondSignIn.RefreshToken); err != nil {
-		t.Fatalf("Refresh() of the second sign-in error = %v", err)
-	}
-
-	// Both tokens of the first sign-in's family stay usable until one is spent again.
-	if _, err := svc.Refresh(ctx, refreshed.RefreshToken); err != nil {
-		t.Fatalf("Refresh() of the first successor error = %v", err)
-	}
-
-	if err := svc.Logout(ctx, retried.RefreshToken); err != nil {
+	if err := svc.Logout(ctx, refreshed.RefreshToken); err != nil {
 		t.Fatalf("Logout() error = %v", err)
 	}
 	if err := svc.LogoutAll(ctx, registered.UserID); err != nil {

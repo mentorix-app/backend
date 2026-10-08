@@ -1198,3 +1198,8 @@ ALTER TABLE mentorix.auth_refresh_sessions
 CREATE UNIQUE INDEX auth_refresh_sessions_family_id_live_uniq
   ON mentorix.auth_refresh_sessions (family_id)
   WHERE revoked_at IS NULL;
+
+-- >>> 000029_drop_users_primary_email_unique.up.sql
+-- The application code that relied on this index was reverted. Registration enforces
+-- unique emails through auth_identities (provider, subject), as it did before 000027.
+DROP INDEX IF EXISTS mentorix.users_primary_email_lower_uniq;

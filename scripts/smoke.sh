@@ -55,11 +55,8 @@ if [[ -z "${SMOKE_EMAIL:-}" || -z "${SMOKE_PASSWORD:-}" ]]; then
   exit 0
 fi
 
-COOKIE_JAR=$(mktemp)
-trap 'rm -f "$COOKIE_JAR"' EXIT
-
 TOKEN=$(
-  curl -sf -c "$COOKIE_JAR" -X POST "$BASE/auth/login" \
+  curl -sf -X POST "$BASE/auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\"}" \
     | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true
@@ -71,34 +68,6 @@ if [[ -z "$TOKEN" ]]; then
 fi
 
 echo "  POST /auth/login OK"
-
-REFRESH=$(
-  curl -sf -X POST "$BASE/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"$SMOKE_EMAIL\",\"password\":\"$SMOKE_PASSWORD\",\"token_delivery\":\"body\"}" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['refresh_token'])" 2>/dev/null || true
-)
-
-if [[ -z "$REFRESH" ]]; then
-  echo "FAIL: POST /auth/login with token_delivery=body returned no refresh_token" >&2
-  exit 1
-fi
-
-echo "  POST /auth/login (token_delivery=body) OK"
-REFRESH=$(
-  curl -sf -X POST "$BASE/auth/refresh" \
-    -H "Content-Type: application/json" \
-    -d "{\"refresh_token\":\"$REFRESH\"}" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['refresh_token'])" 2>/dev/null || true
-)
-
-if [[ -z "$REFRESH" ]]; then
-  echo "FAIL: POST /auth/refresh with a body token returned no refresh_token" >&2
-  exit 1
-fi
-
-echo "  POST /auth/refresh (body) OK"
-
 curl -sf -H "Authorization: Bearer $TOKEN" "$BASE/auth/me" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
@@ -118,19 +87,5 @@ d = json.load(sys.stdin)
 assert 'items' in d and 'pagination' in d
 print('  GET /programs OK: total=', d['pagination']['total'])
 "
-
-if ! curl -sf -X POST "$BASE/auth/logout" \
-  -H "Content-Type: application/json" \
-  -d "{\"refresh_token\":\"$REFRESH\"}" >/dev/null; then
-  echo "FAIL: POST /auth/logout with a body token failed" >&2
-  exit 1
-fi
-echo "  POST /auth/logout (body) OK"
-
-if ! curl -sf -b "$COOKIE_JAR" -X POST "$BASE/auth/logout" >/dev/null; then
-  echo "FAIL: POST /auth/logout with the refresh cookie failed" >&2
-  exit 1
-fi
-echo "  POST /auth/logout (cookie) OK"
 
 echo "Smoke OK"

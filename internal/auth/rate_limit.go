@@ -16,8 +16,6 @@ const (
 	rateLimitLogin     = "login:ip"
 	rateLimitRegister  = "register:ip"
 	rateLimitRefresh   = "refresh:ip"
-	rateLimitLogout    = "logout:ip"
-	rateLimitAttachID  = "attach_identity:ip"
 	rateLimitUnknownIP = "unknown"
 )
 
@@ -61,20 +59,6 @@ func (l *RateLimiter) AllowRefresh(ctx context.Context, ip string) error {
 		return nil
 	}
 	return l.allow(ctx, rateLimitRefresh, ip, l.loginMax, l.loginWin)
-}
-
-func (l *RateLimiter) AllowLogout(ctx context.Context, ip string) error {
-	if l == nil || l.loginMax <= 0 {
-		return nil
-	}
-	return l.allow(ctx, rateLimitLogout, ip, l.loginMax, l.loginWin)
-}
-
-func (l *RateLimiter) AllowAttachIdentity(ctx context.Context, ip string) error {
-	if l == nil || l.loginMax <= 0 {
-		return nil
-	}
-	return l.allow(ctx, rateLimitAttachID, ip, l.loginMax, l.loginWin)
 }
 
 func (l *RateLimiter) allow(ctx context.Context, prefix, key string, max int, window time.Duration) error {

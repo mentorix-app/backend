@@ -49,9 +49,6 @@ func main() {
 		logger.Error("config load failed", "error", err)
 		os.Exit(1)
 	}
-	if cfg.RefreshCookie.SameSite == http.SameSiteNoneMode && auth.OriginCheckDisabled(cfg.CORSAllowedOrigins) {
-		logger.Warn("refresh cookie is SameSite=None and CORS_ALLOW_ORIGINS is empty or contains *; cross-site cookie requests to refresh and logout are not checked")
-	}
 
 	ctx := context.Background()
 	pool, err := health.NewPool(ctx, cfg.DatabaseURL)
@@ -111,17 +108,9 @@ func main() {
 		subsSvc := subscription.NewService(pool)
 		subscription.NewHandlers(auth.JWTMiddleware(cfg.JWTSecret)).Mount(e)
 
-		socialVerifiers := auth.NewSocialVerifiers(ctx, cfg.AppleClientIDs, cfg.GoogleClientIDs)
-		logger.Info("social sign-in providers",
-			"apple", socialVerifiers[auth.ProviderApple] != nil,
-			"google", socialVerifiers[auth.ProviderGoogle] != nil,
-		)
-		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL(),
-			auth.WithIDTokenVerifiers(socialVerifiers),
-		)
+		svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL())
 		auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter,
 			auth.WithSubscriptions(subsSvc),
-			auth.WithAllowedOrigins(cfg.CORSAllowedOrigins),
 		).Mount(e)
 
 		adminSvc := admin.NewService(pool)
