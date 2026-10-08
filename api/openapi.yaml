@@ -70,7 +70,7 @@ paths:
           description: Registered
           headers:
             Set-Cookie:
-              description: HttpOnly refresh token cookie; absent when token_delivery is body
+              description: HttpOnly refresh token cookie
               schema:
                 type: string
           content:
@@ -100,152 +100,45 @@ paths:
           description: Authenticated
           headers:
             Set-Cookie:
-              description: HttpOnly refresh token cookie; absent when token_delivery is body
+              description: HttpOnly refresh token cookie
               schema:
                 type: string
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
         "401":
           description: Invalid credentials
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
-  /auth/social-login:
-    post:
-      tags: [auth]
-      summary: Sign in with an Apple or Google ID token
-      description: >-
-        Verifies the ID token. A known (provider, subject) pair signs in to its account.
-        An unknown pair creates an account with no roles; the client then calls
-        POST /auth/me/roles. An email is used only when the provider marks it verified,
-        and a verified email that belongs to another account is refused.
-        Rate limited like login.
-      operationId: socialLogin
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SocialLoginRequest"
-      responses:
-        "200":
-          description: Signed in to an existing account
-          headers:
-            Set-Cookie:
-              description: HttpOnly refresh token cookie; absent when token_delivery is body
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenResponse"
-        "201":
-          description: Account created with no roles and signed in
-          headers:
-            Set-Cookie:
-              description: HttpOnly refresh token cookie; absent when token_delivery is body
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenResponse"
-        "400":
-          description: >-
-            Invalid JSON, unknown provider, empty id_token, invalid token_delivery,
-            name longer than 100 characters or containing a NUL character, or the provider is not configured on this server
-        "401":
-          description: The ID token failed verification
-        "409":
-          description: A verified email in the token already belongs to another account
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
-        "503":
-          description: The provider's signing keys could not be fetched; retry later
-
   /auth/refresh:
     post:
       tags: [auth]
-      summary: Rotate access token using a refresh token from the cookie or the JSON body
-      description: >-
-        The refresh token comes from the optional JSON body or from the cookie.
-        When both are present the body token is used and the cookie is left alone.
-        A token sent in the body is answered with refresh_token in JSON and no cookie.
-        A token sent in the cookie is answered with a new cookie and never with
-        refresh_token in JSON. A body that cannot be read or has a blank token counts as no body token.
-        Each sign-in has one live refresh token. A refresh spends it and returns its replacement.
-        A spent token can be retried for 30 seconds, for example after a lost response: the retry
-        spends the token issued before and returns a new one, so only the newest token works.
-        After those 30 seconds, presenting a spent token ends that sign-in on every device that
-        shares it, and the answer is the same 401. Send one refresh at a time and keep the token
-        from the latest response. Reuse can be detected for 30 days, the time spent tokens are kept.
+      summary: Rotate access token using refresh cookie
       operationId: refresh
       parameters:
         - $ref: "#/components/parameters/RefreshCookie"
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
       responses:
         "200":
           description: New access token issued
-          headers:
-            Set-Cookie:
-              description: HttpOnly refresh token cookie; present only when the token came from the cookie
-              schema:
-                type: string
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "401":
-          description: >-
-            Missing or invalid refresh token. The refresh cookie is cleared only
-            when the rejected token came from the cookie.
-        "403":
-          description: Cookie request from an Origin outside CORS_ALLOW_ORIGINS; nothing is rotated
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
-        "500":
-          description: Rotating the session or the rate limiter failed
-        "503":
-          description: Another request holds this sign-in for too long; retry the call. The cookie is kept.
+          description: Missing or invalid refresh token
 
   /auth/logout:
     post:
       tags: [auth]
       summary: Revoke current refresh session
-      description: >-
-        Revokes the refresh token from the optional JSON body and the one from the cookie, when sent.
-        The cookie is cleared whenever a cookie is sent or no body token is sent.
-        A body that cannot be read or has a blank token counts as no body token.
-        Logout ends the whole sign-in the token belongs to, even when the token is already spent.
       operationId: logout
       parameters:
         - $ref: "#/components/parameters/RefreshCookie"
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RefreshRequest"
       responses:
         "204":
           description: Logged out
-        "403":
-          description: Cookie request from an Origin outside CORS_ALLOW_ORIGINS; nothing is revoked
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
-        "500":
-          description: Revoking a session or the rate limiter failed; the cookie is kept
-        "503":
-          description: Another request holds this sign-in for too long; retry the call. The cookie is kept.
 
   /auth/logout-all:
     post:
@@ -254,13 +147,13 @@ paths:
       operationId: logoutAll
       security:
         - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RefreshCookie"
       responses:
         "204":
           description: All sessions revoked
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "503":
-          description: Another request holds a sign-in for too long; retry the call
 
   /auth/me:
     get:
@@ -305,85 +198,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: User not found
-
-  /auth/me/roles:
-    post:
-      tags: [auth]
-      summary: Add the trainer or client role to the current account
-      description: >-
-        Idempotent. The trainer role also creates the trainer profile.
-        Returns the same body as GET /auth/me.
-      operationId: addMyRole
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AddRoleRequest"
-      responses:
-        "200":
-          description: Updated profile
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MeResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          description: User not found
-        "409":
-          description: The account is an admin account, which cannot hold trainer or client roles
-
-  /auth/me/identities:
-    post:
-      tags: [auth]
-      summary: Attach an Apple or Google sign-in to the current account
-      description: >-
-        Verifies the ID token and links its (provider, subject) pair to the signed-in account.
-        Repeating the call for an identity the account already owns changes nothing.
-        The token's email is ignored. Rate limited like login.
-        When the account has an email and password sign-in, current_password must match it,
-        and admin accounts are refused; both checks run before the token is verified.
-        Returns the same body as GET /auth/me.
-      operationId: attachMyIdentity
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AttachIdentityRequest"
-      responses:
-        "200":
-          description: Updated profile
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/MeResponse"
-        "400":
-          description: >-
-            Invalid JSON, unknown provider, empty id_token, or the provider is not configured on this server
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: >-
-            current_password is missing or wrong for an account with a password,
-            or the account is an admin account
-        "404":
-          description: User not found
-        "409":
-          description: This sign-in already belongs to another account
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
-        "500":
-          description: Unexpected server error
-        "503":
-          description: The provider's signing keys could not be fetched; retry later
 
   /plans:
     get:
@@ -2129,7 +1943,7 @@ components:
       required: false
       schema:
         type: string
-      description: HttpOnly refresh token used by the web cabinet (name configurable via REFRESH_COOKIE_NAME)
+      description: HttpOnly refresh token (name configurable via REFRESH_COOKIE_NAME)
 
     Page:
       name: page
@@ -2328,27 +2142,6 @@ components:
             type: string
             enum: [ok, error, skipped]
 
-    TokenDelivery:
-      type: string
-      enum: [cookie, body]
-      default: cookie
-      description: >-
-        How the refresh token is returned. cookie sets the HttpOnly refresh cookie.
-        body returns refresh_token in the JSON response and sets no cookie.
-        An empty value means cookie.
-
-    SocialProvider:
-      type: string
-      enum: [apple, google]
-
-    SignInMethod:
-      type: string
-      enum: [email_password, telegram, apple, google]
-
-    SelfAssignableRole:
-      type: string
-      enum: [trainer, client]
-
     AuthCredentials:
       type: object
       required: [email, password]
@@ -2360,8 +2153,6 @@ components:
           type: string
           minLength: 8
           maxLength: 72
-        token_delivery:
-          $ref: "#/components/schemas/TokenDelivery"
 
     RegisterRequest:
       type: object
@@ -2377,53 +2168,6 @@ components:
         name:
           type: string
           description: Optional display name; defaults to empty string
-        token_delivery:
-          $ref: "#/components/schemas/TokenDelivery"
-
-    SocialLoginRequest:
-      type: object
-      required: [provider, id_token]
-      properties:
-        provider:
-          $ref: "#/components/schemas/SocialProvider"
-        id_token:
-          type: string
-          description: ID token the Apple or Google SDK returned to the app
-        name:
-          type: string
-          maxLength: 100
-          description: >-
-            Optional display name for a new account, at most 100 characters. Apple sends the name to the app
-            only once and not inside the token. When empty, the token's name claim is used if present, cut to 100 characters.
-        token_delivery:
-          $ref: "#/components/schemas/TokenDelivery"
-
-    AddRoleRequest:
-      type: object
-      required: [role]
-      properties:
-        role:
-          $ref: "#/components/schemas/SelfAssignableRole"
-
-    AttachIdentityRequest:
-      type: object
-      required: [provider, id_token]
-      properties:
-        provider:
-          $ref: "#/components/schemas/SocialProvider"
-        id_token:
-          type: string
-          description: ID token the Apple or Google SDK returned to the app
-        current_password:
-          type: string
-          description: Required when the account has an email and password sign-in; ignored otherwise
-
-    RefreshRequest:
-      type: object
-      properties:
-        refresh_token:
-          type: string
-          description: Refresh token held by the client. When empty or absent the cookie is used.
 
     MePatchRequest:
       type: object
@@ -2450,21 +2194,18 @@ components:
           format: uuid
         email:
           type: string
-          description: Primary email; empty string when the account has none (Telegram and some Apple accounts)
-        refresh_token:
-          type: string
-          description: Present only when the client asked for body delivery or sent the refresh token in the body
+          format: email
 
     MeResponse:
       type: object
-      required: [user_id, email, name, created_at, roles, sign_in_methods]
+      required: [user_id, email, name, created_at, roles]
       properties:
         user_id:
           type: string
           format: uuid
         email:
           type: string
-          description: Primary email; empty string when the account has none
+          format: email
         name:
           type: string
         created_at:
@@ -2475,11 +2216,6 @@ components:
           items:
             type: string
             enum: [admin, trainer, client]
-        sign_in_methods:
-          type: array
-          description: Distinct providers of the account's identities, sorted alphabetically; empty when there are none
-          items:
-            $ref: "#/components/schemas/SignInMethod"
         subscription:
           $ref: "#/components/schemas/Subscription"
 

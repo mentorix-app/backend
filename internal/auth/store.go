@@ -4,67 +4,26 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 )
 
-const (
-	pgUniqueViolationCode = "23505"
-	// pgCheckViolationCode is what the user_roles_admin_exclusive trigger raises.
-	pgCheckViolationCode = "23514"
-	// pgForeignKeyViolationCode is raised when a row refers to a missing user.
-	pgForeignKeyViolationCode = "23503"
-	// pgLockNotAvailableCode is raised when lock_timeout expires.
-	pgLockNotAvailableCode = "55P03"
-
-	usersEmailUniqueConstraint    = "users_primary_email_lower_uniq"
-	identitySubjectUniqConstraint = "auth_identities_provider_subject_uniq"
-)
-
-// isUniqueViolation reports whether err is a unique violation of the named
-// constraint, so one violation cannot be mistaken for another.
-func isUniqueViolation(err error, constraint string) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == constraint
-}
-
-// RefreshReuseError reports a rotated refresh token presented after the grace
-// window. Its text is what the request log records, so it names the family and
-// the user and never the token. Revoked is how many sessions the revoke ended;
-// zero means the family was already dead, for example after a logout.
-type RefreshReuseError struct {
-	FamilyID uuid.UUID
-	UserID   uuid.UUID
-	Revoked  int64
-}
-
-func (e *RefreshReuseError) Error() string {
-	return fmt.Sprintf("refresh_token_reuse family=%s user=%s revoked=%d", e.FamilyID, e.UserID, e.Revoked)
-}
-
-func (e *RefreshReuseError) Unwrap() error { return ErrRefreshTokenReused }
+const pgUniqueViolationCode = "23505"
 
 type Store struct {
 	pool *pgxpool.Pool
 	q    *sqlc.Queries
-	// lockTimeout bounds the wait for a family lock; tests shorten it.
-	lockTimeout time.Duration
 }
 
-// refreshLockTimeout is how long a rotation or revoke waits for a family lock.
-const refreshLockTimeout = 5 * time.Second
-
 func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool, q: sqlc.New(pool), lockTimeout: refreshLockTimeout}
+	return &Store{pool: pool, q: sqlc.New(pool)}
 }
 
 func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error) {
@@ -81,9 +40,6 @@ func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwor
 		DisplayName:  displayName,
 	})
 	if err != nil {
-		if isUniqueViolation(err, usersEmailUniqueConstraint) {
-			return uuid.Nil, ErrEmailTaken
-		}
 		return uuid.Nil, fmt.Errorf("insert user: %w", err)
 	}
 
@@ -117,191 +73,6 @@ func (s *Store) RegisterTrainerEmailPassword(ctx context.Context, email, passwor
 	return pgconv.FromPGUUID(userPG), nil
 }
 
-// SocialSignIn returns the user that owns the (provider, subject) identity and
-// creates the user and identity when none exists. A new user has no roles. The
-// claims' email is stored as primary_email only when the provider marked it
-// verified. A verified email that already belongs to another user fails with
-// ErrEmailBelongsToAnotherAccount and creates nothing.
-func (s *Store) SocialSignIn(ctx context.Context, provider string, claims IDTokenClaims, displayName string) (uuid.UUID, bool, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return uuid.Nil, false, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	qtx := s.q.WithTx(tx)
-	identity := sqlc.GetAuthIdentityUserIDParams{Provider: provider, Subject: claims.Subject}
-
-	userPG, err := qtx.GetAuthIdentityUserID(ctx, identity)
-	if err == nil {
-		return pgconv.FromPGUUID(userPG), false, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, false, fmt.Errorf("lookup %s identity: %w", provider, err)
-	}
-
-	var primaryEmail *string
-	if email := NormalizeEmail(claims.Email); claims.EmailVerified && email != "" {
-		_, err := qtx.GetUserIDByPrimaryEmail(ctx, email)
-		if err == nil {
-			return uuid.Nil, false, ErrEmailBelongsToAnotherAccount
-		}
-		if !errors.Is(err, pgx.ErrNoRows) {
-			return uuid.Nil, false, fmt.Errorf("lookup user by email: %w", err)
-		}
-		primaryEmail = &email
-	}
-
-	userPG, err = qtx.InsertUser(ctx, sqlc.InsertUserParams{
-		PrimaryEmail: primaryEmail,
-		DisplayName:  displayName,
-	})
-	if err != nil {
-		if isUniqueViolation(err, usersEmailUniqueConstraint) {
-			// Either another account holds the email, or a concurrent first
-			// sign-in of this same identity just created its user with it. The
-			// failed insert aborted the transaction; read the identity outside it.
-			_ = tx.Rollback(ctx)
-			existing, lookupErr := s.q.GetAuthIdentityUserID(ctx, identity)
-			if lookupErr == nil {
-				return pgconv.FromPGUUID(existing), false, nil
-			}
-			if !errors.Is(lookupErr, pgx.ErrNoRows) {
-				return uuid.Nil, false, fmt.Errorf("lookup %s identity after email conflict: %w", provider, lookupErr)
-			}
-			return uuid.Nil, false, ErrEmailBelongsToAnotherAccount
-		}
-		return uuid.Nil, false, fmt.Errorf("insert user: %w", err)
-	}
-	if err := qtx.InsertAuthIdentity(ctx, sqlc.InsertAuthIdentityParams{
-		UserID:   userPG,
-		Provider: provider,
-		Subject:  claims.Subject,
-	}); err != nil {
-		if isUniqueViolation(err, identitySubjectUniqConstraint) {
-			// A concurrent first sign-in won. The failed insert aborted this
-			// transaction, so roll it back (dropping the new user) and read the
-			// winner's identity outside it.
-			_ = tx.Rollback(ctx)
-			userPG, err = s.q.GetAuthIdentityUserID(ctx, identity)
-			if err != nil {
-				return uuid.Nil, false, fmt.Errorf("lookup %s identity after race: %w", provider, err)
-			}
-			return pgconv.FromPGUUID(userPG), false, nil
-		}
-		return uuid.Nil, false, fmt.Errorf("insert %s identity: %w", provider, err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return uuid.Nil, false, fmt.Errorf("commit: %w", err)
-	}
-	return pgconv.FromPGUUID(userPG), true, nil
-}
-
-// AddRole gives the user a self-assignable role (client or trainer) and is a
-// no-op when the user already has it. The trainer role also creates the
-// trainers row. An admin account fails with ErrRoleConflict.
-func (s *Store) AddRole(ctx context.Context, userID uuid.UUID, role string) error {
-	if role != RoleClient && role != RoleTrainer {
-		return fmt.Errorf("role %q cannot be added by the user", role)
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	qtx := s.q.WithTx(tx)
-	userPG := pgconv.ToPGUUID(userID)
-
-	if err := qtx.GrantUserRole(ctx, sqlc.GrantUserRoleParams{UserID: userPG, Role: role}); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgCheckViolationCode {
-			return ErrRoleConflict
-		}
-		if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolationCode {
-			return pgx.ErrNoRows
-		}
-		return fmt.Errorf("grant role: %w", err)
-	}
-	if role == RoleTrainer {
-		if err := qtx.InsertTrainerIfMissing(ctx, userPG); err != nil {
-			return fmt.Errorf("insert trainer: %w", err)
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit: %w", err)
-	}
-	return nil
-}
-
-// AttachIdentity links the (provider, subject) identity to the user. It does
-// nothing when the user already owns it and fails with
-// ErrIdentityBelongsToAnotherAccount when another user does. A missing user is
-// pgx.ErrNoRows. The user's email and roles are not touched.
-func (s *Store) AttachIdentity(ctx context.Context, userID uuid.UUID, provider, subject string) error {
-	userPG := pgconv.ToPGUUID(userID)
-	identity := sqlc.GetAuthIdentityUserIDParams{Provider: provider, Subject: subject}
-
-	owner, err := s.q.GetAuthIdentityUserID(ctx, identity)
-	if err == nil {
-		return identityOwnerResult(owner, userPG)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("lookup %s identity: %w", provider, err)
-	}
-
-	err = s.q.InsertAuthIdentity(ctx, sqlc.InsertAuthIdentityParams{
-		UserID:   userPG,
-		Provider: provider,
-		Subject:  subject,
-	})
-	if err == nil {
-		return nil
-	}
-	if isUniqueViolation(err, identitySubjectUniqConstraint) {
-		// A concurrent attach or sign-in created the identity first.
-		owner, err = s.q.GetAuthIdentityUserID(ctx, identity)
-		if err != nil {
-			// A vanished row here is not "user not found", so it must not wrap pgx.ErrNoRows.
-			return fmt.Errorf("lookup %s identity after race: %v", provider, err)
-		}
-		return identityOwnerResult(owner, userPG)
-	}
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolationCode {
-		return pgx.ErrNoRows
-	}
-	return fmt.Errorf("insert %s identity: %w", provider, err)
-}
-
-// EmailPasswordHash returns the user's password hash, or an empty string when
-// the user has no email and password sign-in. A missing user is pgx.ErrNoRows.
-func (s *Store) EmailPasswordHash(ctx context.Context, userID uuid.UUID) (string, error) {
-	hash, err := s.q.GetEmailPasswordHashByUserID(ctx, sqlc.GetEmailPasswordHashByUserIDParams{
-		Provider: ProviderEmailPassword,
-		UserID:   pgconv.ToPGUUID(userID),
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", pgx.ErrNoRows
-		}
-		return "", fmt.Errorf("load password hash: %w", err)
-	}
-	return hash, nil
-}
-
-// UserIsAdmin reports whether the user has the admin role.
-func (s *Store) UserIsAdmin(ctx context.Context, userID uuid.UUID) (bool, error) {
-	return UserIsAdmin(ctx, s.q, userID)
-}
-
-func identityOwnerResult(owner, userPG pgtype.UUID) error {
-	if owner != userPG {
-		return ErrIdentityBelongsToAnotherAccount
-	}
-	return nil
-}
-
 type emailIdentityRow struct {
 	UserID       uuid.UUID
 	PasswordHash string
@@ -320,8 +91,6 @@ type UserProfile struct {
 	Name      string
 	CreatedAt time.Time
 	Roles     []string
-	// SignInMethods lists the distinct providers of the user's identities, sorted.
-	SignInMethods []string
 }
 
 func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
@@ -338,20 +107,11 @@ func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile,
 		return UserProfile{}, err
 	}
 
-	methods, err := s.q.ListUserSignInMethods(ctx, pgconv.ToPGUUID(userID))
-	if err != nil {
-		return UserProfile{}, fmt.Errorf("load sign-in methods: %w", err)
-	}
-
-	// Sort here too: the SQL order follows the database collation.
-	slices.Sort(methods)
-
 	return UserProfile{
-		Email:         row.PrimaryEmail,
-		Name:          row.DisplayName,
-		CreatedAt:     row.CreatedAt.UTC(),
-		Roles:         roles,
-		SignInMethods: methods,
+		Email:     row.PrimaryEmail,
+		Name:      row.DisplayName,
+		CreatedAt: row.CreatedAt.UTC(),
+		Roles:     roles,
 	}, nil
 }
 
@@ -412,188 +172,49 @@ func (s *Store) InsertRefreshSession(ctx context.Context, userID uuid.UUID, toke
 	return nil
 }
 
-// lockSessionFamily finds the family of a token and takes its advisory lock for the
-// rest of the transaction. Every statement after it sees all committed rows of the
-// family. It returns pgx.ErrNoRows for an unknown token.
-func lockSessionFamily(ctx context.Context, qtx *sqlc.Queries, tokenHash []byte) error {
-	familyID, err := qtx.GetRefreshSessionFamilyID(ctx, tokenHash)
-	if err != nil {
-		return err
-	}
-	return lockFamily(ctx, qtx, familyID)
-}
-
-func lockFamily(ctx context.Context, qtx *sqlc.Queries, familyID pgtype.UUID) error {
-	if err := qtx.LockRefreshFamily(ctx, familyID); err != nil {
-		return busyOr(fmt.Errorf("lock refresh family: %w", err))
-	}
-	return nil
-}
-
-// busyOr maps a lock timeout (SQLSTATE 55P03) to ErrRefreshBusy and returns any other error as is.
-func busyOr(err error) error {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == pgLockNotAvailableCode {
-		return fmt.Errorf("%w: %w", ErrRefreshBusy, err)
-	}
-	return err
-}
-
-// beginFamilyTx starts a transaction that takes family locks and bounds how long
-// it waits for them.
-func (s *Store) beginFamilyTx(ctx context.Context) (pgx.Tx, *sqlc.Queries, error) {
+func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("begin tx: %w", err)
-	}
-	qtx := s.q.WithTx(tx)
-	if err := qtx.SetLocalLockTimeout(ctx, fmt.Sprintf("%dms", s.lockTimeout.Milliseconds())); err != nil {
-		_ = tx.Rollback(ctx)
-		return nil, nil, fmt.Errorf("set lock timeout: %w", err)
-	}
-	return tx, qtx, nil
-}
-
-// RotateRefreshSession spends oldHash and stores newHash as the only live token of
-// its family. A token spent less than reuseGrace ago can be retried while the family
-// still has an active session: the retry spends that session and replaces it. A token
-// spent longer ago revokes the whole family and returns a *RefreshReuseError. Time
-// comparisons use database time.
-func (s *Store) RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time, reuseGrace time.Duration) (uuid.UUID, error) {
-	tx, qtx, err := s.beginFamilyTx(ctx)
-	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if err := lockSessionFamily(ctx, qtx, oldHash); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return uuid.Nil, ErrInvalidRefresh
-		}
-		return uuid.Nil, fmt.Errorf("load refresh family: %w", err)
-	}
-	session, err := qtx.GetRefreshSessionForRotation(ctx, sqlc.GetRefreshSessionForRotationParams{
-		GraceSeconds: reuseGrace.Seconds(),
-		TokenHash:    oldHash,
-	})
+	qtx := s.q.WithTx(tx)
+
+	userPG, err := qtx.GetRefreshSessionUserForUpdate(ctx, oldHash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, ErrInvalidRefresh
 		}
-		return uuid.Nil, fmt.Errorf("load refresh session: %w", busyOr(err))
+		return uuid.Nil, fmt.Errorf("load refresh session: %w", err)
 	}
 
-	switch {
-	case session.Expired:
-		return uuid.Nil, ErrInvalidRefresh
-	case session.Rotated && !session.WithinGrace:
-		// The revoke must outlive this call, so it is committed before the error is returned.
-		revoked, err := qtx.RevokeRefreshFamily(ctx, session.FamilyID)
-		if err != nil {
-			return uuid.Nil, fmt.Errorf("revoke refresh family: %w", busyOr(err))
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return uuid.Nil, fmt.Errorf("commit family revoke: %w", err)
-		}
-		return uuid.Nil, &RefreshReuseError{
-			FamilyID: pgconv.FromPGUUID(session.FamilyID),
-			UserID:   pgconv.FromPGUUID(session.UserID),
-			Revoked:  revoked,
-		}
-	case session.Rotated:
-		active, err := qtx.RefreshFamilyHasActiveSession(ctx, session.FamilyID)
-		if err != nil {
-			return uuid.Nil, fmt.Errorf("check refresh family: %w", err)
-		}
-		if !active {
-			return uuid.Nil, ErrInvalidRefresh
-		}
-		if err := qtx.MarkRefreshFamilyRotated(ctx, session.FamilyID); err != nil {
-			return uuid.Nil, fmt.Errorf("spend active refresh sessions: %w", busyOr(err))
-		}
-	case session.Revoked:
-		return uuid.Nil, ErrInvalidRefresh
-	default:
-		if err := qtx.MarkRefreshSessionRotated(ctx, oldHash); err != nil {
-			return uuid.Nil, fmt.Errorf("mark refresh session rotated: %w", busyOr(err))
-		}
+	if err := qtx.RevokeRefreshSessionByHash(ctx, oldHash); err != nil {
+		return uuid.Nil, fmt.Errorf("revoke refresh session: %w", err)
 	}
-
-	if err := qtx.InsertRefreshSessionInFamily(ctx, sqlc.InsertRefreshSessionInFamilyParams{
-		UserID:    session.UserID,
-		FamilyID:  session.FamilyID,
+	if err := qtx.InsertRefreshSession(ctx, sqlc.InsertRefreshSessionParams{
+		UserID:    userPG,
 		TokenHash: newHash,
 		ExpiresAt: newExpiresAt,
 	}); err != nil {
-		return uuid.Nil, fmt.Errorf("insert rotated refresh session: %w", busyOr(err))
+		return uuid.Nil, fmt.Errorf("insert rotated refresh session: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return uuid.Nil, fmt.Errorf("commit: %w", err)
 	}
-	return pgconv.FromPGUUID(session.UserID), nil
+	return pgconv.FromPGUUID(userPG), nil
 }
 
-// RevokeRefreshSession ends the whole sign-in the token belongs to, spent token or
-// not. An unknown token is a no-op. An expired token only revokes its own row, so a
-// stale client cannot end a family that is still alive.
 func (s *Store) RevokeRefreshSession(ctx context.Context, tokenHash []byte) error {
-	tx, qtx, err := s.beginFamilyTx(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if err := lockSessionFamily(ctx, qtx, tokenHash); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("load refresh family: %w", err)
-	}
-	session, err := qtx.GetRefreshSessionForRotation(ctx, sqlc.GetRefreshSessionForRotationParams{TokenHash: tokenHash})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		return fmt.Errorf("load refresh session: %w", busyOr(err))
-	}
-	if session.Expired {
-		if err := qtx.RevokeRefreshSessionByHash(ctx, tokenHash); err != nil {
-			return fmt.Errorf("revoke expired refresh session: %w", busyOr(err))
-		}
-	} else if _, err := qtx.RevokeRefreshFamily(ctx, session.FamilyID); err != nil {
-		return fmt.Errorf("revoke refresh family: %w", busyOr(err))
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit: %w", err)
+	if err := s.q.RevokeRefreshSessionByHash(ctx, tokenHash); err != nil {
+		return fmt.Errorf("revoke refresh session: %w", err)
 	}
 	return nil
 }
 
-// RevokeAllUserRefreshSessions ends every sign-in of the user. It takes the lock of
-// each family that still has an unrevoked session, in family id order, before the
-// update, so a rotation that is inserting a successor is finished first.
 func (s *Store) RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error {
-	tx, qtx, err := s.beginFamilyTx(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	userPG := pgconv.ToPGUUID(userID)
-	families, err := qtx.ListUserLiveRefreshFamilies(ctx, userPG)
-	if err != nil {
-		return fmt.Errorf("list refresh families: %w", err)
-	}
-	for _, familyID := range families {
-		if err := lockFamily(ctx, qtx, familyID); err != nil {
-			return err
-		}
-	}
-	if err := qtx.RevokeAllUserRefreshSessions(ctx, userPG); err != nil {
-		return fmt.Errorf("revoke all refresh sessions: %w", busyOr(err))
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit: %w", err)
+	if err := s.q.RevokeAllUserRefreshSessions(ctx, pgconv.ToPGUUID(userID)); err != nil {
+		return fmt.Errorf("revoke all refresh sessions: %w", err)
 	}
 	return nil
 }

@@ -8,12 +8,12 @@
 
 ## Unified account
 
-One `user_id` per person; sign-in by email and password, by Apple or Google ID token (REST), or through the Telegram bot. Data stored in `users` and `auth_identities`. Domains and middleware rely on `user_id`.
+One `user_id` per person; login via email and password (REST). Data stored in `users` and `auth_identities`. Domains and middleware rely on `user_id`.
 
 ## Connections
 
-- Trainer accesses the system via web/REST with email and password, or signs in with Apple or Google from the mobile app and picks the trainer role.
-- Client uses the Telegram bot (primary channel; invited via deep link from a trainer), or signs in with Apple or Google from the mobile app and picks the client role.
+- Trainer accesses the system via web/REST with email and password.
+- Client uses the Telegram bot (primary channel); invited via deep link from a trainer.
 - A client can work with multiple trainers (`trainer_clients`).
 - One client account serves all their trainers, not a separate account per trainer.
 

@@ -12,29 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getEmailPasswordHashByUserID = `-- name: GetEmailPasswordHashByUserID :one
-SELECT COALESCE(i.password_hash, '')::text AS password_hash
-FROM mentorix.users u
-LEFT JOIN mentorix.auth_identities i
-  ON i.user_id = u.id AND i.provider = $1::text
-WHERE u.id = $2
-ORDER BY (i.password_hash IS NULL), i.created_at
-LIMIT 1
-`
-
-type GetEmailPasswordHashByUserIDParams struct {
-	Provider string      `json:"provider"`
-	UserID   pgtype.UUID `json:"user_id"`
-}
-
-// No row means the user does not exist; an empty hash means no password identity.
-func (q *Queries) GetEmailPasswordHashByUserID(ctx context.Context, arg GetEmailPasswordHashByUserIDParams) (string, error) {
-	row := q.db.QueryRow(ctx, getEmailPasswordHashByUserID, arg.Provider, arg.UserID)
-	var password_hash string
-	err := row.Scan(&password_hash)
-	return password_hash, err
-}
-
 const getEmailPasswordIdentity = `-- name: GetEmailPasswordIdentity :one
 SELECT user_id, COALESCE(password_hash, '') AS password_hash
 FROM mentorix.auth_identities
@@ -58,62 +35,18 @@ func (q *Queries) GetEmailPasswordIdentity(ctx context.Context, arg GetEmailPass
 	return i, err
 }
 
-const getRefreshSessionFamilyID = `-- name: GetRefreshSessionFamilyID :one
-SELECT family_id
+const getRefreshSessionUserForUpdate = `-- name: GetRefreshSessionUserForUpdate :one
+SELECT user_id
 FROM mentorix.auth_refresh_sessions
-WHERE token_hash = $1
-`
-
-// Unlocked read: it only finds the family to lock before the row is read again.
-func (q *Queries) GetRefreshSessionFamilyID(ctx context.Context, tokenHash []byte) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getRefreshSessionFamilyID, tokenHash)
-	var family_id pgtype.UUID
-	err := row.Scan(&family_id)
-	return family_id, err
-}
-
-const getRefreshSessionForRotation = `-- name: GetRefreshSessionForRotation :one
-SELECT
-  user_id,
-  family_id,
-  (expires_at <= statement_timestamp())::boolean AS expired,
-  (revoked_at IS NOT NULL)::boolean AS revoked,
-  (rotated_at IS NOT NULL)::boolean AS rotated,
-  (rotated_at IS NOT NULL
-    AND statement_timestamp() - rotated_at <= make_interval(secs => $1::float8))::boolean AS within_grace
-FROM mentorix.auth_refresh_sessions
-WHERE token_hash = $2
+WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()
 FOR UPDATE
 `
 
-type GetRefreshSessionForRotationParams struct {
-	GraceSeconds float64 `json:"grace_seconds"`
-	TokenHash    []byte  `json:"token_hash"`
-}
-
-type GetRefreshSessionForRotationRow struct {
-	UserID      pgtype.UUID `json:"user_id"`
-	FamilyID    pgtype.UUID `json:"family_id"`
-	Expired     bool        `json:"expired"`
-	Revoked     bool        `json:"revoked"`
-	Rotated     bool        `json:"rotated"`
-	WithinGrace bool        `json:"within_grace"`
-}
-
-// Reads the row in any state and locks it. It runs after the family lock, so every time
-// comparison uses statement_timestamp(): now() is the start of the transaction, before the lock wait.
-func (q *Queries) GetRefreshSessionForRotation(ctx context.Context, arg GetRefreshSessionForRotationParams) (GetRefreshSessionForRotationRow, error) {
-	row := q.db.QueryRow(ctx, getRefreshSessionForRotation, arg.GraceSeconds, arg.TokenHash)
-	var i GetRefreshSessionForRotationRow
-	err := row.Scan(
-		&i.UserID,
-		&i.FamilyID,
-		&i.Expired,
-		&i.Revoked,
-		&i.Rotated,
-		&i.WithinGrace,
-	)
-	return i, err
+func (q *Queries) GetRefreshSessionUserForUpdate(ctx context.Context, tokenHash []byte) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getRefreshSessionUserForUpdate, tokenHash)
+	var user_id pgtype.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
 }
 
 const getUserAvatarFilePath = `-- name: GetUserAvatarFilePath :one
@@ -149,20 +82,6 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDR
 	var i GetUserByIDRow
 	err := row.Scan(&i.PrimaryEmail, &i.DisplayName, &i.CreatedAt)
 	return i, err
-}
-
-const getUserIDByPrimaryEmail = `-- name: GetUserIDByPrimaryEmail :one
-SELECT id
-FROM mentorix.users
-WHERE lower(primary_email) = lower($1::text)
-LIMIT 1
-`
-
-func (q *Queries) GetUserIDByPrimaryEmail(ctx context.Context, email string) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getUserIDByPrimaryEmail, email)
-	var id pgtype.UUID
-	err := row.Scan(&id)
-	return id, err
 }
 
 const grantUserRole = `-- name: GrantUserRole :exec
@@ -219,28 +138,6 @@ func (q *Queries) InsertRefreshSession(ctx context.Context, arg InsertRefreshSes
 	return err
 }
 
-const insertRefreshSessionInFamily = `-- name: InsertRefreshSessionInFamily :exec
-INSERT INTO mentorix.auth_refresh_sessions (user_id, family_id, token_hash, expires_at)
-VALUES ($1, $2, $3, $4)
-`
-
-type InsertRefreshSessionInFamilyParams struct {
-	UserID    pgtype.UUID `json:"user_id"`
-	FamilyID  pgtype.UUID `json:"family_id"`
-	TokenHash []byte      `json:"token_hash"`
-	ExpiresAt time.Time   `json:"expires_at"`
-}
-
-func (q *Queries) InsertRefreshSessionInFamily(ctx context.Context, arg InsertRefreshSessionInFamilyParams) error {
-	_, err := q.db.Exec(ctx, insertRefreshSessionInFamily,
-		arg.UserID,
-		arg.FamilyID,
-		arg.TokenHash,
-		arg.ExpiresAt,
-	)
-	return err
-}
-
 const insertTrainer = `-- name: InsertTrainer :exec
 INSERT INTO mentorix.trainers (user_id)
 VALUES ($1)
@@ -248,17 +145,6 @@ VALUES ($1)
 
 func (q *Queries) InsertTrainer(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, insertTrainer, userID)
-	return err
-}
-
-const insertTrainerIfMissing = `-- name: InsertTrainerIfMissing :exec
-INSERT INTO mentorix.trainers (user_id)
-VALUES ($1)
-ON CONFLICT (user_id) DO NOTHING
-`
-
-func (q *Queries) InsertTrainerIfMissing(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, insertTrainerIfMissing, userID)
 	return err
 }
 
@@ -295,33 +181,6 @@ func (q *Queries) InsertUserRole(ctx context.Context, arg InsertUserRoleParams) 
 	return err
 }
 
-const listUserLiveRefreshFamilies = `-- name: ListUserLiveRefreshFamilies :many
-SELECT DISTINCT family_id
-FROM mentorix.auth_refresh_sessions
-WHERE user_id = $1 AND revoked_at IS NULL
-ORDER BY family_id
-`
-
-func (q *Queries) ListUserLiveRefreshFamilies(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
-	rows, err := q.db.Query(ctx, listUserLiveRefreshFamilies, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []pgtype.UUID{}
-	for rows.Next() {
-		var family_id pgtype.UUID
-		if err := rows.Scan(&family_id); err != nil {
-			return nil, err
-		}
-		items = append(items, family_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listUserRoles = `-- name: ListUserRoles :many
 SELECT role
 FROM mentorix.user_roles
@@ -349,67 +208,6 @@ func (q *Queries) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]stri
 	return items, nil
 }
 
-const listUserSignInMethods = `-- name: ListUserSignInMethods :many
-SELECT DISTINCT provider
-FROM mentorix.auth_identities
-WHERE user_id = $1
-ORDER BY provider
-`
-
-func (q *Queries) ListUserSignInMethods(ctx context.Context, userID pgtype.UUID) ([]string, error) {
-	rows, err := q.db.Query(ctx, listUserSignInMethods, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var provider string
-		if err := rows.Scan(&provider); err != nil {
-			return nil, err
-		}
-		items = append(items, provider)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const lockRefreshFamily = `-- name: LockRefreshFamily :exec
-SELECT pg_advisory_xact_lock(hashtextextended($1::uuid::text, 0))
-`
-
-// Serializes every rotation and revoke of one family until the transaction ends.
-func (q *Queries) LockRefreshFamily(ctx context.Context, dollar_1 pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, lockRefreshFamily, dollar_1)
-	return err
-}
-
-const markRefreshFamilyRotated = `-- name: MarkRefreshFamilyRotated :exec
-UPDATE mentorix.auth_refresh_sessions
-SET rotated_at = statement_timestamp(), revoked_at = statement_timestamp()
-WHERE family_id = $1 AND revoked_at IS NULL
-`
-
-// Spends the family's unrevoked row, expired or not, so the successor is its only live token.
-// The partial unique index allows at most one such row.
-func (q *Queries) MarkRefreshFamilyRotated(ctx context.Context, familyID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, markRefreshFamilyRotated, familyID)
-	return err
-}
-
-const markRefreshSessionRotated = `-- name: MarkRefreshSessionRotated :exec
-UPDATE mentorix.auth_refresh_sessions
-SET rotated_at = statement_timestamp(), revoked_at = statement_timestamp()
-WHERE token_hash = $1
-`
-
-func (q *Queries) MarkRefreshSessionRotated(ctx context.Context, tokenHash []byte) error {
-	_, err := q.db.Exec(ctx, markRefreshSessionRotated, tokenHash)
-	return err
-}
-
 const purgeStaleRefreshSessions = `-- name: PurgeStaleRefreshSessions :execrows
 DELETE FROM mentorix.auth_refresh_sessions
 WHERE (revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
@@ -424,24 +222,9 @@ func (q *Queries) PurgeStaleRefreshSessions(ctx context.Context) (int64, error) 
 	return result.RowsAffected(), nil
 }
 
-const refreshFamilyHasActiveSession = `-- name: RefreshFamilyHasActiveSession :one
-SELECT EXISTS (
-  SELECT 1
-  FROM mentorix.auth_refresh_sessions
-  WHERE family_id = $1 AND revoked_at IS NULL AND rotated_at IS NULL AND expires_at > statement_timestamp()
-)::boolean
-`
-
-func (q *Queries) RefreshFamilyHasActiveSession(ctx context.Context, familyID pgtype.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, refreshFamilyHasActiveSession, familyID)
-	var column_1 bool
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const revokeAllUserRefreshSessions = `-- name: RevokeAllUserRefreshSessions :exec
 UPDATE mentorix.auth_refresh_sessions
-SET revoked_at = statement_timestamp()
+SET revoked_at = now()
 WHERE user_id = $1 AND revoked_at IS NULL
 `
 
@@ -450,37 +233,14 @@ func (q *Queries) RevokeAllUserRefreshSessions(ctx context.Context, userID pgtyp
 	return err
 }
 
-const revokeRefreshFamily = `-- name: RevokeRefreshFamily :execrows
-UPDATE mentorix.auth_refresh_sessions
-SET revoked_at = statement_timestamp()
-WHERE family_id = $1 AND revoked_at IS NULL
-`
-
-func (q *Queries) RevokeRefreshFamily(ctx context.Context, familyID pgtype.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, revokeRefreshFamily, familyID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const revokeRefreshSessionByHash = `-- name: RevokeRefreshSessionByHash :exec
 UPDATE mentorix.auth_refresh_sessions
-SET revoked_at = statement_timestamp()
-WHERE token_hash = $1 AND revoked_at IS NULL
+SET revoked_at = now()
+WHERE token_hash = $1
 `
 
 func (q *Queries) RevokeRefreshSessionByHash(ctx context.Context, tokenHash []byte) error {
 	_, err := q.db.Exec(ctx, revokeRefreshSessionByHash, tokenHash)
-	return err
-}
-
-const setLocalLockTimeout = `-- name: SetLocalLockTimeout :exec
-SELECT set_config('lock_timeout', $1::text, true)
-`
-
-func (q *Queries) SetLocalLockTimeout(ctx context.Context, timeout string) error {
-	_, err := q.db.Exec(ctx, setLocalLockTimeout, timeout)
 	return err
 }
 

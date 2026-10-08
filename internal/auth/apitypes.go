@@ -7,50 +7,16 @@ import (
 )
 
 // AuthCredentials is the JSON body for POST /auth/login.
-// TokenDelivery is "cookie" (default) or "body".
 type AuthCredentials struct {
-	Email         string `json:"email"`
-	Password      string `json:"password"`
-	TokenDelivery string `json:"token_delivery,omitempty"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 // RegisterRequest is the JSON body for POST /auth/register.
-// TokenDelivery is "cookie" (default) or "body".
 type RegisterRequest struct {
-	Email         string `json:"email"`
-	Password      string `json:"password"`
-	Name          string `json:"name"`
-	TokenDelivery string `json:"token_delivery,omitempty"`
-}
-
-// SocialLoginRequest is the JSON body for POST /auth/social-login.
-// Provider is "apple" or "google". Name is optional and used only when the
-// request creates an account. TokenDelivery is "cookie" (default) or "body".
-type SocialLoginRequest struct {
-	Provider      string `json:"provider"`
-	IDToken       string `json:"id_token"`
-	Name          string `json:"name,omitempty"`
-	TokenDelivery string `json:"token_delivery,omitempty"`
-}
-
-// AddRoleRequest is the JSON body for POST /auth/me/roles.
-// Role is "trainer" or "client".
-type AddRoleRequest struct {
-	Role string `json:"role"`
-}
-
-// AttachIdentityRequest is the JSON body for POST /auth/me/identities.
-// Provider is "apple" or "google". CurrentPassword is required when the account
-// has an email and password sign-in and ignored otherwise.
-type AttachIdentityRequest struct {
-	Provider        string `json:"provider"`
-	IDToken         string `json:"id_token"`
-	CurrentPassword string `json:"current_password,omitempty"`
-}
-
-// RefreshRequest is the optional JSON body for POST /auth/refresh and POST /auth/logout.
-type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
 }
 
 // MePatchRequest is the JSON body for PATCH /auth/me.
@@ -58,27 +24,22 @@ type MePatchRequest struct {
 	Name string `json:"name"`
 }
 
-// TokenResponse is the JSON body for successful register, login, social login, and refresh.
-// Email is empty for accounts without a primary email.
-// RefreshToken is set only when the client asked for body delivery.
+// TokenResponse is the JSON body for successful register, login, and refresh.
 type TokenResponse struct {
-	AccessToken  string    `json:"access_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	UserID       string    `json:"user_id"`
-	Email        string    `json:"email"`
-	RefreshToken string    `json:"refresh_token,omitempty"`
+	AccessToken string    `json:"access_token"`
+	TokenType   string    `json:"token_type"`
+	ExpiresAt   time.Time `json:"expires_at"`
+	UserID      string    `json:"user_id"`
+	Email       string    `json:"email"`
 }
 
 // MeResponse is the JSON body for GET /auth/me and PATCH /auth/me.
 // Subscription is set for users with a trainer profile and null otherwise.
-// SignInMethods lists the distinct providers attached to the account, sorted.
 type MeResponse struct {
-	UserID        string                     `json:"user_id"`
-	Email         string                     `json:"email"`
-	Name          string                     `json:"name"`
-	CreatedAt     time.Time                  `json:"created_at"`
-	Roles         []string                   `json:"roles"`
-	SignInMethods []string                   `json:"sign_in_methods"`
-	Subscription  *subscription.Subscription `json:"subscription"`
+	UserID       string                     `json:"user_id"`
+	Email        string                     `json:"email"`
+	Name         string                     `json:"name"`
+	CreatedAt    time.Time                  `json:"created_at"`
+	Roles        []string                   `json:"roles"`
+	Subscription *subscription.Subscription `json:"subscription"`
 }
