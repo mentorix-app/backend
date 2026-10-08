@@ -31,14 +31,9 @@ func (s *botAPISender) SendMessage(_ context.Context, chatID int64, text string)
 	return nil
 }
 
-func NewSender(botToken string) (Sender, error) {
+func NewSender(botToken string) Sender {
 	if botToken == "" {
-		return noopSender{}, nil
+		return noopSender{}
 	}
-	api, err := tgbotapi.NewBotAPI(botToken)
-	if err != nil {
-		return nil, fmt.Errorf("telegram bot api: %w", telegram.StripURL(err))
-	}
-	api.Debug = false
-	return &botAPISender{api: api}, nil
+	return &botAPISender{api: telegram.NewBotAPI(botToken)}
 }

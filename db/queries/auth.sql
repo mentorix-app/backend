@@ -7,6 +7,16 @@ RETURNING id;
 INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
 VALUES ($1, $2, $3, $4);
 
+-- name: InsertAuthIdentityIfAbsent :execrows
+INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT ON CONSTRAINT auth_identities_provider_subject_uniq DO NOTHING;
+
+-- name: DeleteUserWithoutIdentity :exec
+DELETE FROM mentorix.users u
+WHERE u.id = $1
+  AND NOT EXISTS (SELECT 1 FROM mentorix.auth_identities i WHERE i.user_id = u.id);
+
 -- name: InsertUserRole :exec
 INSERT INTO mentorix.user_roles (user_id, role)
 VALUES ($1, $2);

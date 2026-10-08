@@ -2,11 +2,14 @@ package telegrambot
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/labstack/echo/v4"
@@ -28,7 +31,7 @@ type setWebhookResponse struct {
 	Description string `json:"description"`
 }
 
-func RegisterWebhook(botToken string, cfg WebhookConfig) error {
+func RegisterWebhook(ctx context.Context, botToken string, cfg WebhookConfig) error {
 	token := strings.TrimSpace(botToken)
 	url := strings.TrimSpace(cfg.URL)
 	if token == "" {
@@ -40,7 +43,7 @@ func RegisterWebhook(botToken string, cfg WebhookConfig) error {
 
 	payload := map[string]any{
 		"url":                  url,
-		"drop_pending_updates": true,
+		"drop_pending_updates": false,
 		"max_connections":      40,
 	}
 	if secret := strings.TrimSpace(cfg.SecretToken); secret != "" {
@@ -53,7 +56,12 @@ func RegisterWebhook(botToken string, cfg WebhookConfig) error {
 	}
 
 	endpoint := fmt.Sprintf(telegramAPIBase, token)
-	resp, err := http.Post(endpoint, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build setWebhook request: %w", telegram.StripURL(err))
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := telegram.HTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("set webhook request: %w", telegram.StripURL(err))
 	}
@@ -102,6 +110,27 @@ func WebhookHandler(secret string, bot *Bot) echo.HandlerFunc {
 	}
 }
 
-func (b *Bot) RegisterWebhook(botToken string, cfg WebhookConfig) error {
-	return RegisterWebhook(botToken, cfg)
+func (b *Bot) RegisterWebhook(ctx context.Context, botToken string, cfg WebhookConfig) error {
+	return RegisterWebhook(ctx, botToken, cfg)
+}
+
+// RegisterWebhookWithRetry calls register until it succeeds or ctx is done,
+// waiting pause between attempts. It never exits the process.
+func RegisterWebhookWithRetry(ctx context.Context, logger *slog.Logger, pause time.Duration, url string, register func(context.Context) error) {
+	for {
+		err := register(ctx)
+		if err == nil {
+			logger.Info("telegram webhook registered", "url", url)
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		logger.Error("telegram webhook registration failed; will retry", "url", url, "error", err, "retry_in", pause)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pause):
+		}
+	}
 }

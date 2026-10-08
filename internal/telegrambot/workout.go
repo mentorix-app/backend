@@ -82,7 +82,12 @@ func (b *Bot) handleProgramDayDone(ctx context.Context, chatID int64, tgID strin
 		return
 	}
 	resp, err := b.clients.GetTelegramProgram(ctx, tgID, nil)
-	if err != nil || !resp.HasProgram || resp.Program == nil || resp.Assignment == nil {
+	if err != nil {
+		b.answerCallback(queryID, "")
+		b.sendText(chatID, menuErrorText(err), b.menu)
+		return
+	}
+	if !resp.HasProgram || resp.Program == nil || resp.Assignment == nil {
 		b.answerCallback(queryID, "")
 		b.sendText(chatID, formatProgramSummary(resp), b.menu)
 		return
@@ -171,7 +176,11 @@ func (b *Bot) tryHandleWorkoutResult(ctx context.Context, msg *tgbotapi.Message)
 	}
 
 	resp, err := b.clients.GetTelegramProgram(ctx, tgID, nil)
-	if err != nil || !resp.HasProgram || resp.Program == nil {
+	if err != nil {
+		b.sendText(msg.Chat.ID, menuErrorText(err), b.menu)
+		return true
+	}
+	if !resp.HasProgram || resp.Program == nil {
 		b.clearWorkoutPending(ctx, tgID)
 		b.sendText(msg.Chat.ID, formatProgramSummary(resp), b.menu)
 		return true
@@ -219,7 +228,6 @@ func (b *Bot) tryHandleWorkoutResult(ctx context.Context, msg *tgbotapi.Message)
 			b.sendMarkdownWithInline(msg.Chat.ID, resultEmptyText, b.menu, pendingCancelKeyboard())
 			return true
 		}
-		b.clearWorkoutPending(ctx, tgID)
 		b.sendText(msg.Chat.ID, menuErrorText(err), b.menu)
 		return true
 	}

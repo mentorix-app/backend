@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -21,8 +20,6 @@ import (
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/subscription"
 )
-
-const pgUniqueViolationCode = "23505"
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -381,24 +378,29 @@ func (s *Store) resolveTelegramUser(ctx context.Context, q *sqlc.Queries, telegr
 		return uuid.Nil, false, fmt.Errorf("insert client user: %w", err)
 	}
 
-	if err := q.InsertAuthIdentity(ctx, sqlc.InsertAuthIdentityParams{
+	inserted, err := q.InsertAuthIdentityIfAbsent(ctx, sqlc.InsertAuthIdentityIfAbsentParams{
 		UserID:       userPG,
 		Provider:     auth.ProviderTelegram,
 		Subject:      subject,
 		PasswordHash: nil,
-	}); err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode {
-			userPG, err = q.GetAuthIdentityUserID(ctx, sqlc.GetAuthIdentityUserIDParams{
-				Provider: auth.ProviderTelegram,
-				Subject:  subject,
-			})
-			if err != nil {
-				return uuid.Nil, false, fmt.Errorf("lookup telegram identity after race: %w", err)
-			}
-			return pgconv.FromPGUUID(userPG), false, nil
-		}
+	})
+	if err != nil {
 		return uuid.Nil, false, fmt.Errorf("insert telegram identity: %w", err)
+	}
+	if inserted == 0 {
+		// A concurrent accept created this identity first. The user row inserted
+		// above is not linked to anything, so drop it and use the existing one.
+		if err := q.DeleteUserWithoutIdentity(ctx, userPG); err != nil {
+			return uuid.Nil, false, fmt.Errorf("delete orphan client user: %w", err)
+		}
+		existingPG, err := q.GetAuthIdentityUserID(ctx, sqlc.GetAuthIdentityUserIDParams{
+			Provider: auth.ProviderTelegram,
+			Subject:  subject,
+		})
+		if err != nil {
+			return uuid.Nil, false, fmt.Errorf("lookup telegram identity after race: %w", err)
+		}
+		return pgconv.FromPGUUID(existingPG), false, nil
 	}
 
 	if err := q.InsertUserRole(ctx, sqlc.InsertUserRoleParams{

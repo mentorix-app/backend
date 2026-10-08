@@ -1,8 +1,6 @@
 package telegram
 
 import (
-	"fmt"
-
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -16,12 +14,8 @@ type ProfilePhotoClient struct {
 	api profilePhotoAPI
 }
 
-func NewProfilePhotoClient(token string) (*ProfilePhotoClient, error) {
-	api, err := tgbotapi.NewBotAPI(token)
-	if err != nil {
-		return nil, fmt.Errorf("telegram bot api: %w", StripURL(err))
-	}
-	return &ProfilePhotoClient{api: api}, nil
+func NewProfilePhotoClient(token string) *ProfilePhotoClient {
+	return &ProfilePhotoClient{api: NewBotAPI(token)}
 }
 
 func newProfilePhotoClient(api profilePhotoAPI) *ProfilePhotoClient {

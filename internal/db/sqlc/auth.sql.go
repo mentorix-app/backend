@@ -12,6 +12,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteUserWithoutIdentity = `-- name: DeleteUserWithoutIdentity :exec
+DELETE FROM mentorix.users u
+WHERE u.id = $1
+  AND NOT EXISTS (SELECT 1 FROM mentorix.auth_identities i WHERE i.user_id = u.id)
+`
+
+func (q *Queries) DeleteUserWithoutIdentity(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserWithoutIdentity, id)
+	return err
+}
+
 const getEmailPasswordIdentity = `-- name: GetEmailPasswordIdentity :one
 SELECT user_id, COALESCE(password_hash, '') AS password_hash
 FROM mentorix.auth_identities
@@ -120,6 +131,32 @@ func (q *Queries) InsertAuthIdentity(ctx context.Context, arg InsertAuthIdentity
 		arg.PasswordHash,
 	)
 	return err
+}
+
+const insertAuthIdentityIfAbsent = `-- name: InsertAuthIdentityIfAbsent :execrows
+INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT ON CONSTRAINT auth_identities_provider_subject_uniq DO NOTHING
+`
+
+type InsertAuthIdentityIfAbsentParams struct {
+	UserID       pgtype.UUID `json:"user_id"`
+	Provider     string      `json:"provider"`
+	Subject      string      `json:"subject"`
+	PasswordHash *string     `json:"password_hash"`
+}
+
+func (q *Queries) InsertAuthIdentityIfAbsent(ctx context.Context, arg InsertAuthIdentityIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertAuthIdentityIfAbsent,
+		arg.UserID,
+		arg.Provider,
+		arg.Subject,
+		arg.PasswordHash,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const insertRefreshSession = `-- name: InsertRefreshSession :exec

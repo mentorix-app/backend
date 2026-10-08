@@ -30,7 +30,7 @@ func StreamBotFile(w http.ResponseWriter, client *http.Client, botToken, filePat
 		return ErrFileNotFound
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = HTTPClient
 	}
 
 	return streamHTTPFile(w, client, BotFileURL(botToken, filePath), filePath)
