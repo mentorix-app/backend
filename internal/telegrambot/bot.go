@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -16,7 +17,11 @@ import (
 	"mentorix-backend/internal/workoutcompletion"
 )
 
-const inviteStartPrefix = "inv_"
+const (
+	inviteStartPrefix = "inv_"
+	// linkStartArg is the /start argument the app's deep link carries to request a link code.
+	linkStartArg = "link"
+)
 
 type trainerClient interface {
 	AcceptInvite(ctx context.Context, req trainerclient.AcceptInviteRequest) (trainerclient.AcceptInviteResult, error)
@@ -39,14 +44,21 @@ type ClientAnalyticsLinker interface {
 	BuildClientAnalyticsLink(clientUserID, trainerID uuid.UUID) string
 }
 
+// LinkCodeIssuer hands out one-time codes that link a Telegram user to an app
+// account. Implemented by auth.LinkCodeStore; nil disables `/start link`.
+type LinkCodeIssuer interface {
+	Issue(ctx context.Context, telegramUserID string) (string, error)
+}
+
 type Bot struct {
-	api      telegramAPI
-	clients  trainerClient
-	workouts *workoutcompletion.Service
-	pending  workoutcompletion.PendingStore
-	links    ClientAnalyticsLinker
-	avatars  trainerclient.AvatarCheckStore
-	menu     tgbotapi.ReplyKeyboardMarkup
+	api       telegramAPI
+	clients   trainerClient
+	workouts  *workoutcompletion.Service
+	pending   workoutcompletion.PendingStore
+	links     ClientAnalyticsLinker
+	avatars   trainerclient.AvatarCheckStore
+	linkCodes LinkCodeIssuer
+	menu      tgbotapi.ReplyKeyboardMarkup
 }
 
 type BotOption func(*Bot)
@@ -63,6 +75,14 @@ func WithWorkoutCompletions(svc *workoutcompletion.Service, pending workoutcompl
 func WithAvatarCheckStore(s trainerclient.AvatarCheckStore) BotOption {
 	return func(b *Bot) {
 		b.avatars = s
+	}
+}
+
+// WithLinkCodes enables `/start link`, which answers with a code the client
+// types into the app. Without it `/start link` behaves like a bare `/start`.
+func WithLinkCodes(i LinkCodeIssuer) BotOption {
+	return func(b *Bot) {
+		b.linkCodes = i
 	}
 }
 
@@ -159,7 +179,39 @@ func (b *Bot) handleStart(ctx context.Context, msg *tgbotapi.Message) {
 		b.acceptInvite(ctx, msg, token)
 		return
 	}
+	if b.linkCodes != nil && strings.TrimSpace(msg.CommandArguments()) == linkStartArg {
+		b.sendLinkCode(ctx, msg)
+		return
+	}
 	b.sendText(msg.Chat.ID, "Откройте ссылку-приглашение от тренера или выберите пункт меню.", b.menu)
+}
+
+// sendLinkCode answers `/start link`. The text states the lifetime of
+// auth.LinkCodeTTL (10 minutes) and avoids Markdown specials besides the code span.
+func (b *Bot) sendLinkCode(ctx context.Context, msg *tgbotapi.Message) {
+	if msg.Chat == nil {
+		return
+	}
+	// A code goes only to a human in a private chat: in a group anyone could read it.
+	tgID := telegramUserID(msg.From)
+	if !msg.Chat.IsPrivate() || msg.From == nil || msg.From.IsBot || tgID == "" || tgID == "0" {
+		b.sendText(msg.Chat.ID, "Чтобы получить код, напишите боту в личные сообщения.", b.menu)
+		return
+	}
+	code, err := b.linkCodes.Issue(ctx, tgID)
+	if err != nil {
+		slog.ErrorContext(ctx, "issue telegram link code", "error", err)
+		b.sendText(msg.Chat.ID, "Не удалось создать код. Попробуйте позже.", b.menu)
+		return
+	}
+	b.sendMarkdown(msg.Chat.ID, linkCodeText(code), b.menu)
+}
+
+func linkCodeText(code string) string {
+	return "Ваш код для привязки Telegram:\n\n" +
+		"`" + code + "`\n\n" +
+		"Код действует 10 минут. Введите его в приложении Mentorix, в разделе привязки Telegram.\n\n" +
+		"Не передавайте код никому."
 }
 
 func (b *Bot) handleProgram(ctx context.Context, chatID int64, telegramUserID string) {

@@ -36,6 +36,8 @@ type fakeAuthService struct {
 	googleErr      error
 	appleIssued    IssuedAuth
 	appleErr       error
+	linkIssued     IssuedAuth
+	linkErr        error
 
 	// Arguments of the last calls, for body-mode assertions.
 	googleToken  string
@@ -43,6 +45,29 @@ type fakeAuthService struct {
 	appleName    string
 	refreshToken string
 	logoutToken  string
+	linkUserID   uuid.UUID
+	linkCode     string
+}
+
+func (f *fakeAuthService) LinkTelegram(_ context.Context, appUserID uuid.UUID, code string) (IssuedAuth, error) {
+	f.linkUserID, f.linkCode = appUserID, code
+	if f.linkErr != nil {
+		return IssuedAuth{}, f.linkErr
+	}
+	out := f.linkIssued
+	if out.UserID == uuid.Nil {
+		out.UserID = uuid.New()
+	}
+	if out.AccessToken == "" {
+		out.AccessToken = "link-access-token"
+	}
+	if out.RefreshToken == "" {
+		out.RefreshToken = "link-refresh-token"
+	}
+	if out.AccessExpires.IsZero() {
+		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	return out, nil
 }
 
 func (f *fakeAuthService) RegisterTrainer(_ context.Context, email, _, _ string) (IssuedAuth, error) {

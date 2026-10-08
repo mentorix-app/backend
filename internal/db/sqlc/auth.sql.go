@@ -12,6 +12,38 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countUserIdentitiesOutsideProviders = `-- name: CountUserIdentitiesOutsideProviders :one
+SELECT count(*)
+FROM mentorix.auth_identities
+WHERE user_id = $1
+  AND NOT (provider = ANY ($2::text[]))
+`
+
+type CountUserIdentitiesOutsideProvidersParams struct {
+	UserID    pgtype.UUID `json:"user_id"`
+	Providers []string    `json:"providers"`
+}
+
+func (q *Queries) CountUserIdentitiesOutsideProviders(ctx context.Context, arg CountUserIdentitiesOutsideProvidersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserIdentitiesOutsideProviders, arg.UserID, arg.Providers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteUserByID = `-- name: DeleteUserByID :execrows
+DELETE FROM mentorix.users
+WHERE id = $1
+`
+
+func (q *Queries) DeleteUserByID(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUserByID, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteUserWithoutIdentity = `-- name: DeleteUserWithoutIdentity :exec
 DELETE FROM mentorix.users u
 WHERE u.id = $1
@@ -20,6 +52,27 @@ WHERE u.id = $1
 
 func (q *Queries) DeleteUserWithoutIdentity(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteUserWithoutIdentity, id)
+	return err
+}
+
+const fillUserPrimaryEmailIfEmpty = `-- name: FillUserPrimaryEmailIfEmpty :exec
+UPDATE mentorix.users u
+SET primary_email = src.primary_email
+FROM mentorix.users src
+WHERE u.id = $1
+  AND src.id = $2
+  AND (u.primary_email IS NULL OR u.primary_email = '')
+  AND src.primary_email IS NOT NULL
+  AND src.primary_email <> ''
+`
+
+type FillUserPrimaryEmailIfEmptyParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	FromUserID pgtype.UUID `json:"from_user_id"`
+}
+
+func (q *Queries) FillUserPrimaryEmailIfEmpty(ctx context.Context, arg FillUserPrimaryEmailIfEmptyParams) error {
+	_, err := q.db.Exec(ctx, fillUserPrimaryEmailIfEmpty, arg.UserID, arg.FromUserID)
 	return err
 }
 
@@ -245,6 +298,27 @@ func (q *Queries) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]stri
 	return items, nil
 }
 
+const moveSignInIdentitiesToUser = `-- name: MoveSignInIdentitiesToUser :execrows
+UPDATE mentorix.auth_identities
+SET user_id = $1
+WHERE user_id = $2
+  AND provider = ANY ($3::text[])
+`
+
+type MoveSignInIdentitiesToUserParams struct {
+	ToUserID   pgtype.UUID `json:"to_user_id"`
+	FromUserID pgtype.UUID `json:"from_user_id"`
+	Providers  []string    `json:"providers"`
+}
+
+func (q *Queries) MoveSignInIdentitiesToUser(ctx context.Context, arg MoveSignInIdentitiesToUserParams) (int64, error) {
+	result, err := q.db.Exec(ctx, moveSignInIdentitiesToUser, arg.ToUserID, arg.FromUserID, arg.Providers)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const purgeStaleRefreshSessions = `-- name: PurgeStaleRefreshSessions :execrows
 DELETE FROM mentorix.auth_refresh_sessions
 WHERE (revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
@@ -314,4 +388,17 @@ func (q *Queries) UpdateUserDisplayName(ctx context.Context, arg UpdateUserDispl
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const userHasTrainerLink = `-- name: UserHasTrainerLink :one
+SELECT EXISTS (
+  SELECT 1 FROM mentorix.trainer_clients WHERE client_user_id = $1
+)
+`
+
+func (q *Queries) UserHasTrainerLink(ctx context.Context, clientUserID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, userHasTrainerLink, clientUserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

@@ -47,6 +47,7 @@ Prefer plain string keys over hashes unless one identity needs multiple fields.
 | `mentorix:rl:refresh:ip:{ip}` | `internal/auth/rate_limit.go` | INCR + EXPIRE |
 | `mentorix:telegram:active_trainer:{telegram_user_id}` | `internal/trainerclient/active_trainer.go` | `trainers.id` UUID |
 | `mentorix:telegram:avatar_checked:{telegram_user_id}` | `internal/trainerclient/avatar_check.go` | `1`, `SET NX` with TTL 24h |
+| `mentorix:telegram:link_code:{code}` | `internal/auth/telegram_link.go` | Telegram user id, `SET NX` with TTL 10m, read and deleted with `GETDEL` |
 | `mentorix:telegram:workout_pending:{telegram_user_id}` | `internal/workoutcompletion/pending.go` | JSON pending completion (TTL 30m) |
 
 ## Avoid

@@ -11,6 +11,7 @@ Client interface in Telegram: accept invite, menu, view program, mark workout da
 
 - Invites use deep links only (`inv_<token>`), no `@username` entry.
 - Accept via `/start inv_<token>` calls `trainerclient.Service.AcceptInvite` in-process; saves Telegram profile photo (`avatar_file_path`) if present.
+- `/start link` (sent by the app's "link Telegram" action) answers with a one-time code for [linking this Telegram to an app account](auth.md): the code on its own line in monospace, valid 10 minutes, to be typed into the Mentorix app, with a line not to share it. A code is issued only to a person writing in a private chat; in a group, from a bot account or without a sender the bot issues nothing and asks to write to it in private messages. If a code cannot be created (Redis down) the bot asks to try later and logs the error. Any other `/start` argument, including `inv_<token>`, behaves as before.
 - Avatar updates when the user sends a message if they've changed their photo; the check runs at most once a day per Telegram user (Redis, in-memory without Redis). If Redis fails, the check is skipped for that message.
 - **Webhook** on API (`POST /telegram/webhook`) runs in one Render Web Service, no separate worker.
 - Library: `go-telegram-bot-api/v5` (see [architecture.md](../architecture.md)).

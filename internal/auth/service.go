@@ -23,6 +23,12 @@ type authStore interface {
 	RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
+	LinkTelegram(ctx context.Context, appUserID uuid.UUID, telegramUserID string) (uuid.UUID, error)
+}
+
+// linkCodeTaker redeems a one-time Telegram link code. Implemented by *LinkCodeStore.
+type linkCodeTaker interface {
+	Take(ctx context.Context, code string) (telegramUserID string, ok bool, err error)
 }
 
 type Service struct {
@@ -33,6 +39,7 @@ type Service struct {
 
 	googleVerifier IDTokenVerifier
 	appleVerifier  IDTokenVerifier
+	linkCodes      linkCodeTaker
 }
 
 type IssuedAuth struct {
@@ -54,6 +61,11 @@ func WithGoogleVerifier(v IDTokenVerifier) ServiceOption {
 // WithAppleVerifier enables SignInWithApple.
 func WithAppleVerifier(v IDTokenVerifier) ServiceOption {
 	return func(s *Service) { s.appleVerifier = v }
+}
+
+// WithLinkCodes enables LinkTelegram.
+func WithLinkCodes(c *LinkCodeStore) ServiceOption {
+	return func(s *Service) { s.linkCodes = c }
 }
 
 func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration, opts ...ServiceOption) *Service {
@@ -203,6 +215,36 @@ func (s *Service) signInWithProvider(ctx context.Context, provider string, verif
 		return out, fmt.Errorf("load profile: %w", err)
 	}
 	return s.issueSession(ctx, userID, profile.Email)
+}
+
+// LinkTelegram redeems a code the bot gave to a Telegram user and links that
+// Telegram to appUserID, merging into the Telegram account when one exists. The
+// session returned belongs to the account that remains. The code is spent even
+// when the link is then refused.
+func (s *Service) LinkTelegram(ctx context.Context, appUserID uuid.UUID, code string) (IssuedAuth, error) {
+	var out IssuedAuth
+	if strings.TrimSpace(code) == "" {
+		return out, ErrInvalidLinkCode
+	}
+	if s.linkCodes == nil {
+		return out, ErrLinkCodesUnavailable
+	}
+	telegramUserID, ok, err := s.linkCodes.Take(ctx, code)
+	if err != nil {
+		return out, fmt.Errorf("take link code: %w", err)
+	}
+	if !ok {
+		return out, ErrInvalidLinkCode
+	}
+	remainingID, err := s.store.LinkTelegram(ctx, appUserID, telegramUserID)
+	if err != nil {
+		return out, fmt.Errorf("link telegram: %w", err)
+	}
+	profile, err := s.store.UserProfile(ctx, remainingID)
+	if err != nil {
+		return out, fmt.Errorf("load profile: %w", err)
+	}
+	return s.issueSession(ctx, remainingID, profile.Email)
 }
 
 func (s *Service) issueSession(ctx context.Context, userID uuid.UUID, email string) (IssuedAuth, error) {

@@ -43,6 +43,9 @@ type Result struct {
 	Notifier *telegramnotify.Notifier
 	// TrainerClient is non-nil whenever the database-backed routes are mounted.
 	TrainerClient *trainerclient.Service
+	// LinkCodes is non-nil whenever the database-backed routes are mounted; the
+	// bot issues Telegram link codes into it and POST /auth/telegram/link redeems them.
+	LinkCodes *auth.LinkCodeStore
 }
 
 // Mount registers every HTTP route that is part of the OpenAPI contract. The
@@ -72,7 +75,8 @@ func Mount(e *echo.Echo, d Deps) Result {
 	subsSvc := subscription.NewService(pool)
 	subscription.NewHandlers(auth.JWTMiddleware(cfg.JWTSecret)).Mount(e)
 
-	var authOpts []auth.ServiceOption
+	res.LinkCodes = auth.NewLinkCodeStore(d.Redis)
+	authOpts := []auth.ServiceOption{auth.WithLinkCodes(res.LinkCodes)}
 	if len(cfg.GoogleClientIDs) > 0 {
 		authOpts = append(authOpts, auth.WithGoogleVerifier(auth.NewGoogleIDTokenVerifier(cfg.GoogleClientIDs)))
 	}
