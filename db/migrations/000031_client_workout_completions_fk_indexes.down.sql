@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS mentorix.client_workout_completions_program_assignment_id_idx;
+DROP INDEX IF EXISTS mentorix.client_workout_completions_program_version_id_idx;
+DROP INDEX IF EXISTS mentorix.client_workout_completions_program_id_idx;

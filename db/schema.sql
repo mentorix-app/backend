@@ -1212,3 +1212,33 @@ DROP INDEX IF EXISTS mentorix.auth_refresh_sessions_family_id_live_uniq;
 ALTER TABLE mentorix.auth_refresh_sessions
   DROP COLUMN IF EXISTS rotated_at,
   DROP COLUMN IF EXISTS family_id;
+
+-- >>> 000031_client_workout_completions_fk_indexes.up.sql
+-- Fail fast instead of queueing behind a long transaction and stalling every query after it.
+SET LOCAL lock_timeout = '3s';
+
+-- These foreign keys are ON DELETE SET NULL and had no index, so deleting an assignment
+-- or a version scanned the whole table.
+CREATE INDEX IF NOT EXISTS client_workout_completions_program_assignment_id_idx
+  ON mentorix.client_workout_completions (program_assignment_id);
+CREATE INDEX IF NOT EXISTS client_workout_completions_program_version_id_idx
+  ON mentorix.client_workout_completions (program_version_id);
+CREATE INDEX IF NOT EXISTS client_workout_completions_program_id_idx
+  ON mentorix.client_workout_completions (program_id);
+
+-- >>> 000032_drop_redundant_indexes.up.sql
+-- Fail fast instead of queueing behind a long transaction and stalling every query after it.
+SET LOCAL lock_timeout = '3s';
+
+-- Each index below is the leading column of a unique or primary-key index on the same
+-- table, so the unique index already serves its lookups and the extra one only slows writes.
+DROP INDEX IF EXISTS mentorix.program_week_days_program_id_idx;
+DROP INDEX IF EXISTS mentorix.program_week_days_week_id_idx;
+DROP INDEX IF EXISTS mentorix.program_weeks_program_id_idx;
+DROP INDEX IF EXISTS mentorix.program_versions_program_id_idx;
+DROP INDEX IF EXISTS mentorix.program_version_weeks_program_version_id_idx;
+DROP INDEX IF EXISTS mentorix.program_version_week_days_program_version_id_idx;
+DROP INDEX IF EXISTS mentorix.program_version_week_days_program_version_week_id_idx;
+DROP INDEX IF EXISTS mentorix.program_assignments_trainer_id_idx;
+DROP INDEX IF EXISTS mentorix.trainer_clients_trainer_id_idx;
+DROP INDEX IF EXISTS mentorix.client_workout_completions_completion_cycle_id_idx;
