@@ -294,6 +294,48 @@ JOIN mentorix.exercises e ON e.id = pde.exercise_id
 WHERE pde.program_week_day_block_id = $1
 ORDER BY pde.sort_order ASC, pde.created_at ASC;
 
+-- name: ListProgramDays :many
+-- Every day of the program, same columns and order as ListProgramDaysForWeek
+-- plus week_id to assign each day to its week.
+SELECT d.id, d.week_id, d.day_number, d.sort_order, d.created_at, d.day_key
+FROM mentorix.program_week_days d
+JOIN mentorix.program_weeks w ON w.id = d.week_id
+WHERE w.program_id = $1
+ORDER BY d.sort_order ASC, d.day_number ASC;
+
+-- name: ListProgramBlocks :many
+-- Every block of the program, same columns and order as ListDayBlocks plus
+-- program_week_day_id to assign each block to its day.
+SELECT b.id, b.program_week_day_id, b.block_key, b.block_type, b.instruction, b.sort_order, b.created_at
+FROM mentorix.program_week_day_blocks b
+JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+JOIN mentorix.program_weeks w ON w.id = d.week_id
+WHERE w.program_id = $1
+ORDER BY b.sort_order ASC, b.created_at ASC;
+
+-- name: ListProgramBlockExercises :many
+-- Every block exercise of the program, same columns and order as
+-- ListBlockExercises plus program_week_day_block_id to assign each exercise
+-- to its block.
+SELECT
+  pde.id,
+  pde.program_week_day_block_id,
+  pde.exercise_id,
+  e.name,
+  e.name_ru,
+  pde.sort_order,
+  pde.sets,
+  pde.reps,
+  pde.instruction,
+  pde.created_at
+FROM mentorix.program_week_day_block_exercises pde
+JOIN mentorix.exercises e ON e.id = pde.exercise_id
+JOIN mentorix.program_week_day_blocks b ON b.id = pde.program_week_day_block_id
+JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+JOIN mentorix.program_weeks w ON w.id = d.week_id
+WHERE w.program_id = $1
+ORDER BY pde.sort_order ASC, pde.created_at ASC;
+
 -- name: NextBlockExerciseSort :one
 SELECT COALESCE(MAX(sort_order), 0) + 1::int AS next_sort
 FROM mentorix.program_week_day_block_exercises

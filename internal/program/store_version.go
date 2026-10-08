@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
@@ -331,6 +332,14 @@ func (s *Store) enrichedDetail(ctx context.Context, id uuid.UUID) (Detail, error
 	return s.GetDetail(ctx, id)
 }
 
+// latestVersion is the part of the latest program_versions row the program
+// view derives its fields from.
+type latestVersion struct {
+	ID          uuid.UUID
+	PublishedAt time.Time
+	Fingerprint string
+}
+
 // enrichProgram takes the queries object explicitly for the same reason as
 // listProgramBlockClients: a caller inside a locked transaction passes qtx to
 // read a serialized view instead of reaching back into the pool.
@@ -345,15 +354,76 @@ func (s *Store) enrichProgram(ctx context.Context, q *sqlc.Queries, p Program, d
 		p.TrainingDaysCount = CountTrainingDays(detail.Weeks)
 	}
 
-	latest, err := q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(p.ID))
+	row, err := q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(p.ID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return p, nil
 		}
 		return Program{}, fmt.Errorf("latest program version: %w", err)
 	}
+	return s.applyLatestVersion(ctx, q, p, detail, latestVersion{
+		ID:          pgconv.FromPGUUID(row.ID),
+		PublishedAt: row.PublishedAt,
+		Fingerprint: row.ContentFingerprint,
+	})
+}
 
-	latestID := pgconv.FromPGUUID(latest.ID)
+// enrichProgramPage enriches a page of list rows with two set-based queries
+// (active assignment counts, latest versions) instead of two per program. A
+// published program still needs its tree to compare the content fingerprint,
+// which costs four queries each (see applyLatestVersion).
+func (s *Store) enrichProgramPage(ctx context.Context, q *sqlc.Queries, items []Program) ([]Program, error) {
+	if len(items) == 0 {
+		return items, nil
+	}
+	ids := make([]pgtype.UUID, 0, len(items))
+	for _, p := range items {
+		ids = append(ids, pgconv.ToPGUUID(p.ID))
+	}
+
+	countRows, err := q.CountActiveProgramAssignmentsByProgramIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("count assignments: %w", err)
+	}
+	counts := make(map[uuid.UUID]int, len(countRows))
+	for _, row := range countRows {
+		counts[pgconv.FromPGUUID(row.ProgramID)] = int(row.Total)
+	}
+
+	latestRows, err := q.ListLatestProgramVersionsByProgramIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("latest program versions: %w", err)
+	}
+	latest := make(map[uuid.UUID]latestVersion, len(latestRows))
+	for _, row := range latestRows {
+		latest[pgconv.FromPGUUID(row.ProgramID)] = latestVersion{
+			ID:          pgconv.FromPGUUID(row.ID),
+			PublishedAt: row.PublishedAt,
+			Fingerprint: row.ContentFingerprint,
+		}
+	}
+
+	out := make([]Program, 0, len(items))
+	for _, p := range items {
+		p.AssignmentCount = counts[p.ID]
+		if v, ok := latest[p.ID]; ok {
+			var err error
+			p, err = s.applyLatestVersion(ctx, q, p, nil, v)
+			if err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
+// applyLatestVersion sets the latest-version fields and, for a published
+// program, training_days_count and has_unpublished_changes. A nil detail means
+// the caller has no tree yet: only the weeks are loaded, because the
+// fingerprint and the day count read nothing else (not the block client rules).
+func (s *Store) applyLatestVersion(ctx context.Context, q *sqlc.Queries, p Program, detail *Detail, latest latestVersion) (Program, error) {
+	latestID := latest.ID
 	p.LatestProgramVersionID = &latestID
 	publishedAt := latest.PublishedAt.UTC()
 	p.LatestClientPlanAt = &publishedAt
@@ -361,10 +431,12 @@ func (s *Store) enrichProgram(ctx context.Context, q *sqlc.Queries, p Program, d
 	if p.Status == StatusPublished {
 		d := detail
 		if d == nil {
-			loaded, loadErr := s.loadDetail(ctx, q, p.ID)
-			if loadErr != nil {
-				return Program{}, loadErr
+			weeks, err := s.listWeeksWithDaysAndExercises(ctx, q, p.ID)
+			if err != nil {
+				return Program{}, err
 			}
+			loaded := Detail{Program: p, Weeks: weeks}
+			sortProgramDetail(&loaded)
 			d = &loaded
 		}
 		p.TrainingDaysCount = CountTrainingDays(d.Weeks)
@@ -372,7 +444,7 @@ func (s *Store) enrichProgram(ctx context.Context, q *sqlc.Queries, p Program, d
 		if err != nil {
 			return Program{}, err
 		}
-		p.HasUnpublishedChanges = fp != latest.ContentFingerprint
+		p.HasUnpublishedChanges = fp != latest.Fingerprint
 	}
 	return p, nil
 }

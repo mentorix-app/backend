@@ -813,6 +813,123 @@ func (q *Queries) ListExerciseItemsByWeek(ctx context.Context, weekID pgtype.UUI
 	return items, nil
 }
 
+const listProgramBlockExercises = `-- name: ListProgramBlockExercises :many
+SELECT
+  pde.id,
+  pde.program_week_day_block_id,
+  pde.exercise_id,
+  e.name,
+  e.name_ru,
+  pde.sort_order,
+  pde.sets,
+  pde.reps,
+  pde.instruction,
+  pde.created_at
+FROM mentorix.program_week_day_block_exercises pde
+JOIN mentorix.exercises e ON e.id = pde.exercise_id
+JOIN mentorix.program_week_day_blocks b ON b.id = pde.program_week_day_block_id
+JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+JOIN mentorix.program_weeks w ON w.id = d.week_id
+WHERE w.program_id = $1
+ORDER BY pde.sort_order ASC, pde.created_at ASC
+`
+
+type ListProgramBlockExercisesRow struct {
+	ID                    pgtype.UUID `json:"id"`
+	ProgramWeekDayBlockID pgtype.UUID `json:"program_week_day_block_id"`
+	ExerciseID            pgtype.UUID `json:"exercise_id"`
+	Name                  string      `json:"name"`
+	NameRu                string      `json:"name_ru"`
+	SortOrder             int32       `json:"sort_order"`
+	Sets                  *string     `json:"sets"`
+	Reps                  *string     `json:"reps"`
+	Instruction           string      `json:"instruction"`
+	CreatedAt             time.Time   `json:"created_at"`
+}
+
+// Every block exercise of the program, same columns and order as
+// ListBlockExercises plus program_week_day_block_id to assign each exercise
+// to its block.
+func (q *Queries) ListProgramBlockExercises(ctx context.Context, programID pgtype.UUID) ([]ListProgramBlockExercisesRow, error) {
+	rows, err := q.db.Query(ctx, listProgramBlockExercises, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProgramBlockExercisesRow{}
+	for rows.Next() {
+		var i ListProgramBlockExercisesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProgramWeekDayBlockID,
+			&i.ExerciseID,
+			&i.Name,
+			&i.NameRu,
+			&i.SortOrder,
+			&i.Sets,
+			&i.Reps,
+			&i.Instruction,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramBlocks = `-- name: ListProgramBlocks :many
+SELECT b.id, b.program_week_day_id, b.block_key, b.block_type, b.instruction, b.sort_order, b.created_at
+FROM mentorix.program_week_day_blocks b
+JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+JOIN mentorix.program_weeks w ON w.id = d.week_id
+WHERE w.program_id = $1
+ORDER BY b.sort_order ASC, b.created_at ASC
+`
+
+type ListProgramBlocksRow struct {
+	ID               pgtype.UUID `json:"id"`
+	ProgramWeekDayID pgtype.UUID `json:"program_week_day_id"`
+	BlockKey         pgtype.UUID `json:"block_key"`
+	BlockType        string      `json:"block_type"`
+	Instruction      string      `json:"instruction"`
+	SortOrder        int32       `json:"sort_order"`
+	CreatedAt        time.Time   `json:"created_at"`
+}
+
+// Every block of the program, same columns and order as ListDayBlocks plus
+// program_week_day_id to assign each block to its day.
+func (q *Queries) ListProgramBlocks(ctx context.Context, programID pgtype.UUID) ([]ListProgramBlocksRow, error) {
+	rows, err := q.db.Query(ctx, listProgramBlocks, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProgramBlocksRow{}
+	for rows.Next() {
+		var i ListProgramBlocksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProgramWeekDayID,
+			&i.BlockKey,
+			&i.BlockType,
+			&i.Instruction,
+			&i.SortOrder,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProgramDayIDsForWeek = `-- name: ListProgramDayIDsForWeek :many
 SELECT id
 FROM mentorix.program_week_days
@@ -833,6 +950,52 @@ func (q *Queries) ListProgramDayIDsForWeek(ctx context.Context, weekID pgtype.UU
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProgramDays = `-- name: ListProgramDays :many
+SELECT d.id, d.week_id, d.day_number, d.sort_order, d.created_at, d.day_key
+FROM mentorix.program_week_days d
+JOIN mentorix.program_weeks w ON w.id = d.week_id
+WHERE w.program_id = $1
+ORDER BY d.sort_order ASC, d.day_number ASC
+`
+
+type ListProgramDaysRow struct {
+	ID        pgtype.UUID `json:"id"`
+	WeekID    pgtype.UUID `json:"week_id"`
+	DayNumber int32       `json:"day_number"`
+	SortOrder int32       `json:"sort_order"`
+	CreatedAt time.Time   `json:"created_at"`
+	DayKey    pgtype.UUID `json:"day_key"`
+}
+
+// Every day of the program, same columns and order as ListProgramDaysForWeek
+// plus week_id to assign each day to its week.
+func (q *Queries) ListProgramDays(ctx context.Context, programID pgtype.UUID) ([]ListProgramDaysRow, error) {
+	rows, err := q.db.Query(ctx, listProgramDays, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProgramDaysRow{}
+	for rows.Next() {
+		var i ListProgramDaysRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WeekID,
+			&i.DayNumber,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.DayKey,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

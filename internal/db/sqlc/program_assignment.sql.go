@@ -26,6 +26,41 @@ func (q *Queries) CountActiveProgramAssignmentsByProgramID(ctx context.Context, 
 	return total, err
 }
 
+const countActiveProgramAssignmentsByProgramIDs = `-- name: CountActiveProgramAssignmentsByProgramIDs :many
+SELECT program_id, COUNT(*)::int AS total
+FROM mentorix.program_assignments
+WHERE program_id = ANY($1::uuid[])
+  AND status = 'active'
+GROUP BY program_id
+`
+
+type CountActiveProgramAssignmentsByProgramIDsRow struct {
+	ProgramID pgtype.UUID `json:"program_id"`
+	Total     int32       `json:"total"`
+}
+
+// Active assignment counts for a page of programs; a program without active
+// assignments has no row.
+func (q *Queries) CountActiveProgramAssignmentsByProgramIDs(ctx context.Context, programIds []pgtype.UUID) ([]CountActiveProgramAssignmentsByProgramIDsRow, error) {
+	rows, err := q.db.Query(ctx, countActiveProgramAssignmentsByProgramIDs, programIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountActiveProgramAssignmentsByProgramIDsRow{}
+	for rows.Next() {
+		var i CountActiveProgramAssignmentsByProgramIDsRow
+		if err := rows.Scan(&i.ProgramID, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countActiveProgramAssignmentsByVersionID = `-- name: CountActiveProgramAssignmentsByVersionID :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.program_assignments
@@ -266,6 +301,64 @@ func (q *Queries) ListActiveProgramAssignmentsByProgramID(ctx context.Context, p
 			&i.CreatedBy,
 			&i.ModifiedBy,
 			&i.CompletionCycleID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveProgramAssignmentsWithVersion = `-- name: ListActiveProgramAssignmentsWithVersion :many
+SELECT
+  pa.id, pa.program_id, pa.program_version_id, pa.trainer_id, pa.client_user_id,
+  pa.status, pa.assigned_at, pa.created_at, pa.completion_cycle_id,
+  pv.published_at AS version_published_at
+FROM mentorix.program_assignments pa
+JOIN mentorix.program_versions pv ON pv.id = pa.program_version_id
+WHERE pa.program_id = $1
+  AND pa.status = 'active'
+ORDER BY pa.assigned_at DESC
+`
+
+type ListActiveProgramAssignmentsWithVersionRow struct {
+	ID                 pgtype.UUID `json:"id"`
+	ProgramID          pgtype.UUID `json:"program_id"`
+	ProgramVersionID   pgtype.UUID `json:"program_version_id"`
+	TrainerID          pgtype.UUID `json:"trainer_id"`
+	ClientUserID       pgtype.UUID `json:"client_user_id"`
+	Status             string      `json:"status"`
+	AssignedAt         time.Time   `json:"assigned_at"`
+	CreatedAt          time.Time   `json:"created_at"`
+	CompletionCycleID  pgtype.UUID `json:"completion_cycle_id"`
+	VersionPublishedAt time.Time   `json:"version_published_at"`
+}
+
+// Same rows and order as ListActiveProgramAssignmentsByProgramID, with the
+// published_at of the version each assignment is on.
+func (q *Queries) ListActiveProgramAssignmentsWithVersion(ctx context.Context, programID pgtype.UUID) ([]ListActiveProgramAssignmentsWithVersionRow, error) {
+	rows, err := q.db.Query(ctx, listActiveProgramAssignmentsWithVersion, programID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveProgramAssignmentsWithVersionRow{}
+	for rows.Next() {
+		var i ListActiveProgramAssignmentsWithVersionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProgramID,
+			&i.ProgramVersionID,
+			&i.TrainerID,
+			&i.ClientUserID,
+			&i.Status,
+			&i.AssignedAt,
+			&i.CreatedAt,
+			&i.CompletionCycleID,
+			&i.VersionPublishedAt,
 		); err != nil {
 			return nil, err
 		}

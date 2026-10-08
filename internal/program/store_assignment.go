@@ -284,7 +284,7 @@ func (s *Store) assignmentFromDBWithVersion(ctx context.Context, row sqlc.Mentor
 }
 
 func (s *Store) ListProgramAssignments(ctx context.Context, programID uuid.UUID) (AssignmentListResult, error) {
-	rows, err := s.q.ListActiveProgramAssignmentsByProgramID(ctx, pgconv.ToPGUUID(programID))
+	rows, err := s.q.ListActiveProgramAssignmentsWithVersion(ctx, pgconv.ToPGUUID(programID))
 	if err != nil {
 		return AssignmentListResult{}, fmt.Errorf("list active assignments: %w", err)
 	}
@@ -300,11 +300,24 @@ func (s *Store) ListProgramAssignments(ctx context.Context, programID uuid.UUID)
 
 	items := make([]Assignment, 0, len(rows))
 	for _, row := range rows {
-		a, err := s.assignmentFromDB(ctx, row)
-		if err != nil {
-			return AssignmentListResult{}, err
+		a := Assignment{
+			ID:                pgconv.FromPGUUID(row.ID),
+			ProgramID:         pgconv.FromPGUUID(row.ProgramID),
+			ProgramVersionID:  pgconv.FromPGUUID(row.ProgramVersionID),
+			TrainerID:         pgconv.FromPGUUID(row.TrainerID),
+			ClientUserID:      pgconv.FromPGUUID(row.ClientUserID),
+			Status:            AssignmentStatus(row.Status),
+			AssignedAt:        row.AssignedAt.UTC(),
+			CreatedAt:         row.CreatedAt.UTC(),
+			CompletionCycleID: pgconv.FromPGUUID(row.CompletionCycleID),
 		}
-		items = append(items, *a)
+		publishedAt := row.VersionPublishedAt.UTC()
+		a.ClientPlanAt = &publishedAt
+		if latestID != nil {
+			behind := *latestID != a.ProgramVersionID
+			a.IsBehindLatest = &behind
+		}
+		items = append(items, a)
 	}
 	return AssignmentListResult{Items: items, LatestProgramVersionID: latestID}, nil
 }
