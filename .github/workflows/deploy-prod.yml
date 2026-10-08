@@ -16,28 +16,36 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: production
     steps:
       - name: Trigger Render deploy hook
         env:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_PROD }}
+          DEPLOY_SHA: ${{ github.sha }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK" ]; then
             echo "Missing secret RENDER_DEPLOY_HOOK_PROD in GitHub Environment 'production'" >&2
             echo "Prod is not wired yet — see docs/environments.md" >&2
             exit 1
           fi
-          curl -fsS -X POST "$RENDER_DEPLOY_HOOK"
+          case "$RENDER_DEPLOY_HOOK" in
+            *\?*) hook_url="${RENDER_DEPLOY_HOOK}&ref=${DEPLOY_SHA}" ;;
+            *) hook_url="${RENDER_DEPLOY_HOOK}?ref=${DEPLOY_SHA}" ;;
+          esac
+          curl -fsS -X POST "$hook_url"
 
   smoke:
     needs: deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Post-deploy health
         env:
           SMOKE_BASE_URL: https://mentorix-api.onrender.com
           SMOKE_REQUIRE: "1"
           SMOKE_WAIT_SECONDS: "600"
+          SMOKE_EXPECT_COMMIT: ${{ github.sha }}
         run: bash scripts/smoke.sh

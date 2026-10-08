@@ -267,6 +267,32 @@ func TestLoad_clientAnalyticsPageURL_optional(t *testing.T) {
 	}
 }
 
+func TestLoad_gitCommit(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("RENDER_GIT_COMMIT", " 0123abcd ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.GitCommit != "0123abcd" {
+		t.Errorf("GitCommit = %q, want 0123abcd", cfg.GitCommit)
+	}
+}
+
+func TestLoad_gitCommit_optional(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("RENDER_GIT_COMMIT", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.GitCommit != "" {
+		t.Errorf("GitCommit = %q, want empty", cfg.GitCommit)
+	}
+}
+
 func TestLoad_clientAnalyticsPageURL_invalid(t *testing.T) {
 	for _, raw := range []string{
 		"app.example.com/stats",             // no scheme

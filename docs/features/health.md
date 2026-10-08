@@ -17,7 +17,7 @@ Contract: `api/openapi.yaml` (paths `/health`, `/health/ready`).
 
 Rules that are not obvious:
 
-- `/health` — always ok; `/health/ready` — database/redis `ok` or `skipped` if URL empty.
+- `/health` — always ok; adds `commit` (from `RENDER_GIT_COMMIT`) only when set; `/health/ready` — database/redis `ok` or `skipped` if URL empty.
 
 ## See also
 

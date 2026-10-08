@@ -23,9 +23,7 @@ type schemaBinding struct {
 
 func schemaBindings() []schemaBinding {
 	return []schemaBinding{
-		{name: "HealthStatus", typ: reflect.TypeOf(struct {
-			Status string `json:"status"`
-		}{})},
+		{name: "HealthStatus", typ: reflect.TypeOf(health.LivenessResponse{})},
 		{name: "ReadyResponse", typ: reflect.TypeOf(health.ReadyResponse{})},
 		{name: "AuthCredentials", typ: reflect.TypeOf(auth.AuthCredentials{})},
 		{name: "RegisterRequest", typ: reflect.TypeOf(auth.RegisterRequest{})},

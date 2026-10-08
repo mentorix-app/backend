@@ -15,7 +15,7 @@ import (
 
 func TestRegisterLiveness(t *testing.T) {
 	e := echo.New()
-	RegisterLiveness(e)
+	RegisterLiveness(e, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -30,6 +30,47 @@ func TestRegisterLiveness(t *testing.T) {
 	}
 	if body["status"] != StatusOK {
 		t.Fatalf("status = %q, want %q", body["status"], StatusOK)
+	}
+	if _, ok := body["commit"]; ok {
+		t.Fatalf("commit key present without a commit: %s", rec.Body.String())
+	}
+}
+
+func TestRegisterLiveness_commit(t *testing.T) {
+	e := echo.New()
+	RegisterLiveness(e, "0123abcd")
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if body["status"] != StatusOK || body["commit"] != "0123abcd" {
+		t.Fatalf("body = %v, want status ok and commit 0123abcd", body)
+	}
+}
+
+func TestRegisterReady_omitsCommit(t *testing.T) {
+	e := echo.New()
+	RegisterLiveness(e, "0123abcd")
+	RegisterReady(e, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := body["commit"]; ok {
+		t.Fatalf("/health/ready must not expose commit: %s", rec.Body.String())
 	}
 }
 

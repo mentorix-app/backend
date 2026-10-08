@@ -2132,6 +2132,10 @@ components:
         status:
           type: string
           example: ok
+        commit:
+          type: string
+          description: Git commit the running binary was deployed from. Omitted when the deploy platform does not provide it (for example local runs). Not returned by /health/ready.
+          example: 0123abcd4567ef890123abcd4567ef890123abcd
 
     ReadyResponse:
       type: object
