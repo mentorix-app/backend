@@ -252,7 +252,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 		t.Fatalf("sets = %q, want %q", updatedSets, newSets)
 	}
 
-	withoutExercise, err := progStore.DeleteBlockExercise(ctx, draft.ID, weekID, blockID, itemID)
+	withoutExercise, err := progStore.DeleteBlockExercise(ctx, trainerID, draft.ID, weekID, blockID, itemID)
 	if err != nil {
 		t.Fatalf("DeleteBlockExercise: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 	}
 
 	week1ID := draft.Weeks[0].ID
-	withWeek2, err := progStore.AddWeek(ctx, draft.ID)
+	withWeek2, err := progStore.AddWeek(ctx, trainerID, draft.ID)
 	if err != nil {
 		t.Fatalf("AddWeek: %v", err)
 	}
@@ -623,7 +623,7 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 		}
 	}
 
-	_, err = progStore.DeleteDayBlock(ctx, draft.ID, week2ID, remainingGroup.ID)
+	_, err = progStore.DeleteDayBlock(ctx, trainerID, draft.ID, week2ID, remainingGroup.ID)
 	if err != nil {
 		t.Fatalf("DeleteDayBlock: %v", err)
 	}
@@ -902,7 +902,7 @@ func TestProgramStore_blockValidationErrors(t *testing.T) {
 		t.Fatalf("MergeDayBlocks one block error = %v, want ErrValidation", err)
 	}
 
-	_, err = progStore.DeleteDayBlock(ctx, draft.ID, weekID, block.ID)
+	_, err = progStore.DeleteDayBlock(ctx, trainerID, draft.ID, weekID, block.ID)
 	if !errors.Is(err, program.ErrValidation) {
 		t.Fatalf("DeleteDayBlock single error = %v, want ErrValidation", err)
 	}
@@ -978,7 +978,7 @@ func TestProgramStore_blockNotFound(t *testing.T) {
 	if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("MoveExerciseToBlock: %v", err)
 	}
-	_, err = progStore.DeleteDayBlock(ctx, draft.ID, weekID, unknownBlock)
+	_, err = progStore.DeleteDayBlock(ctx, trainerID, draft.ID, weekID, unknownBlock)
 	if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("DeleteDayBlock: %v", err)
 	}
@@ -1111,12 +1111,12 @@ func TestProgramStore_groupBlockExerciseCRUD(t *testing.T) {
 		t.Fatalf("UpdateBlockExercise unknown item: %v, want ErrNoRows", err)
 	}
 
-	_, err = progStore.DeleteBlockExercise(ctx, draft.ID, weekID, groupBlock.ID, uuid.New())
+	_, err = progStore.DeleteBlockExercise(ctx, trainerID, draft.ID, weekID, groupBlock.ID, uuid.New())
 	if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("DeleteBlockExercise unknown item: %v, want ErrNoRows", err)
 	}
 
-	afterDelete, err := progStore.DeleteBlockExercise(ctx, draft.ID, weekID, groupBlock.ID, itemID)
+	afterDelete, err := progStore.DeleteBlockExercise(ctx, trainerID, draft.ID, weekID, groupBlock.ID, itemID)
 	if err != nil {
 		t.Fatalf("DeleteBlockExercise: %v", err)
 	}
@@ -1135,7 +1135,7 @@ func TestProgramStore_groupBlockExerciseCRUD(t *testing.T) {
 		t.Fatalf("exercises left = %d, want %d", exercisesLeft, len(groupAfter.Exercises)-1)
 	}
 
-	_, err = progStore.DeleteBlockExercise(ctx, draft.ID, weekID, uuid.New(), itemID)
+	_, err = progStore.DeleteBlockExercise(ctx, trainerID, draft.ID, weekID, uuid.New(), itemID)
 	if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("DeleteBlockExercise unknown block: %v, want ErrNoRows", err)
 	}

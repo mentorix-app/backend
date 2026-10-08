@@ -467,7 +467,7 @@ func (s *Store) DeleteWithAssignments(ctx context.Context, id, userID uuid.UUID)
 	return nil
 }
 
-func (s *Store) AddWeek(ctx context.Context, programID uuid.UUID) (Detail, error) {
+func (s *Store) AddWeek(ctx context.Context, userID, programID uuid.UUID) (Detail, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Detail{}, fmt.Errorf("begin tx: %w", err)
@@ -490,7 +490,7 @@ func (s *Store) AddWeek(ctx context.Context, programID uuid.UUID) (Detail, error
 		WeekNumber: nums.NextWeekNumber,
 		SortOrder:  nums.NextSortOrder,
 		ModifiedAt: now,
-		ModifiedBy: pgtype.UUID{},
+		ModifiedBy: pgconv.ToPGUUID(userID),
 	})
 	if err != nil {
 		return Detail{}, fmt.Errorf("insert program week: %w", err)
@@ -789,7 +789,7 @@ func (s *Store) UpdateBlockExercise(ctx context.Context, userID, programID, week
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) DeleteBlockExercise(ctx context.Context, programID, weekID, blockID, itemID uuid.UUID) (Detail, error) {
+func (s *Store) DeleteBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID) (Detail, error) {
 	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
 	if err != nil {
 		return Detail{}, err
@@ -844,10 +844,10 @@ func (s *Store) DeleteBlockExercise(ctx context.Context, programID, weekID, bloc
 		}); err != nil {
 			return Detail{}, fmt.Errorf("delete empty single block: %w", err)
 		}
-		if err := normalizeDayBlockSort(ctx, qtx, dayID); err != nil {
+		if err := normalizeDayBlockSort(ctx, qtx, dayID, userID); err != nil {
 			return Detail{}, err
 		}
-	} else if err := normalizeBlockExerciseSort(ctx, qtx, blockID); err != nil {
+	} else if err := normalizeBlockExerciseSort(ctx, qtx, blockID, userID); err != nil {
 		return Detail{}, err
 	}
 

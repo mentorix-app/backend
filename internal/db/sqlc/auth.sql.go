@@ -273,7 +273,7 @@ func (q *Queries) RevokeAllUserRefreshSessions(ctx context.Context, userID pgtyp
 const revokeRefreshSessionByHash = `-- name: RevokeRefreshSessionByHash :exec
 UPDATE mentorix.auth_refresh_sessions
 SET revoked_at = now()
-WHERE token_hash = $1
+WHERE token_hash = $1 AND revoked_at IS NULL
 `
 
 func (q *Queries) RevokeRefreshSessionByHash(ctx context.Context, tokenHash []byte) error {

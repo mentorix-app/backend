@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
@@ -58,7 +57,7 @@ func (s *Store) AddBlockExercise(ctx context.Context, userID, programID, weekID,
 	if err := qtx.InsertBlockExercise(ctx, blockExerciseInsertParams(blockPG, nextSort, userID, in)); err != nil {
 		return Detail{}, fmt.Errorf("insert block exercise: %w", err)
 	}
-	if err := normalizeBlockExerciseSort(ctx, qtx, blockID); err != nil {
+	if err := normalizeBlockExerciseSort(ctx, qtx, blockID, userID); err != nil {
 		return Detail{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -176,7 +175,7 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 				ProgramWeekDayBlockID: pgconv.ToPGUUID(primary.ID),
 				SortOrder:             sortOrder,
 				ModifiedAt:            time.Now().UTC(),
-				ModifiedBy:            pgtype.UUID{},
+				ModifiedBy:            pgconv.ToPGUUID(userID),
 			}); err != nil {
 				return Detail{}, fmt.Errorf("move exercise to merged block: %w", err)
 			}
@@ -193,10 +192,10 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 		}
 	}
 
-	if err := normalizeDayBlockSort(ctx, qtx, dayID); err != nil {
+	if err := normalizeDayBlockSort(ctx, qtx, dayID, userID); err != nil {
 		return Detail{}, err
 	}
-	if err := normalizeBlockExerciseSort(ctx, qtx, primary.ID); err != nil {
+	if err := normalizeBlockExerciseSort(ctx, qtx, primary.ID, userID); err != nil {
 		return Detail{}, err
 	}
 
@@ -285,7 +284,7 @@ func (s *Store) UngroupDayBlock(ctx context.Context, userID, programID, weekID, 
 			ProgramWeekDayBlockID: newBlockRow.ID,
 			SortOrder:             1,
 			ModifiedAt:            time.Now().UTC(),
-			ModifiedBy:            pgtype.UUID{},
+			ModifiedBy:            pgconv.ToPGUUID(userID),
 		}); err != nil {
 			return Detail{}, fmt.Errorf("move exercise to single block: %w", err)
 		}
@@ -465,7 +464,7 @@ func (s *Store) ExtractBlockExercise(ctx context.Context, userID, programID, wee
 	if err := insertBlockIntoDayOrder(ctx, qtx, dayID, pgconv.FromPGUUID(newBlockRow.ID), insertSort, userID); err != nil {
 		return Detail{}, err
 	}
-	if err := normalizeBlockExerciseSort(ctx, qtx, pgconv.FromPGUUID(meta.ProgramWeekDayBlockID)); err != nil {
+	if err := normalizeBlockExerciseSort(ctx, qtx, pgconv.FromPGUUID(meta.ProgramWeekDayBlockID), userID); err != nil {
 		return Detail{}, err
 	}
 
@@ -556,10 +555,10 @@ func (s *Store) MoveExerciseToBlock(ctx context.Context, userID, programID, week
 		}); err != nil {
 			return Detail{}, fmt.Errorf("delete empty single block: %w", err)
 		}
-	} else if err := normalizeBlockExerciseSort(ctx, qtx, sourceBlockID); err != nil {
+	} else if err := normalizeBlockExerciseSort(ctx, qtx, sourceBlockID, userID); err != nil {
 		return Detail{}, err
 	}
-	if err := normalizeBlockExerciseSort(ctx, qtx, targetBlockID); err != nil {
+	if err := normalizeBlockExerciseSort(ctx, qtx, targetBlockID, userID); err != nil {
 		return Detail{}, err
 	}
 
@@ -569,7 +568,7 @@ func (s *Store) MoveExerciseToBlock(ctx context.Context, userID, programID, week
 	return s.GetDetail(ctx, programID)
 }
 
-func (s *Store) DeleteDayBlock(ctx context.Context, programID, weekID, blockID uuid.UUID) (Detail, error) {
+func (s *Store) DeleteDayBlock(ctx context.Context, userID, programID, weekID, blockID uuid.UUID) (Detail, error) {
 	ok, err := s.blockBelongsToWeek(ctx, programID, weekID, blockID)
 	if err != nil {
 		return Detail{}, err
@@ -610,7 +609,7 @@ func (s *Store) DeleteDayBlock(ctx context.Context, programID, weekID, blockID u
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
 	}
-	if err := normalizeDayBlockSort(ctx, qtx, dayID); err != nil {
+	if err := normalizeDayBlockSort(ctx, qtx, dayID, userID); err != nil {
 		return Detail{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

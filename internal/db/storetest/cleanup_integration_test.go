@@ -93,7 +93,7 @@ func TestCleanup_preservesRuleStillLiveInAssignedVersion(t *testing.T) {
 	// block_key now lives only inside the frozen version the client was
 	// assigned to at publish time (seedDayWithBlocks publishes exactly once).
 	itemID := blocks[1].Exercises[0].ID
-	if _, err := store.DeleteBlockExercise(ctx, programID, weekID, blocks[1].ID, itemID); err != nil {
+	if _, err := store.DeleteBlockExercise(ctx, trainerUserID, programID, weekID, blocks[1].ID, itemID); err != nil {
 		t.Fatalf("DeleteBlockExercise: %v", err)
 	}
 

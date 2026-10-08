@@ -300,7 +300,7 @@ func TestProgramStore_DeleteWeek_concurrentKeepsOneWeek(t *testing.T) {
 
 	const rounds = 25
 	for round := 0; round < rounds; round++ {
-		detail, err := store.AddWeek(ctx, draft.ID)
+		detail, err := store.AddWeek(ctx, userID, draft.ID)
 		if err != nil {
 			t.Fatalf("round %d: AddWeek: %v", round, err)
 		}
@@ -634,7 +634,7 @@ func TestProgramStore_ReorderAndDelete_concurrentStaysConsistent(t *testing.T) {
 			t.Fatalf("CreateDraft: %v", err)
 		}
 		for i := 0; i < 3; i++ {
-			if _, err := store.AddWeek(ctx, draft.ID); err != nil {
+			if _, err := store.AddWeek(ctx, userID, draft.ID); err != nil {
 				t.Fatalf("AddWeek: %v", err)
 			}
 		}
@@ -658,7 +658,7 @@ func TestProgramStore_ReorderAndDelete_concurrentStaysConsistent(t *testing.T) {
 			}
 			requireGapless(t, round, "weeks", sortOrders(t, pool,
 				`SELECT sort_order FROM mentorix.program_weeks WHERE program_id = $1 ORDER BY sort_order`, draft.ID))
-			if _, err := store.AddWeek(ctx, draft.ID); err != nil {
+			if _, err := store.AddWeek(ctx, userID, draft.ID); err != nil {
 				t.Fatalf("round %d: AddWeek: %v", round, err)
 			}
 		}

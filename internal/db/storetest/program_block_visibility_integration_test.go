@@ -1196,7 +1196,7 @@ func TestSetBlockClients_refusesLastSharedBlockInLatestUnassignedVersion(t *test
 	if len(blockB.Exercises) == 0 {
 		t.Fatal("block B has no exercises to delete")
 	}
-	afterDelete, err := store.DeleteBlockExercise(ctx, programID, week.ID, blockB.ID, blockB.Exercises[0].ID)
+	afterDelete, err := store.DeleteBlockExercise(ctx, userID, programID, week.ID, blockB.ID, blockB.Exercises[0].ID)
 	if err != nil {
 		t.Fatalf("DeleteBlockExercise: %v", err)
 	}
