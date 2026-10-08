@@ -744,7 +744,7 @@ func mapProgramError(err error) *echo.HTTPError {
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
 	case errors.Is(err, ErrNoUnpublishedChanges), errors.Is(err, ErrInvalidSyncRequest):
 		return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
-	case errors.Is(err, ErrVersionHasAssignments), errors.Is(err, ErrSoleProgramVersion):
+	case errors.Is(err, ErrVersionHasAssignments), errors.Is(err, ErrSoleProgramVersion), errors.Is(err, ErrLatestProgramVersion):
 		return echo.NewHTTPError(http.StatusConflict, err.Error())
 	case errors.Is(err, ErrLastWeek), errors.Is(err, ErrLastDay), errors.Is(err, ErrMaxDaysPerWeek):
 		return echo.NewHTTPError(http.StatusConflict, err.Error())

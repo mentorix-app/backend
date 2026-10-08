@@ -59,7 +59,7 @@ func (s *Store) SetBlockClients(ctx context.Context, userID, programID, weekID, 
 	// is granted would already see everything a competing transaction
 	// committed before releasing the lock, so a second connection would still
 	// be correct, but every concurrent PUT on this program would then hold two
-	// connections at once (one blocked on FOR UPDATE, one for the read) for as
+	// connections at once (one blocked on the program lock, one for the read) for as
 	// long as it holds the lock. With MaxConns capped at max(4, NumCPU), a
 	// handful of concurrent requests on the same program exhausts the pool and
 	// everything stalls on a fifth connection that never comes, while the

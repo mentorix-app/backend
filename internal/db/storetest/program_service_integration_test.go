@@ -1187,11 +1187,14 @@ func TestProgramService_CleanupVersions_skipsAssignedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CleanupVersions: %v", err)
 	}
-	if len(cleanup.DeletedVersionIDs) != 1 || cleanup.DeletedVersionIDs[0] != v2ID {
-		t.Fatalf("deleted versions = %v, want [%v]", cleanup.DeletedVersionIDs, v2ID)
+	// v2 is the latest version: new assignments and sync land on it, so cleanup keeps it.
+	if len(cleanup.DeletedVersionIDs) != 0 {
+		t.Fatalf("deleted versions = %v, want none", cleanup.DeletedVersionIDs)
 	}
-	if len(cleanup.Skipped) != 1 || cleanup.Skipped[0].VersionID != v1ID || cleanup.Skipped[0].Reason != "has_assignments" {
-		t.Fatalf("skipped = %+v, want v1 has_assignments", cleanup.Skipped)
+	if len(cleanup.Skipped) != 2 ||
+		cleanup.Skipped[0].VersionID != v2ID || cleanup.Skipped[0].Reason != "latest_version" ||
+		cleanup.Skipped[1].VersionID != v1ID || cleanup.Skipped[1].Reason != "has_assignments" {
+		t.Fatalf("skipped = %+v, want v2 latest_version then v1 has_assignments", cleanup.Skipped)
 	}
 }
 

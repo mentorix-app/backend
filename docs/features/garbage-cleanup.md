@@ -16,9 +16,9 @@ Auto-delete data that stops being needed after operations or by TTL.
 
 ## Program versions
 
-After `assign`/`reassign`/`clear`/`sync` — best-effort `CleanupProgramVersions` for affected programs (delete versions with no active assignments, except one).
+After `assign`/`reassign`/`clear`/`sync` — best-effort `CleanupProgramVersions` for affected programs: delete versions with no active assignments, except the latest version (highest `version_number`; skipped with reason `latest_version`) — new assignments and sync land on it. `DELETE /programs/{id}/versions/{version_id}` refuses the latest version too (`409`), and `can_delete` is `false` for it.
 
-On `DELETE /programs/{id}` — first `DELETE` program assignments, cleanup versions, then soft delete.
+On `DELETE /programs/{id}` — one transaction (program row locked) deletes the program assignments and soft-deletes the program; after the commit, version cleanup runs best effort (an error there does not fail the request). The latest version stays.
 
 ## Block visibility rules (`program_block_clients`)
 

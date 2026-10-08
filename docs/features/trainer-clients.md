@@ -25,7 +25,7 @@ Non-obvious rules:
 
 - One active `program_assignments` row per `(trainer_id, client_user_id)` pair in the database. Reassigning updates it (new `completion_cycle_id` if `program_id` changes); clearing deletes it.
 - Plan quota on active clients limits assignment and reassignment (returns `409 quota_exceeded` when exceeded); clearing is always allowed. See [subscriptions.md](subscriptions.md).
-- Repeating a `PUT` with the same `program_id` returns `already_assigned` with no database update.
+- Repeating a `PUT` with the same `program_id` returns `already_assigned` with no database update. Assignment changes of one trainer run one at a time (trainer row lock), so two concurrent first assigns of the same client give one success and one `already_assigned`.
 - The version assigned is always the latest frozen version. Clearing uses `program_id: null` in the `PUT`.
 - Assignment endpoint: `PUT /trainer/clients/program-assignment` takes `client_user_ids` (1–100) and `program_id`; response lists `assigned`, `cleared`, and `skipped` (same as sync). A single client is sent as an array with one id.
 - Each `program_assignment` in the list includes `assignment_id`, `program_id`, `program_version_id`, `assigned_at`, `program_name`, `program_name_ru` (from frozen version), and `is_behind_latest` (can sync if `true`; `assignment_id` goes in the sync request body).

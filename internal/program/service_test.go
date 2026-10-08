@@ -2,6 +2,7 @@ package program
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -125,11 +126,7 @@ func (f *fakeProgramStore) RestoreWorkingTreeFromLatestVersion(_ context.Context
 	return out, nil
 }
 
-func (f *fakeProgramStore) SoftDelete(context.Context, uuid.UUID, uuid.UUID) error {
-	return f.err
-}
-
-func (f *fakeProgramStore) DeleteProgramAssignments(context.Context, uuid.UUID) error {
+func (f *fakeProgramStore) DeleteWithAssignments(context.Context, uuid.UUID, uuid.UUID) error {
 	return f.err
 }
 
@@ -394,4 +391,49 @@ func TestService_GetAssignmentByTrainerID(t *testing.T) {
 	if err != nil || got != assign {
 		t.Fatalf("GetAssignmentByTrainerID() = %+v, %v", got, err)
 	}
+}
+
+type deleteCountingStore struct {
+	fakeProgramStore
+	deleteCalls  int
+	cleanupCalls int
+}
+
+func (s *deleteCountingStore) DeleteWithAssignments(context.Context, uuid.UUID, uuid.UUID) error {
+	s.deleteCalls++
+	return s.err
+}
+
+func (s *deleteCountingStore) CleanupProgramVersions(context.Context, uuid.UUID) (VersionCleanupResult, error) {
+	s.cleanupCalls++
+	return VersionCleanupResult{}, nil
+}
+
+func TestService_Delete_isOneStoreCall(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	published := Program{ID: programID, CreatedBy: userID, Status: StatusPublished}
+
+	t.Run("failure is returned and nothing else runs", func(t *testing.T) {
+		want := errors.New("tx failed")
+		store := &deleteCountingStore{fakeProgramStore: fakeProgramStore{program: published, err: want}}
+
+		err := testService(store, nil).Delete(context.Background(), userID, programID)
+		if !errors.Is(err, want) {
+			t.Fatalf("Delete() error = %v, want %v", err, want)
+		}
+		if store.deleteCalls != 1 || store.cleanupCalls != 0 {
+			t.Fatalf("calls: delete=%d cleanup=%d, want 1 and 0", store.deleteCalls, store.cleanupCalls)
+		}
+	})
+
+	t.Run("success is one call and no separate cleanup", func(t *testing.T) {
+		store := &deleteCountingStore{fakeProgramStore: fakeProgramStore{program: published}}
+		if err := testService(store, nil).Delete(context.Background(), userID, programID); err != nil {
+			t.Fatalf("Delete() error = %v", err)
+		}
+		if store.deleteCalls != 1 || store.cleanupCalls != 0 {
+			t.Fatalf("calls: delete=%d cleanup=%d, want 1 and 0", store.deleteCalls, store.cleanupCalls)
+		}
+	})
 }

@@ -27,6 +27,8 @@ Rules that are not obvious:
 - Published: in-place edit + `has_unpublished_changes`; publish-update → new version; discard-unpublished → revert working copy to latest version (clients and frozen versions unchanged; `day_key` preserved, week/day/block ids new).
 - Trainer sees their own; admin sees all, **read-only**: any mutation by non-owner → `403`.
 - Plan quota on active programs (draft+published): create draft and re-publish from archive → `409 quota_exceeded` if limit filled; mutations of existing blocked on exceeded (read-only after downgrade); archive/delete always allowed. See [subscriptions.md](subscriptions.md).
+- Structure edits that count first (add/delete week, add/delete day) and publish run under the program row lock: concurrent requests cannot remove the last week or day, exceed 7 days, or duplicate numbers. A second concurrent publish answers like a sequential repeat (`409` invalid status transition for a draft, `422` no unpublished changes for publish-update).
+- `DELETE /programs/{id}` — assignments and soft delete in one transaction; already deleted → `204`.
 - `POST /programs/{id}/assignments/sync` — owner only (`created_by`); admin without ownership → `403` (like assign). After sync — auto-cleanup unused versions.
 
 ## See also

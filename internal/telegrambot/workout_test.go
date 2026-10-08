@@ -222,15 +222,16 @@ func TestBot_resultTooLongKeepsPending(t *testing.T) {
 	pending := workoutcompletion.NewMemoryPendingStore()
 	prog := programWithAssignment(dayKey)
 	_ = pending.Set(context.Background(), "42", workoutcompletion.Pending{
-		ClientUserID:      uuid.New(),
-		TrainerID:         prog.TrainerID,
-		ProgramID:         prog.Assignment.ProgramID,
-		ProgramVersionID:  prog.Assignment.ProgramVersionID,
-		CompletionCycleID: prog.Assignment.CompletionCycleID,
-		DayKey:            dayKey,
-		WeekNumber:        1,
-		DayNumber:         1,
-		ProgramName:       "Force",
+		ClientUserID:        uuid.New(),
+		TrainerID:           prog.TrainerID,
+		ProgramID:           prog.Assignment.ProgramID,
+		ProgramVersionID:    prog.Assignment.ProgramVersionID,
+		ProgramAssignmentID: prog.Assignment.AssignmentID,
+		CompletionCycleID:   prog.Assignment.CompletionCycleID,
+		DayKey:              dayKey,
+		WeekNumber:          1,
+		DayNumber:           1,
+		ProgramName:         "Force",
 	})
 	api := &fakeTelegramAPI{}
 	bot := New(api, &fakeTrainerClient{program: prog}, WithWorkoutCompletions(workoutcompletion.New(&fakeWorkoutStore{}), pending))
@@ -480,5 +481,84 @@ func TestBot_dayDone_programErrorShowsErrorText(t *testing.T) {
 
 	if len(api.sent) != 1 || api.sent[0].Text != menuErrorText(errors.New("x")) {
 		t.Fatalf("want generic error text, sent=%+v", api.sent)
+	}
+}
+
+func TestBot_resultMatchesCurrentAssignment(t *testing.T) {
+	cases := []struct {
+		name     string
+		mutate   func(p *workoutcompletion.Pending)
+		wantSave bool
+	}{
+		{name: "all ids equal", mutate: func(*workoutcompletion.Pending) {}, wantSave: true},
+		{name: "completion cycle changed", mutate: func(p *workoutcompletion.Pending) { p.CompletionCycleID = uuid.New() }},
+		{name: "program version changed", mutate: func(p *workoutcompletion.Pending) { p.ProgramVersionID = uuid.New() }},
+		{name: "assignment changed", mutate: func(p *workoutcompletion.Pending) { p.ProgramAssignmentID = uuid.New() }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dayKey := uuid.New()
+			prog := programWithAssignment(dayKey)
+			pend := workoutcompletion.Pending{
+				ClientUserID:        uuid.New(),
+				TrainerID:           prog.TrainerID,
+				ProgramID:           prog.Assignment.ProgramID,
+				ProgramVersionID:    prog.Assignment.ProgramVersionID,
+				ProgramAssignmentID: prog.Assignment.AssignmentID,
+				CompletionCycleID:   prog.Assignment.CompletionCycleID,
+				DayKey:              dayKey,
+				WeekNumber:          1,
+				DayNumber:           1,
+			}
+			tc.mutate(&pend)
+			pending := workoutcompletion.NewMemoryPendingStore()
+			_ = pending.Set(context.Background(), "42", pend)
+			store := &fakeWorkoutStore{}
+			api := &fakeTelegramAPI{}
+			bot := New(api, &fakeTrainerClient{program: prog},
+				WithWorkoutCompletions(workoutcompletion.New(store), pending))
+
+			bot.handleMessage(context.Background(), &tgbotapi.Message{
+				Chat: &tgbotapi.Chat{ID: 1}, From: &tgbotapi.User{ID: 42}, Text: "squats",
+			})
+
+			if tc.wantSave {
+				if store.insertions != 1 {
+					t.Fatalf("insertions = %d, want 1", store.insertions)
+				}
+				return
+			}
+			if store.insertions != 0 {
+				t.Fatalf("insertions = %d, want 0: the result must not land on another cycle", store.insertions)
+			}
+			if _, ok, _ := pending.Get(context.Background(), "42"); ok {
+				t.Fatal("pending must be cleared")
+			}
+			if len(api.sent) != 1 || api.sent[0].Text != formatProgramNotFoundMessage() {
+				t.Fatalf("sent = %+v, want the not-found text", api.sent)
+			}
+		})
+	}
+}
+
+func TestBot_resultWithoutAssignmentClearsPending(t *testing.T) {
+	dayKey := uuid.New()
+	prog := programWithAssignment(dayKey)
+	prog.Assignment = nil
+	pending := workoutcompletion.NewMemoryPendingStore()
+	_ = pending.Set(context.Background(), "42", workoutcompletion.Pending{DayKey: dayKey, WeekNumber: 1, DayNumber: 1})
+	store := &fakeWorkoutStore{}
+	bot := New(&fakeTelegramAPI{}, &fakeTrainerClient{program: prog},
+		WithWorkoutCompletions(workoutcompletion.New(store), pending))
+
+	bot.handleMessage(context.Background(), &tgbotapi.Message{
+		Chat: &tgbotapi.Chat{ID: 1}, From: &tgbotapi.User{ID: 42}, Text: "squats",
+	})
+
+	if store.insertions != 0 {
+		t.Fatalf("insertions = %d, want 0", store.insertions)
+	}
+	if _, ok, _ := pending.Get(context.Background(), "42"); ok {
+		t.Fatal("pending must be cleared")
 	}
 }

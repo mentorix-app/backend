@@ -24,6 +24,22 @@ func (s *Store) PublishFromDraft(ctx context.Context, id, userID uuid.UUID, d De
 	now := time.Now().UTC()
 	programPG := pgconv.ToPGUUID(id)
 
+	// Lock first, then re-read the status: a concurrent publish that committed
+	// while this one waited must make this one fail like a sequential repeat.
+	if err := qtx.LockProgramForUpdate(ctx, programPG); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+	current, err := s.getProgramRow(ctx, qtx, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	if current.DeletedAt != nil {
+		return Detail{}, pgx.ErrNoRows
+	}
+	if current.Status != StatusDraft {
+		return Detail{}, ErrInvalidStatusTransition
+	}
+
 	rows, err := qtx.SetProgramStatus(ctx, sqlc.SetProgramStatusParams{
 		ID:         programPG,
 		Status:     string(StatusPublished),
@@ -56,6 +72,27 @@ func (s *Store) FreezePublishedVersion(ctx context.Context, id, userID uuid.UUID
 
 	qtx := s.q.WithTx(tx)
 	now := time.Now().UTC()
+
+	// Lock first, then re-read: a concurrent publish that committed while this
+	// one waited leaves nothing unpublished, the same answer a sequential repeat
+	// gets from the service.
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(id)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+	current, err := s.getDetail(ctx, qtx, id)
+	if err != nil {
+		return Detail{}, err
+	}
+	if current.DeletedAt != nil {
+		return Detail{}, pgx.ErrNoRows
+	}
+	if current.Status != StatusPublished {
+		return Detail{}, ErrInvalidStatusTransition
+	}
+	if !current.HasUnpublishedChanges {
+		return Detail{}, ErrNoUnpublishedChanges
+	}
+
 	if err := s.freezeVersion(ctx, qtx, d, userID, now); err != nil {
 		return Detail{}, err
 	}
@@ -348,14 +385,14 @@ func (s *Store) ListProgramVersions(ctx context.Context, programID uuid.UUID) (V
 
 	total := len(rows)
 	items := make([]VersionSummary, 0, total)
-	for _, row := range rows {
+	for i, row := range rows {
 		items = append(items, VersionSummary{
 			ID:              pgconv.FromPGUUID(row.ID),
 			VersionNumber:   int(row.VersionNumber),
 			PublishedAt:     row.PublishedAt.UTC(),
 			CreatedAt:       row.CreatedAt.UTC(),
 			AssignmentCount: int(row.AssignmentCount),
-			CanDelete:       row.AssignmentCount == 0 && total > 1,
+			CanDelete:       i > 0 && row.AssignmentCount == 0,
 		})
 	}
 	return VersionListResult{Items: items}, nil
@@ -389,6 +426,15 @@ func (s *Store) DeleteProgramVersion(ctx context.Context, programID, versionID u
 		return ErrVersionHasAssignments
 	}
 
+	// The latest version is where new assignments and sync land.
+	latest, err := s.q.GetLatestProgramVersionByProgramID(ctx, pgconv.ToPGUUID(programID))
+	if err != nil {
+		return fmt.Errorf("latest program version: %w", err)
+	}
+	if latest.ID == version.ID {
+		return ErrLatestProgramVersion
+	}
+
 	rows, err := s.q.DeleteProgramVersion(ctx, pgconv.ToPGUUID(versionID))
 	if err != nil {
 		return fmt.Errorf("delete program version: %w", err)
@@ -417,12 +463,20 @@ func (s *Store) CleanupProgramVersions(ctx context.Context, programID uuid.UUID)
 			})
 		}
 	} else {
-		for _, row := range rows {
+		for i, row := range rows {
 			versionID := pgconv.FromPGUUID(row.ID)
 			if row.AssignmentCount > 0 {
 				result.Skipped = append(result.Skipped, VersionCleanupSkipped{
 					VersionID: versionID,
 					Reason:    "has_assignments",
+				})
+				continue
+			}
+			if i == 0 {
+				// Rows are newest first.
+				result.Skipped = append(result.Skipped, VersionCleanupSkipped{
+					VersionID: versionID,
+					Reason:    "latest_version",
 				})
 				continue
 			}
@@ -446,14 +500,13 @@ func (s *Store) CleanupProgramVersions(ctx context.Context, programID uuid.UUID)
 	// above can follow a working-copy-only block deletion that already
 	// orphaned a rule on its own.
 	//
-	// Swallow the error rather than returning it: this function's callers
-	// include DELETE /programs/{id} (service.go), which already committed the
-	// assignment delete before reaching here — a transient purge failure must
-	// not leave that request stuck with assignments gone but the program still
-	// active. Failing to purge on time is harmless (the rule just survives
-	// longer, cleaned up by the next best-effort pass or the janitor);
-	// over-deleting on a false purge is not, which is why the version-deletion
-	// errors above still propagate untouched.
+	// Swallow the error rather than returning it: the version deletions above
+	// are already committed, and DeleteWithAssignments calls this after its own
+	// commit, so a transient purge failure must not fail the caller. Failing to
+	// purge on time is harmless (the rule just survives longer, cleaned up by
+	// the next best-effort pass or the janitor); over-deleting on a false purge
+	// is not, which is why the version-deletion errors above still propagate
+	// untouched.
 	if _, err := s.q.PurgeOrphanProgramBlockClientsForProgram(ctx, pgconv.ToPGUUID(programID)); err != nil {
 		_ = err
 	}

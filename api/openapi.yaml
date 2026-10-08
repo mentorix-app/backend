@@ -827,7 +827,10 @@ paths:
     post:
       tags: [programs]
       summary: Delete all unused program versions
-      description: Removes versions with assignment_count = 0 (skips sole version).
+      description: >-
+        Removes versions with assignment_count = 0. Skips the sole version and
+        the latest version, because new assignments and sync land on the latest
+        one. Every skipped version is listed with its reason.
       operationId: cleanupProgramVersions
       security:
         - bearerAuth: []
@@ -865,7 +868,7 @@ paths:
         "404":
           description: Program or version not found
         "409":
-          description: Version has assignments or is the sole version
+          description: Version has assignments, is the sole version, or is the latest version
 
   /trainer/invites:
     post:
@@ -3205,6 +3208,11 @@ components:
           format: uuid
         reason:
           type: string
+          description: >-
+            Why the version was kept. `sole_version`: it is the only version.
+            `has_assignments`: a client is still assigned to it.
+            `latest_version`: it is the newest version, so the next assignment
+            and sync land on it.
 
     ProgramVersionCleanupResponse:
       type: object
