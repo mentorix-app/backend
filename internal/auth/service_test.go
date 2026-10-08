@@ -28,6 +28,22 @@ type fakeAuthStore struct {
 	clientUserID         uuid.UUID
 	clientErr            error
 	clientCalls          []ClientIdentity
+	linkRemaining        uuid.UUID
+	linkErr              error
+	linkCalls            []linkTelegramCall
+}
+
+type linkTelegramCall struct {
+	appUserID      uuid.UUID
+	telegramUserID string
+}
+
+func (f *fakeAuthStore) LinkTelegram(_ context.Context, appUserID uuid.UUID, telegramUserID string) (uuid.UUID, error) {
+	f.linkCalls = append(f.linkCalls, linkTelegramCall{appUserID, telegramUserID})
+	if f.linkErr != nil {
+		return uuid.Nil, f.linkErr
+	}
+	return f.linkRemaining, nil
 }
 
 func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _, _ string) (uuid.UUID, error) {

@@ -36,7 +36,7 @@ We believe that Google and Apple sign-in, plus a Telegram link in settings, will
 - Sign in and sign up in the app with Google or Apple. The first sign-in creates a client account.
 - The app session survives an app restart and can be ended by the client (sign out). The web cabinet session works exactly as today.
 - A client joins a trainer by entering or opening the trainer's existing invite in the app. The plan's client limit applies as it does in the bot.
-- A client links Telegram from the app settings by opening the bot and confirming there.
+- A client links Telegram from the app settings by opening the bot, which answers with a one-time code the client types into the app.
   - Telegram id not known yet: it is attached to the current account, and the bot starts working for that account.
   - Telegram id already has an account and the app account is empty: the client continues in the old account, now with Google or Apple sign-in; the empty one is removed.
   - Both accounts hold data (a trainer link or a recorded workout): the link is refused with a clear message and resolved by hand.
@@ -60,8 +60,8 @@ We believe that Google and Apple sign-in, plus a Telegram link in settings, will
 | # | Milestone | Outcome | Status | Plan |
 |---|---|---|---|---|
 | 1 | Google sign-in | A person signs in to the app with Google, gets a client account, stays signed in after a restart, can sign out | complete | `.claude/plans/mobile-client-sign-in-google.plan.md` |
-| 2 | Apple sign-in | The same with Apple | in-progress | `.claude/plans/mobile-client-sign-in-apple.plan.md` |
-| 3 | Telegram link | A client links Telegram from settings; an existing Telegram client lands in the old account | pending | |
+| 2 | Apple sign-in | The same with Apple | complete | `.claude/plans/mobile-client-sign-in-apple.plan.md` |
+| 3 | Telegram link | A client links Telegram from settings; an existing Telegram client lands in the old account | in-progress | `.claude/plans/mobile-client-sign-in-telegram-link.plan.md` |
 | 4 | Invite in the app | A client without Telegram joins a trainer with the trainer's invite | pending | |
 
 ## Open Questions

@@ -9,13 +9,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 )
 
-const pgUniqueViolationCode = "23505"
+const (
+	pgUniqueViolationCode     = "23505"
+	pgForeignKeyViolationCode = "23503"
+)
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -155,6 +159,148 @@ func (s *Store) createClientWithIdentity(ctx context.Context, id ClientIdentity)
 	return true, pgconv.FromPGUUID(userPG), nil
 }
 
+// LinkTelegram attaches telegramUserID to appUserID and returns the user that
+// stays. A Telegram nobody holds is attached to the app account. A Telegram
+// that already has an account absorbs the app account's Google and Apple
+// sign-in and the app account is deleted, but only when the app account is
+// empty: no trainer link and no role besides client. Otherwise
+// ErrTelegramLinkConflict. ErrTelegramAlreadyLinked means the app account holds
+// a different Telegram; pgx.ErrNoRows means the app account does not exist.
+func (s *Store) LinkTelegram(ctx context.Context, appUserID uuid.UUID, telegramUserID string) (uuid.UUID, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	appPG := pgconv.ToPGUUID(appUserID)
+
+	if _, err := qtx.GetUserByID(ctx, appPG); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, pgx.ErrNoRows
+		}
+		return uuid.Nil, fmt.Errorf("load app user: %w", err)
+	}
+
+	own, err := qtx.GetTelegramSubjectByUserID(ctx, sqlc.GetTelegramSubjectByUserIDParams{
+		UserID:   appPG,
+		Provider: ProviderTelegram,
+	})
+	switch {
+	case err == nil && own == telegramUserID:
+		return appUserID, nil
+	case err == nil:
+		return uuid.Nil, ErrTelegramAlreadyLinked
+	case !errors.Is(err, pgx.ErrNoRows):
+		return uuid.Nil, fmt.Errorf("load app telegram: %w", err)
+	}
+
+	ownerPG, err := qtx.GetAuthIdentityUserID(ctx, sqlc.GetAuthIdentityUserIDParams{
+		Provider: ProviderTelegram,
+		Subject:  telegramUserID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		rows, err := qtx.InsertAuthIdentityIfAbsent(ctx, sqlc.InsertAuthIdentityIfAbsentParams{
+			UserID:   appPG,
+			Provider: ProviderTelegram,
+			Subject:  telegramUserID,
+		})
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("insert telegram identity: %w", err)
+		}
+		if rows == 0 {
+			// Lost a race: read the winner. The same app user twice (a double tap) is a success.
+			winnerPG, err := qtx.GetAuthIdentityUserID(ctx, sqlc.GetAuthIdentityUserIDParams{
+				Provider: ProviderTelegram,
+				Subject:  telegramUserID,
+			})
+			if err != nil {
+				return uuid.Nil, fmt.Errorf("reload telegram identity: %w", err)
+			}
+			if winnerPG != appPG {
+				return uuid.Nil, ErrTelegramLinkConflict
+			}
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return uuid.Nil, fmt.Errorf("commit: %w", err)
+		}
+		return appUserID, nil
+	}
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("load telegram identity: %w", err)
+	}
+	if ownerPG == appPG {
+		return appUserID, nil
+	}
+
+	empty, err := appAccountIsEmpty(ctx, qtx, appPG)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if !empty {
+		return uuid.Nil, ErrTelegramLinkConflict
+	}
+
+	if _, err := qtx.MoveSignInIdentitiesToUser(ctx, sqlc.MoveSignInIdentitiesToUserParams{
+		ToUserID:   ownerPG,
+		FromUserID: appPG,
+		Providers:  []string{ProviderGoogle, ProviderApple},
+	}); err != nil {
+		return uuid.Nil, fmt.Errorf("move sign-in identities: %w", err)
+	}
+	if err := qtx.FillUserPrimaryEmailIfEmpty(ctx, sqlc.FillUserPrimaryEmailIfEmptyParams{
+		UserID:     ownerPG,
+		FromUserID: appPG,
+	}); err != nil {
+		return uuid.Nil, fmt.Errorf("fill primary email: %w", err)
+	}
+	if err := qtx.GrantUserRole(ctx, sqlc.GrantUserRoleParams{UserID: ownerPG, Role: RoleClient}); err != nil {
+		return uuid.Nil, fmt.Errorf("grant client role: %w", err)
+	}
+	if _, err := qtx.DeleteUserByID(ctx, appPG); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolationCode {
+			// Something still references the app user; the rollback undoes the identity move.
+			return uuid.Nil, ErrTelegramLinkConflict
+		}
+		return uuid.Nil, fmt.Errorf("delete app user: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, fmt.Errorf("commit: %w", err)
+	}
+	return pgconv.FromPGUUID(ownerPG), nil
+}
+
+// appAccountIsEmpty reports whether the user has no trainer link, no role
+// besides client and no sign-in besides Google and Apple. Workouts and assignments cannot exist without a trainer link.
+func appAccountIsEmpty(ctx context.Context, q *sqlc.Queries, userPG pgtype.UUID) (bool, error) {
+	linked, err := q.UserHasTrainerLink(ctx, userPG)
+	if err != nil {
+		return false, fmt.Errorf("check trainer links: %w", err)
+	}
+	if linked {
+		return false, nil
+	}
+	roles, err := q.ListUserRoles(ctx, userPG)
+	if err != nil {
+		return false, fmt.Errorf("load user roles: %w", err)
+	}
+	for _, role := range roles {
+		if role != RoleClient {
+			return false, nil
+		}
+	}
+	others, err := q.CountUserIdentitiesOutsideProviders(ctx, sqlc.CountUserIdentitiesOutsideProvidersParams{
+		UserID:    userPG,
+		Providers: []string{ProviderGoogle, ProviderApple},
+	})
+	if err != nil {
+		return false, fmt.Errorf("count other sign-ins: %w", err)
+	}
+	return others == 0, nil
+}
+
 type emailIdentityRow struct {
 	UserID       uuid.UUID
 	PasswordHash string
@@ -165,6 +311,8 @@ type UserProfile struct {
 	Name      string
 	CreatedAt time.Time
 	Roles     []string
+	// TelegramLinked is true when the account has a Telegram sign-in.
+	TelegramLinked bool
 }
 
 func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
@@ -181,11 +329,20 @@ func (s *Store) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile,
 		return UserProfile{}, err
 	}
 
+	_, err = s.q.GetTelegramSubjectByUserID(ctx, sqlc.GetTelegramSubjectByUserIDParams{
+		UserID:   pgconv.ToPGUUID(userID),
+		Provider: ProviderTelegram,
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return UserProfile{}, fmt.Errorf("load telegram identity: %w", err)
+	}
+
 	return UserProfile{
-		Email:     row.PrimaryEmail,
-		Name:      row.DisplayName,
-		CreatedAt: row.CreatedAt.UTC(),
-		Roles:     roles,
+		Email:          row.PrimaryEmail,
+		Name:           row.DisplayName,
+		CreatedAt:      row.CreatedAt.UTC(),
+		Roles:          roles,
+		TelegramLinked: err == nil,
 	}, nil
 }
 

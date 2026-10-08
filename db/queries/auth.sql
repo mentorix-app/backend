@@ -88,3 +88,34 @@ WHERE user_id = $1 AND revoked_at IS NULL;
 DELETE FROM mentorix.auth_refresh_sessions
 WHERE (revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
    OR (expires_at < now() - interval '30 days');
+
+-- name: UserHasTrainerLink :one
+SELECT EXISTS (
+  SELECT 1 FROM mentorix.trainer_clients WHERE client_user_id = $1
+);
+
+-- name: MoveSignInIdentitiesToUser :execrows
+UPDATE mentorix.auth_identities
+SET user_id = sqlc.arg('to_user_id')
+WHERE user_id = sqlc.arg('from_user_id')
+  AND provider = ANY (sqlc.arg('providers')::text[]);
+
+-- name: FillUserPrimaryEmailIfEmpty :exec
+UPDATE mentorix.users u
+SET primary_email = src.primary_email
+FROM mentorix.users src
+WHERE u.id = sqlc.arg('user_id')
+  AND src.id = sqlc.arg('from_user_id')
+  AND (u.primary_email IS NULL OR u.primary_email = '')
+  AND src.primary_email IS NOT NULL
+  AND src.primary_email <> '';
+
+-- name: DeleteUserByID :execrows
+DELETE FROM mentorix.users
+WHERE id = $1;
+
+-- name: CountUserIdentitiesOutsideProviders :one
+SELECT count(*)
+FROM mentorix.auth_identities
+WHERE user_id = sqlc.arg('user_id')
+  AND NOT (provider = ANY (sqlc.arg('providers')::text[]));

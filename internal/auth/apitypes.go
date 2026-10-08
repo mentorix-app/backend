@@ -36,6 +36,12 @@ type AppleSignInRequest struct {
 	Name    string `json:"name"`
 }
 
+// TelegramLinkRequest is the JSON body for POST /auth/telegram/link. Code is the
+// one-time code the bot sent to the Telegram user.
+type TelegramLinkRequest struct {
+	Code string `json:"code"`
+}
+
 // RefreshRequest is the optional JSON body for POST /auth/refresh and POST /auth/logout.
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
@@ -62,4 +68,6 @@ type MeResponse struct {
 	CreatedAt    time.Time                  `json:"created_at"`
 	Roles        []string                   `json:"roles"`
 	Subscription *subscription.Subscription `json:"subscription"`
+	// TelegramLinked tells the app whether the account already has a Telegram sign-in.
+	TelegramLinked bool `json:"telegram_linked"`
 }

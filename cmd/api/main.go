@@ -109,6 +109,7 @@ func main() {
 			botOpts := []telegrambot.BotOption{
 				telegrambot.WithWorkoutCompletions(workoutSvc, workoutPending),
 				telegrambot.WithAvatarCheckStore(trainerclient.NewAvatarCheckStore(rdb)),
+				telegrambot.WithLinkCodes(mounted.LinkCodes),
 			}
 			if cfg.ClientAnalyticsPageURL != "" {
 				botOpts = append(botOpts, telegrambot.WithClientAnalyticsLink(

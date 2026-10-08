@@ -26,6 +26,7 @@ type credentialService interface {
 	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
 	Logout(ctx context.Context, refreshPlain string) error
 	LogoutAll(ctx context.Context, userID uuid.UUID) error
+	LinkTelegram(ctx context.Context, appUserID uuid.UUID, code string) (IssuedAuth, error)
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateProfileName(ctx context.Context, userID uuid.UUID, name string) (UserProfile, error)
 }
@@ -77,6 +78,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	e.GET("/auth/me", h.Me, jwt)
 	e.PATCH("/auth/me", h.UpdateMe, jwt)
 	e.POST("/auth/logout-all", h.LogoutAll, jwt)
+	e.POST("/auth/telegram/link", h.TelegramLink, jwt)
 }
 
 func (h *Handlers) setRefreshCookie(c echo.Context, value string) {
@@ -232,6 +234,40 @@ func (h *Handlers) Apple(c echo.Context) error {
 	return h.writeAuthBodyJSON(c, http.StatusOK, issued)
 }
 
+// TelegramLink redeems the bot's one-time code for the signed-in user. The
+// answer carries tokens in the body for the account that remains, which may not
+// be the caller's own.
+func (h *Handlers) TelegramLink(c echo.Context) error {
+	uid, ok := UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+	}
+	var body TelegramLinkRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	issued, err := h.svc.LinkTelegram(c.Request().Context(), uid, body.Code)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidLinkCode):
+			return echo.NewHTTPError(http.StatusBadRequest, ErrInvalidLinkCode.Error())
+		case errors.Is(err, ErrLinkCodesUnavailable):
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "telegram linking is unavailable").SetInternal(err)
+		case errors.Is(err, pgx.ErrNoRows):
+			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+		case errors.Is(err, ErrTelegramLinkConflict):
+			return echo.NewHTTPError(http.StatusConflict, ErrTelegramLinkConflict.Error()).SetInternal(err)
+		case errors.Is(err, ErrTelegramAlreadyLinked):
+			return echo.NewHTTPError(http.StatusConflict, ErrTelegramAlreadyLinked.Error()).SetInternal(err)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "telegram link failed").SetInternal(err)
+	}
+	return h.writeAuthBodyJSON(c, http.StatusOK, issued)
+}
+
 func (h *Handlers) Refresh(c echo.Context) error {
 	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
 		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
@@ -363,10 +399,11 @@ func (h *Handlers) writeMeJSON(c echo.Context, uid uuid.UUID, profile UserProfil
 
 func meResponse(uid uuid.UUID, profile UserProfile) MeResponse {
 	return MeResponse{
-		UserID:    uid.String(),
-		Email:     profile.Email,
-		Name:      profile.Name,
-		CreatedAt: profile.CreatedAt,
-		Roles:     profile.Roles,
+		UserID:         uid.String(),
+		Email:          profile.Email,
+		Name:           profile.Name,
+		CreatedAt:      profile.CreatedAt,
+		Roles:          profile.Roles,
+		TelegramLinked: profile.TelegramLinked,
 	}
 }

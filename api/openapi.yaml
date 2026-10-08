@@ -173,6 +173,51 @@ paths:
         "503":
           description: Apple sign-in is not configured (APPLE_CLIENT_IDS is empty)
 
+  /auth/telegram/link:
+    post:
+      tags: [auth]
+      summary: Link Telegram to the signed-in account with a one-time code
+      description: >
+        The client opens the bot with `/start link`; the bot answers with a code
+        that works once for 10 minutes. The code is spent by this call even when
+        the link is refused. A Telegram nobody uses yet is attached to the
+        account. A Telegram that already has an account absorbs the caller's
+        Google and Apple sign-in and the caller's empty account is removed. The
+        answer carries new tokens for the account that remains (the refresh
+        token is in the body, no cookie is set); the app replaces its tokens
+        with them.
+      operationId: telegramLink
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramLinkRequest"
+      responses:
+        "200":
+          description: Linked; tokens are for the account that remains
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          description: Invalid JSON, or the code is empty, unknown or expired
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: The signed-in account no longer exists
+        "409":
+          description: >
+            The Telegram belongs to an account that cannot be merged (the caller's
+            account has a trainer link or a role besides client), or the caller's
+            account already has another Telegram
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          description: Link codes are unavailable (Redis is not configured or down)
+
   /auth/refresh:
     post:
       tags: [auth]
@@ -2280,6 +2325,14 @@ components:
           type: string
           description: Display name the app received from Apple; optional, cut to 100 characters, used only when the account is created
 
+    TelegramLinkRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: One-time code the bot sent to the Telegram user; case and surrounding spaces are ignored
+
     RefreshRequest:
       type: object
       properties:
@@ -2320,7 +2373,7 @@ components:
 
     MeResponse:
       type: object
-      required: [user_id, email, name, created_at, roles]
+      required: [user_id, email, name, created_at, roles, telegram_linked]
       properties:
         user_id:
           type: string
@@ -2340,6 +2393,9 @@ components:
             enum: [admin, trainer, client]
         subscription:
           $ref: "#/components/schemas/Subscription"
+        telegram_linked:
+          type: boolean
+          description: True when the account has a Telegram sign-in
 
     Subscription:
       type: object
