@@ -29,6 +29,14 @@ WHERE program_id = $1
 ORDER BY version_number DESC
 LIMIT 1;
 
+-- name: ListLatestProgramVersionsByProgramIDs :many
+-- Latest version (highest version_number) of each program in the page; a
+-- program that was never published has no row.
+SELECT DISTINCT ON (program_id) id, program_id, published_at, content_fingerprint
+FROM mentorix.program_versions
+WHERE program_id = ANY(sqlc.arg('program_ids')::uuid[])
+ORDER BY program_id, version_number DESC;
+
 -- name: GetLatestProgramVersionFingerprint :one
 SELECT content_fingerprint
 FROM mentorix.program_versions

@@ -359,6 +359,47 @@ func (q *Queries) InsertProgramVersionWeek(ctx context.Context, arg InsertProgra
 	return i, err
 }
 
+const listLatestProgramVersionsByProgramIDs = `-- name: ListLatestProgramVersionsByProgramIDs :many
+SELECT DISTINCT ON (program_id) id, program_id, published_at, content_fingerprint
+FROM mentorix.program_versions
+WHERE program_id = ANY($1::uuid[])
+ORDER BY program_id, version_number DESC
+`
+
+type ListLatestProgramVersionsByProgramIDsRow struct {
+	ID                 pgtype.UUID `json:"id"`
+	ProgramID          pgtype.UUID `json:"program_id"`
+	PublishedAt        time.Time   `json:"published_at"`
+	ContentFingerprint string      `json:"content_fingerprint"`
+}
+
+// Latest version (highest version_number) of each program in the page; a
+// program that was never published has no row.
+func (q *Queries) ListLatestProgramVersionsByProgramIDs(ctx context.Context, programIds []pgtype.UUID) ([]ListLatestProgramVersionsByProgramIDsRow, error) {
+	rows, err := q.db.Query(ctx, listLatestProgramVersionsByProgramIDs, programIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLatestProgramVersionsByProgramIDsRow{}
+	for rows.Next() {
+		var i ListLatestProgramVersionsByProgramIDsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProgramID,
+			&i.PublishedAt,
+			&i.ContentFingerprint,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProgramVersionDayBlocksByVersionID = `-- name: ListProgramVersionDayBlocksByVersionID :many
 SELECT pvb.id, pvb.program_version_week_day_id, pvb.block_type, pvb.instruction, pvb.sort_order, pvb.created_at, pvb.block_key
 FROM mentorix.program_version_week_day_blocks pvb

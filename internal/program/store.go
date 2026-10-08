@@ -123,12 +123,11 @@ func (s *Store) List(ctx context.Context, params ListParams) (ListResult, error)
 
 	items := make([]Program, 0, len(rows))
 	for _, row := range rows {
-		p := programFromListRow(row)
-		p, err = s.enrichProgram(ctx, s.q, p, nil)
-		if err != nil {
-			return ListResult{}, err
-		}
-		items = append(items, p)
+		items = append(items, programFromListRow(row))
+	}
+	items, err = s.enrichProgramPage(ctx, s.q, items)
+	if err != nil {
+		return ListResult{}, err
 	}
 
 	return ListResult{
@@ -233,19 +232,88 @@ func applyBlockClients(d *Detail, rules map[uuid.UUID][]uuid.UUID) {
 	}
 }
 
+// listWeeksWithDaysAndExercises loads the whole working tree of a program in
+// four queries (weeks, days, blocks, exercises) and assembles it in Go, so the
+// round trips do not grow with the number of weeks, days and blocks. Every
+// level is a non-nil slice even when empty: the JSON shape is [] and never null.
 func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, q *sqlc.Queries, programID uuid.UUID) ([]Week, error) {
 	programPG := pgconv.ToPGUUID(programID)
 	weekRows, err := q.ListProgramWeeks(ctx, programPG)
 	if err != nil {
 		return nil, fmt.Errorf("list program weeks: %w", err)
 	}
+	dayRows, err := q.ListProgramDays(ctx, programPG)
+	if err != nil {
+		return nil, fmt.Errorf("list program days: %w", err)
+	}
+	blockRows, err := q.ListProgramBlocks(ctx, programPG)
+	if err != nil {
+		return nil, fmt.Errorf("list program blocks: %w", err)
+	}
+	exerciseRows, err := q.ListProgramBlockExercises(ctx, programPG)
+	if err != nil {
+		return nil, fmt.Errorf("list program block exercises: %w", err)
+	}
+
+	exercisesByBlock := make(map[uuid.UUID][]DayExercise, len(blockRows))
+	for _, row := range exerciseRows {
+		blockID := pgconv.FromPGUUID(row.ProgramWeekDayBlockID)
+		exercisesByBlock[blockID] = append(exercisesByBlock[blockID], DayExercise{
+			ID:             pgconv.FromPGUUID(row.ID),
+			ExerciseID:     pgconv.FromPGUUID(row.ExerciseID),
+			ExerciseName:   row.Name,
+			ExerciseNameRu: row.NameRu,
+			SortOrder:      int(row.SortOrder),
+			Sets:           row.Sets,
+			Reps:           row.Reps,
+			Instruction:    row.Instruction,
+			CreatedAt:      row.CreatedAt.UTC(),
+		})
+	}
+
+	blocksByDay := make(map[uuid.UUID][]DayBlock, len(dayRows))
+	for _, row := range blockRows {
+		blockID := pgconv.FromPGUUID(row.ID)
+		dayID := pgconv.FromPGUUID(row.ProgramWeekDayID)
+		exercises := exercisesByBlock[blockID]
+		if exercises == nil {
+			exercises = []DayExercise{}
+		}
+		blocksByDay[dayID] = append(blocksByDay[dayID], DayBlock{
+			ID:          blockID,
+			BlockKey:    pgconv.FromPGUUID(row.BlockKey),
+			BlockType:   BlockType(row.BlockType),
+			Instruction: row.Instruction,
+			SortOrder:   int(row.SortOrder),
+			Exercises:   exercises,
+			CreatedAt:   row.CreatedAt.UTC(),
+		})
+	}
+
+	daysByWeek := make(map[uuid.UUID][]Day, len(weekRows))
+	for _, row := range dayRows {
+		dayID := pgconv.FromPGUUID(row.ID)
+		weekID := pgconv.FromPGUUID(row.WeekID)
+		blocks := blocksByDay[dayID]
+		if blocks == nil {
+			blocks = []DayBlock{}
+		}
+		daysByWeek[weekID] = append(daysByWeek[weekID], Day{
+			ID:        dayID,
+			DayKey:    pgconv.FromPGUUID(row.DayKey),
+			DayNumber: int(row.DayNumber),
+			SortOrder: int(row.SortOrder),
+			Blocks:    blocks,
+			CreatedAt: row.CreatedAt.UTC(),
+		})
+	}
 
 	weeks := make([]Week, 0, len(weekRows))
 	for _, w := range weekRows {
 		weekID := pgconv.FromPGUUID(w.ID)
-		days, err := s.listDaysWithBlocks(ctx, q, weekID)
-		if err != nil {
-			return nil, err
+		days := daysByWeek[weekID]
+		if days == nil {
+			days = []Day{}
 		}
 		weeks = append(weeks, Week{
 			ID:         weekID,
@@ -256,72 +324,6 @@ func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, q *sqlc.Queri
 		})
 	}
 	return weeks, nil
-}
-
-func (s *Store) listDaysWithBlocks(ctx context.Context, q *sqlc.Queries, weekID uuid.UUID) ([]Day, error) {
-	weekPG := pgconv.ToPGUUID(weekID)
-	dayRows, err := q.ListProgramDaysForWeek(ctx, weekPG)
-	if err != nil {
-		return nil, fmt.Errorf("list program days: %w", err)
-	}
-
-	days := make([]Day, 0, len(dayRows))
-	for _, d := range dayRows {
-		dayID := pgconv.FromPGUUID(d.ID)
-		blocks, err := s.listDayBlocks(ctx, q, dayID)
-		if err != nil {
-			return nil, err
-		}
-		days = append(days, Day{
-			ID:        dayID,
-			DayKey:    pgconv.FromPGUUID(d.DayKey),
-			DayNumber: int(d.DayNumber),
-			SortOrder: int(d.SortOrder),
-			Blocks:    blocks,
-			CreatedAt: d.CreatedAt.UTC(),
-		})
-	}
-	return days, nil
-}
-
-func (s *Store) listDayBlocks(ctx context.Context, q *sqlc.Queries, dayID uuid.UUID) ([]DayBlock, error) {
-	dayPG := pgconv.ToPGUUID(dayID)
-	blockRows, err := q.ListDayBlocks(ctx, dayPG)
-	if err != nil {
-		return nil, fmt.Errorf("list day blocks: %w", err)
-	}
-
-	out := make([]DayBlock, 0, len(blockRows))
-	for _, row := range blockRows {
-		blockID := pgconv.FromPGUUID(row.ID)
-		exercises, err := s.listBlockExercises(ctx, q, blockID)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, DayBlock{
-			ID:          blockID,
-			BlockKey:    pgconv.FromPGUUID(row.BlockKey),
-			BlockType:   BlockType(row.BlockType),
-			Instruction: row.Instruction,
-			SortOrder:   int(row.SortOrder),
-			Exercises:   exercises,
-			CreatedAt:   row.CreatedAt.UTC(),
-		})
-	}
-	return out, nil
-}
-
-func (s *Store) listBlockExercises(ctx context.Context, q *sqlc.Queries, blockID uuid.UUID) ([]DayExercise, error) {
-	rows, err := q.ListBlockExercises(ctx, pgconv.ToPGUUID(blockID))
-	if err != nil {
-		return nil, fmt.Errorf("list block exercises: %w", err)
-	}
-
-	out := make([]DayExercise, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, dayExerciseFromRow(row))
-	}
-	return out, nil
 }
 
 func (s *Store) Update(ctx context.Context, id, userID uuid.UUID, in UpdateInput) (Detail, error) {
@@ -1262,20 +1264,6 @@ func programFromListRow(row sqlc.ListProgramsRow) Program {
 	)
 	p.TrainingDaysCount = int(row.TrainingDaysCount)
 	return p
-}
-
-func dayExerciseFromRow(row sqlc.ListBlockExercisesRow) DayExercise {
-	return DayExercise{
-		ID:             pgconv.FromPGUUID(row.ID),
-		ExerciseID:     pgconv.FromPGUUID(row.ExerciseID),
-		ExerciseName:   row.Name,
-		ExerciseNameRu: row.NameRu,
-		SortOrder:      int(row.SortOrder),
-		Sets:           row.Sets,
-		Reps:           row.Reps,
-		Instruction:    row.Instruction,
-		CreatedAt:      row.CreatedAt.UTC(),
-	}
 }
 
 func blockExerciseInsertParams(blockPG pgtype.UUID, sort int32, userID uuid.UUID, in DayExerciseInput) sqlc.InsertBlockExerciseParams {

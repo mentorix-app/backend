@@ -65,6 +65,28 @@ WHERE program_id = $1
   AND status = 'active'
 ORDER BY assigned_at DESC;
 
+-- name: ListActiveProgramAssignmentsWithVersion :many
+-- Same rows and order as ListActiveProgramAssignmentsByProgramID, with the
+-- published_at of the version each assignment is on.
+SELECT
+  pa.id, pa.program_id, pa.program_version_id, pa.trainer_id, pa.client_user_id,
+  pa.status, pa.assigned_at, pa.created_at, pa.completion_cycle_id,
+  pv.published_at AS version_published_at
+FROM mentorix.program_assignments pa
+JOIN mentorix.program_versions pv ON pv.id = pa.program_version_id
+WHERE pa.program_id = $1
+  AND pa.status = 'active'
+ORDER BY pa.assigned_at DESC;
+
+-- name: CountActiveProgramAssignmentsByProgramIDs :many
+-- Active assignment counts for a page of programs; a program without active
+-- assignments has no row.
+SELECT program_id, COUNT(*)::int AS total
+FROM mentorix.program_assignments
+WHERE program_id = ANY(sqlc.arg('program_ids')::uuid[])
+  AND status = 'active'
+GROUP BY program_id;
+
 -- name: CountActiveProgramAssignmentsByProgramID :one
 SELECT COUNT(*)::int AS total
 FROM mentorix.program_assignments
