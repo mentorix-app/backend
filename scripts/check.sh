@@ -33,6 +33,7 @@ skip_integration=0
 skip_migrate_check=0
 skip_coverage=0
 skip_docs_check=0
+skip_audit=0
 
 for arg in "$@"; do
   case "$arg" in
@@ -67,12 +68,14 @@ if (( quick )); then
   skip_migrate_check=1
   skip_integration=1
   skip_coverage=1
+  skip_audit=1
 fi
 
 export PATH="$(go env GOPATH)/bin:$PATH"
 
 SQLC_VERSION=v1.29.0
 LINT_VERSION=v1.62.2
+VULNCHECK_VERSION=v1.1.4
 
 failed=0
 
@@ -125,6 +128,11 @@ if (( ! skip_build )); then
   if go build -o /dev/null ./...; then ok; else fail "go build"; fi
 fi
 
+if (( ! skip_audit )); then
+  step "go mod tidy (no diff)"
+  if go mod tidy -diff; then ok; else fail "go mod tidy (no diff)"; fi
+fi
+
 if (( ! skip_sqlc )); then
   step "sqlc generate (up to date)"
   ensure_sqlc
@@ -137,6 +145,11 @@ fi
 
 step "golangci-lint"
 if run_lint; then ok; else fail "golangci-lint"; fi
+
+if (( ! skip_audit )); then
+  step "govulncheck"
+  if go run "golang.org/x/vuln/cmd/govulncheck@${VULNCHECK_VERSION}" ./...; then ok; else fail "govulncheck"; fi
+fi
 
 if (( ! skip_smoke )); then
   step "live API smoke"

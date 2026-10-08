@@ -63,6 +63,8 @@ Full run: `make check`. CI: `make check-ci`. Pre-commit: `make check-quick`.
 | sqlc drift | yes | yes |
 | golangci-lint | yes | yes |
 | docs-check | yes | yes |
+| go mod tidy (`-diff`) | yes | yes |
+| govulncheck | yes | yes |
 | integration + coverage 80% | yes | yes |
 | migrate-check | no | yes |
 | live smoke (`scripts/smoke.sh`) | no | yes (API up) |

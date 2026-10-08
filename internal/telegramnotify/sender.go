@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"mentorix-backend/internal/telegram"
 )
 
 type Sender interface {
@@ -24,7 +26,7 @@ type botAPISender struct {
 func (s *botAPISender) SendMessage(_ context.Context, chatID int64, text string) error {
 	msg := tgbotapi.NewMessage(chatID, text)
 	if _, err := s.api.Send(msg); err != nil {
-		return fmt.Errorf("telegram sendMessage: %w", err)
+		return fmt.Errorf("telegram sendMessage: %w", telegram.StripURL(err))
 	}
 	return nil
 }
@@ -35,7 +37,7 @@ func NewSender(botToken string) (Sender, error) {
 	}
 	api, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
-		return nil, fmt.Errorf("telegram bot api: %w", err)
+		return nil, fmt.Errorf("telegram bot api: %w", telegram.StripURL(err))
 	}
 	api.Debug = false
 	return &botAPISender{api: api}, nil

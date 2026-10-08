@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -148,4 +149,23 @@ func TestHandleUpdate_callbackQuery(t *testing.T) {
 	}
 	bot.HandleUpdate(t.Context(), update)
 	_ = json.Valid([]byte(`{"update_id":1}`))
+}
+
+func TestRegisterWebhook_requestErrorHasNoToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	base := srv.URL
+	srv.Close() // connection refused
+
+	old := telegramAPIBase
+	telegramAPIBase = base + "/bot%s/setWebhook"
+	t.Cleanup(func() { telegramAPIBase = old })
+
+	const token = "123456:SECRET-token"
+	err := RegisterWebhook(token, WebhookConfig{URL: "https://example.com/hook"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), token) {
+		t.Fatalf("error leaks the bot token: %q", err)
+	}
 }

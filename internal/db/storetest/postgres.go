@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 
@@ -34,15 +33,12 @@ func resolveTestDatabaseURL(t *testing.T) string {
 	t.Helper()
 	_ = godotenv.Load(filepath.Join(repoRoot(t), ".env"))
 
-	if u := strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")); u != "" {
-		return u
+	u, err := selectTestDatabaseURL(os.Getenv("TEST_DATABASE_URL"), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	u := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if u == "" {
 		t.Skip("TEST_DATABASE_URL (or DATABASE_URL with mentorix_test) is not set")
-	}
-	if !strings.Contains(u, "mentorix_test") {
-		t.Fatalf("refusing DATABASE_URL %q: use a mentorix_test database or set TEST_DATABASE_URL", u)
 	}
 	return u
 }

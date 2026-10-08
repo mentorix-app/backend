@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/telegram"
 	"mentorix-backend/internal/trainerclient"
 	"mentorix-backend/internal/workoutcompletion"
 )
@@ -75,7 +76,7 @@ func New(api telegramAPI, clients trainerClient, opts ...BotOption) *Bot {
 func NewFromToken(token string, clients trainerClient, opts ...BotOption) (*Bot, error) {
 	api, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
-		return nil, fmt.Errorf("telegram bot api: %w", err)
+		return nil, fmt.Errorf("telegram bot api: %w", telegram.StripURL(err))
 	}
 	api.Debug = false
 	return New(api, clients, opts...), nil
