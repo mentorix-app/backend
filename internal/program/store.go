@@ -420,22 +420,6 @@ func (s *Store) Republish(ctx context.Context, id, userID uuid.UUID) (Detail, er
 	return s.GetDetail(ctx, id)
 }
 
-func (s *Store) SoftDelete(ctx context.Context, id, userID uuid.UUID) error {
-	now := time.Now().UTC()
-	rows, err := s.q.SoftDeleteProgram(ctx, sqlc.SoftDeleteProgramParams{
-		ID:         pgconv.ToPGUUID(id),
-		DeletedAt:  pgtype.Timestamptz{Time: now, Valid: true},
-		ModifiedBy: pgconv.ToPGUUID(userID),
-	})
-	if err != nil {
-		return fmt.Errorf("soft delete program: %w", err)
-	}
-	if rows == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
 // DeleteWithAssignments removes the program's assignments and soft-deletes the
 // program in one transaction, so a failure never leaves a live program without
 // its clients. Unused versions are cleaned up after the commit, best effort.

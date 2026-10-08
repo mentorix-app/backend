@@ -17,7 +17,7 @@ import (
 	"mentorix-backend/internal/trainerclient"
 )
 
-func TestTelegramClient_programAndToday(t *testing.T) {
+func TestTelegramClient_program(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
@@ -116,14 +116,6 @@ func TestTelegramClient_programAndToday(t *testing.T) {
 	}
 	if !programView.HasProgram || programView.Program == nil || len(programView.Program.Weeks) == 0 {
 		t.Fatalf("program view = %+v", programView)
-	}
-
-	today, err := svc.GetTelegramToday(ctx, "777001", nil)
-	if err != nil {
-		t.Fatalf("GetTelegramToday: %v", err)
-	}
-	if !today.HasProgram || today.IsRestDay || len(today.Blocks) == 0 {
-		t.Fatalf("today = %+v", today)
 	}
 
 	active, err := svc.GetTelegramActiveTrainer(ctx, "777001")
@@ -281,14 +273,6 @@ func TestTelegramClient_beforeProgramAssignment(t *testing.T) {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
 
-	today, err := svc.GetTelegramToday(ctx, "888002", nil)
-	if err != nil {
-		t.Fatalf("GetTelegramToday: %v", err)
-	}
-	if today.HasProgram {
-		t.Fatalf("today = %+v", today)
-	}
-
 	programView, err := svc.GetTelegramProgram(ctx, "888002", nil)
 	if err != nil {
 		t.Fatalf("GetTelegramProgram: %v", err)
@@ -320,8 +304,8 @@ func TestTelegramClient_beforeProgramAssignment(t *testing.T) {
 	}
 }
 
-// TestTelegramClient_todayHidesRestrictedBlock exercises the real production
-// wiring, not just the store method: trainerclient.Service.GetTelegramToday
+// TestTelegramClient_programHidesRestrictedBlock exercises the real production
+// wiring, not just the store method: trainerclient.Service.GetTelegramProgram
 // routes through clientProgramView, which calls
 // program.GetVersionDetailForClient(ctx, assignment.ProgramVersionID,
 // clientUserID) at bot_service.go. TestGetVersionDetailForClient_
@@ -330,7 +314,7 @@ func TestTelegramClient_beforeProgramAssignment(t *testing.T) {
 // bot service actually passes the *client's* id into that call rather than,
 // say, the trainer id — a bug that would compile, would still find the
 // assignment, and would silently stop filtering for every client.
-func TestTelegramClient_todayHidesRestrictedBlock(t *testing.T) {
+func TestTelegramClient_programHidesRestrictedBlock(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
@@ -436,22 +420,30 @@ func TestTelegramClient_todayHidesRestrictedBlock(t *testing.T) {
 		t.Fatalf("SetBlockClients: %v", err)
 	}
 
-	todayA, err := svc.GetTelegramToday(ctx, "777201", nil)
+	viewA, err := svc.GetTelegramProgram(ctx, "777201", nil)
 	if err != nil {
-		t.Fatalf("GetTelegramToday A: %v", err)
+		t.Fatalf("GetTelegramProgram A: %v", err)
 	}
-	if !todayA.HasProgram || len(todayA.Blocks) != 2 {
-		t.Fatalf("today for listed client = %+v, want HasProgram and 2 blocks", todayA)
+	if !viewA.HasProgram || viewA.Program == nil {
+		t.Fatalf("view for listed client = %+v, want a program", viewA)
+	}
+	blocksA := viewA.Program.Weeks[0].Days[0].Blocks
+	if len(blocksA) != 2 {
+		t.Fatalf("listed client sees %d blocks, want 2", len(blocksA))
 	}
 
-	todayB, err := svc.GetTelegramToday(ctx, "777202", nil)
+	viewB, err := svc.GetTelegramProgram(ctx, "777202", nil)
 	if err != nil {
-		t.Fatalf("GetTelegramToday B: %v", err)
+		t.Fatalf("GetTelegramProgram B: %v", err)
 	}
-	if !todayB.HasProgram || len(todayB.Blocks) != 1 {
-		t.Fatalf("today for unlisted client = %+v, want HasProgram and 1 block", todayB)
+	if !viewB.HasProgram || viewB.Program == nil {
+		t.Fatalf("view for unlisted client = %+v, want a program", viewB)
 	}
-	if len(todayB.Blocks[0].ClientUserIDs) != 0 {
+	blocksB := viewB.Program.Weeks[0].Days[0].Blocks
+	if len(blocksB) != 1 {
+		t.Fatalf("unlisted client sees %d blocks, want 1", len(blocksB))
+	}
+	if len(blocksB[0].ClientUserIDs) != 0 {
 		t.Fatal("unlisted client kept a restricted block through the Telegram service path")
 	}
 }

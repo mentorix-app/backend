@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -81,8 +80,4 @@ func pickProgramName(name, nameRu string) string {
 		return strings.TrimSpace(nameRu)
 	}
 	return strings.TrimSpace(name)
-}
-
-func nowUTC() time.Time {
-	return time.Now().UTC()
 }

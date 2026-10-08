@@ -1,8 +1,6 @@
 package trainerclient
 
 import (
-	"time"
-
 	"github.com/google/uuid"
 
 	"mentorix-backend/internal/program"
@@ -38,18 +36,4 @@ type TelegramProgramResponse struct {
 	HasProgram         bool                  `json:"has_program"`
 	Assignment         *ClientProgramSummary `json:"assignment,omitempty"`
 	Program            *program.Detail       `json:"program,omitempty"`
-}
-
-type TelegramTodayResponse struct {
-	TrainerID          uuid.UUID          `json:"trainer_id"`
-	TrainerDisplayName string             `json:"trainer_display_name"`
-	HasProgram         bool               `json:"has_program"`
-	ProgramName        string             `json:"program_name,omitempty"`
-	ProgramNameRu      string             `json:"program_name_ru,omitempty"`
-	ProgramDayNumber   int                `json:"program_day_number,omitempty"`
-	WeekNumber         int                `json:"week_number,omitempty"`
-	DayNumber          int                `json:"day_number,omitempty"`
-	IsRestDay          bool               `json:"is_rest_day,omitempty"`
-	Blocks             []program.DayBlock `json:"blocks,omitempty"`
-	AssignedAt         *time.Time         `json:"assigned_at,omitempty"`
 }

@@ -113,15 +113,6 @@ func TestAuthStore_UpdateUserDisplayNameNotFound(t *testing.T) {
 	}
 }
 
-func TestAuthStore_UserPrimaryEmailNotFound(t *testing.T) {
-	pool := NewPool(t)
-	store := auth.NewStore(pool)
-	_, err := store.UserPrimaryEmail(context.Background(), uuid.New())
-	if err == nil {
-		t.Fatal("expected not found error")
-	}
-}
-
 func TestAuthStore_UserRoles_emptyForUnknownUser(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)

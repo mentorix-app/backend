@@ -11,27 +11,6 @@ import (
 
 const cyrillicMultiplicationSign = "х"
 
-func formatToday(resp trainerclient.TelegramTodayResponse) string {
-	if !resp.HasProgram {
-		return fmt.Sprintf("%s пока не назначил программу.", resp.TrainerDisplayName)
-	}
-	name := programDisplayName(resp.ProgramName, resp.ProgramNameRu)
-	var b strings.Builder
-	b.WriteString("📋 Сегодня\n")
-	fmt.Fprintf(&b, "👤 Тренер: %s\n", escapeTelegramMarkdown(resp.TrainerDisplayName))
-	fmt.Fprintf(&b, "💪 Программа: %s\n", escapeTelegramMarkdown(name))
-	fmt.Fprintf(&b, "📆 Неделя: %d / День: %d", resp.WeekNumber, resp.DayNumber)
-	if resp.IsRestDay {
-		b.WriteString("\n\n😴 День отдыха")
-		return b.String()
-	}
-	if blockText := formatBlocks(resp.Blocks); blockText != "" {
-		b.WriteString("\n\n")
-		b.WriteString(blockText)
-	}
-	return b.String()
-}
-
 func formatProgramSummary(resp trainerclient.TelegramProgramResponse) string {
 	if !resp.HasProgram || resp.Program == nil {
 		return fmt.Sprintf("%s пока не назначил программу.", resp.TrainerDisplayName)

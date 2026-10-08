@@ -39,7 +39,7 @@ On `POST /trainer/invites` — inline purge expired/consumed (7d grace) trainer 
 
 `go run ./cmd/janitor`: purge stale `trainer_invites`, `auth_refresh_sessions` (30d), orphan `program_block_clients` (global, unscoped).
 
-Requires `DATABASE_URL`. Not scheduled (no cron in `render.yaml`, none in `.github/workflows/`) — safety net, not primary mechanism; block visibility rules are cleaned first by best-effort pass above.
+Requires `DATABASE_URL` and a valid `JWT_SECRET` (at least 32 bytes), because it loads the full API config. Not scheduled (no cron in `render.yaml`, none in `.github/workflows/`) — safety net, not primary mechanism; block visibility rules are cleaned first by best-effort pass above.
 
 ## See also
 

@@ -283,8 +283,8 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 		t.Fatalf("days = %d, want %d", len(withAddedDay.Weeks[0].Days), program.DefaultWeekDays)
 	}
 
-	if err := progStore.SoftDelete(ctx, draft.ID, trainerID); err != nil {
-		t.Fatalf("SoftDelete: %v", err)
+	if err := progStore.DeleteWithAssignments(ctx, draft.ID, trainerID); err != nil {
+		t.Fatalf("DeleteWithAssignments: %v", err)
 	}
 }
 
@@ -1355,14 +1355,5 @@ func TestProgramStore_SetStatus_notFound(t *testing.T) {
 	_, err := store.SetStatus(context.Background(), uuid.New(), uuid.New(), program.StatusArchived)
 	if !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("SetStatus() error = %v, want ErrNoRows", err)
-	}
-}
-
-func TestProgramStore_SoftDelete_notFound(t *testing.T) {
-	pool := NewPool(t)
-	store := program.NewStore(pool)
-	err := store.SoftDelete(context.Background(), uuid.New(), uuid.New())
-	if !errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("SoftDelete() error = %v, want ErrNoRows", err)
 	}
 }

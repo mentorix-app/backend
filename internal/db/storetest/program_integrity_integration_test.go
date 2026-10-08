@@ -232,8 +232,10 @@ func TestProgramStore_DeleteWithAssignments_alreadyDeletedIsNoOp(t *testing.T) {
 	store := program.NewStore(pool)
 	seed := seedProgramWithAssignedV1AndFreshV2(t, pool, "delete-repeat")
 
-	if err := store.SoftDelete(ctx, seed.programID, seed.trainerUserID); err != nil {
-		t.Fatalf("SoftDelete: %v", err)
+	// Mark the program deleted without touching its assignments.
+	if _, err := pool.Exec(ctx,
+		`UPDATE mentorix.programs SET deleted_at = now() WHERE id = $1`, seed.programID); err != nil {
+		t.Fatalf("mark program deleted: %v", err)
 	}
 	if err := store.DeleteWithAssignments(ctx, seed.programID, seed.trainerUserID); err != nil {
 		t.Fatalf("DeleteWithAssignments on a deleted program = %v, want nil", err)

@@ -16,7 +16,7 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Programs (CRUD, publish, discard-unpublished, versions, assignments, sync) | [features/programs.md](features/programs.md) |
 | Program assignment to client | [features/trainer-clients.md](features/trainer-clients.md) |
 | Trainer-to-client invites (Telegram deep link) | [features/trainer-invites.md](features/trainer-invites.md) |
-| Telegram bot: /start, accept, menu, program, mark workouts, push (phases 1–4) | [features/telegram-bot.md](features/telegram-bot.md), [features/workout-completions.md](features/workout-completions.md) |
+| Telegram bot: /start, accept, menu, program, mark workouts, push (phases 1 to 5) | [features/telegram-bot.md](features/telegram-bot.md), [features/workout-completions.md](features/workout-completions.md) |
 | Mark program days (day_key, cycle, completion log) | [features/workout-completions.md](features/workout-completions.md) |
 | Trainer analytics (client: progress/activity/feed; programs: aggregates, drop-off, week matrix) | [features/trainer-analytics.md](features/trainer-analytics.md) |
 | Client stats page signed from Telegram (`GET /client/analytics`, button «📊 Статистика») | [features/client-analytics.md](features/client-analytics.md) |

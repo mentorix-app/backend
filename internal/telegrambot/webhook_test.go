@@ -14,9 +14,11 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/telegram"
+	"mentorix-backend/internal/trainerclient"
 )
 
 func TestWebhookHandler_rejectsBadSecret(t *testing.T) {
@@ -126,14 +128,20 @@ func TestWebhookHandler_invalidJSON(t *testing.T) {
 
 type recordingTelegramAPI struct {
 	sendCalls int
+	sent      []tgbotapi.MessageConfig
+	requests  []tgbotapi.Chattable
 }
 
 func (r *recordingTelegramAPI) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
 	r.sendCalls++
+	if msg, ok := c.(tgbotapi.MessageConfig); ok {
+		r.sent = append(r.sent, msg)
+	}
 	return tgbotapi.Message{}, nil
 }
 
 func (r *recordingTelegramAPI) Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error) {
+	r.requests = append(r.requests, c)
 	return &tgbotapi.APIResponse{Ok: true}, nil
 }
 
@@ -147,22 +155,65 @@ func (noopTelegramAPI) Request(tgbotapi.Chattable) (*tgbotapi.APIResponse, error
 	return &tgbotapi.APIResponse{Ok: true}, nil
 }
 
-func TestHandleUpdate_callbackQuery(t *testing.T) {
-	sender := &recordingTelegramAPI{}
-	backend := &fakeTrainerClient{}
-	bot := New(sender, backend)
-	update := tgbotapi.Update{
+func callbackUpdate(data string) tgbotapi.Update {
+	return tgbotapi.Update{
 		CallbackQuery: &tgbotapi.CallbackQuery{
 			ID:   "cb1",
-			Data: "noop",
+			Data: data,
 			From: &tgbotapi.User{ID: 1},
 			Message: &tgbotapi.Message{
 				Chat: &tgbotapi.Chat{ID: 42},
 			},
 		},
 	}
-	bot.HandleUpdate(t.Context(), update)
-	_ = json.Valid([]byte(`{"update_id":1}`))
+}
+
+func requireSingleCallbackAnswer(t *testing.T, api *recordingTelegramAPI) {
+	t.Helper()
+	if len(api.requests) != 1 {
+		t.Fatalf("api requests = %d, want 1 callback answer", len(api.requests))
+	}
+	answer, ok := api.requests[0].(tgbotapi.CallbackConfig)
+	if !ok {
+		t.Fatalf("request = %T, want tgbotapi.CallbackConfig", api.requests[0])
+	}
+	if answer.CallbackQueryID != "cb1" {
+		t.Fatalf("callback answer id = %q, want cb1", answer.CallbackQueryID)
+	}
+}
+
+func TestHandleUpdate_callbackQuery_unknownDataOnlyAnswersCallback(t *testing.T) {
+	api := &recordingTelegramAPI{}
+	bot := New(api, &fakeTrainerClient{})
+
+	bot.HandleUpdate(t.Context(), callbackUpdate("noop"))
+
+	requireSingleCallbackAnswer(t, api)
+	if api.sendCalls != 0 {
+		t.Fatalf("sent %d messages, want none", api.sendCalls)
+	}
+}
+
+func TestHandleUpdate_callbackQuery_trainerSelectionAnswersAndSendsMessage(t *testing.T) {
+	trainerID := uuid.New()
+	api := &recordingTelegramAPI{}
+	backend := &fakeTrainerClient{trainers: trainerclient.TelegramTrainerList{
+		Items: []trainerclient.TelegramTrainer{{TrainerID: trainerID, DisplayName: "Anna", IsActive: true}},
+	}}
+	bot := New(api, backend)
+
+	bot.HandleUpdate(t.Context(), callbackUpdate(trainerCallbackData(trainerID)))
+
+	requireSingleCallbackAnswer(t, api)
+	if len(api.sent) != 1 {
+		t.Fatalf("sent %d messages, want 1", len(api.sent))
+	}
+	if api.sent[0].ChatID != 42 {
+		t.Fatalf("message chat = %d, want 42", api.sent[0].ChatID)
+	}
+	if !strings.Contains(api.sent[0].Text, "Anna") {
+		t.Fatalf("message text = %q, want the selected trainer", api.sent[0].Text)
+	}
 }
 
 func TestRegisterWebhook_requestErrorHasNoToken(t *testing.T) {

@@ -20,7 +20,6 @@ type authStore interface {
 	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, string, error)
 	RevokeRefreshSession(ctx context.Context, tokenHash []byte) error
 	RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error
-	UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error)
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
 }
@@ -174,10 +173,6 @@ func (s *Service) Logout(ctx context.Context, refreshPlain string) error {
 
 func (s *Service) LogoutAll(ctx context.Context, userID uuid.UUID) error {
 	return s.store.RevokeAllUserRefreshSessions(ctx, userID)
-}
-
-func (s *Service) UserPrimaryEmail(ctx context.Context, userID uuid.UUID) (string, error) {
-	return s.store.UserPrimaryEmail(ctx, userID)
 }
 
 func (s *Service) UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error) {
