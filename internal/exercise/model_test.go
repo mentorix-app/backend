@@ -1,6 +1,9 @@
 package exercise
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func validUpsertInput() UpsertInput {
 	return UpsertInput{
@@ -34,6 +37,10 @@ func TestUpsertInput_Validate_errors(t *testing.T) {
 		{"invalid video url", func(in *UpsertInput) {
 			in.VideoURL = "https://vimeo.com/123456789"
 		}},
+		{"name over limit", func(in *UpsertInput) { in.Name = strings.Repeat("a", 1001) }},
+		{"name_ru over limit in runes", func(in *UpsertInput) { in.NameRu = strings.Repeat("я", 1001) }},
+		{"description over limit", func(in *UpsertInput) { in.Description = strings.Repeat("a", 5001) }},
+		{"description_ru over limit in runes", func(in *UpsertInput) { in.DescriptionRu = strings.Repeat("я", 5001) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -43,6 +50,17 @@ func TestUpsertInput_Validate_errors(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestUpsertInput_Validate_textAtLimits(t *testing.T) {
+	in := validUpsertInput()
+	in.Name = strings.Repeat("a", 1000)
+	in.NameRu = strings.Repeat("я", 1000)
+	in.Description = strings.Repeat("a", 5000)
+	in.DescriptionRu = strings.Repeat("я", 5000)
+	if err := in.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }
 

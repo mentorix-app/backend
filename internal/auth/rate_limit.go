@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -19,8 +19,19 @@ const (
 	rateLimitUnknownIP = "unknown"
 )
 
+// incrWithTTL increments the counter and sets the window TTL on the first hit
+// or when the key has none, in one atomic step.
+var incrWithTTL = redis.NewScript(`
+local n = redis.call('INCR', KEYS[1])
+if n == 1 or redis.call('PTTL', KEYS[1]) < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return n
+`)
+
 type RateLimiter struct {
 	rdb         *redis.Client
+	log         *slog.Logger
 	loginMax    int
 	loginWin    time.Duration
 	registerMax int
@@ -33,11 +44,20 @@ func NewRateLimiter(rdb *redis.Client, loginMax int, loginWin time.Duration, reg
 	}
 	return &RateLimiter{
 		rdb:         rdb,
+		log:         slog.Default(),
 		loginMax:    loginMax,
 		loginWin:    loginWin,
 		registerMax: registerMax,
 		registerWin: registerWin,
 	}
+}
+
+// WithLogger sets the logger used for Redis failures; nil keeps the current one.
+func (l *RateLimiter) WithLogger(log *slog.Logger) *RateLimiter {
+	if l != nil && log != nil {
+		l.log = log
+	}
+	return l
 }
 
 func (l *RateLimiter) AllowLogin(ctx context.Context, ip string) error {
@@ -66,16 +86,13 @@ func (l *RateLimiter) allow(ctx context.Context, prefix, key string, max int, wi
 		key = rateLimitUnknownIP
 	}
 	rkey := rateLimitKeyPrefix + prefix + ":" + key
-	n, err := l.rdb.Incr(ctx, rkey).Result()
+	n, err := incrWithTTL.Run(ctx, l.rdb, []string{rkey}, window.Milliseconds()).Int()
 	if err != nil {
-		return fmt.Errorf("rate limit incr: %w", err)
+		// Fail open: a Redis outage must not take sign-in down.
+		l.log.Warn("rate limiter unavailable, allowing request", "limit", prefix, "error", err)
+		return nil
 	}
-	if n == 1 {
-		if err := l.rdb.Expire(ctx, rkey, window).Err(); err != nil {
-			return fmt.Errorf("rate limit expire: %w", err)
-		}
-	}
-	if int(n) > max {
+	if n > max {
 		return ErrRateLimited
 	}
 	return nil

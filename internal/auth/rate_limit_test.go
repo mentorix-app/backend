@@ -75,3 +75,82 @@ func TestRateLimiter_unknownIP(t *testing.T) {
 		t.Errorf("AllowLogin empty ip: %v", err)
 	}
 }
+
+func TestRateLimiter_failsOpenWhenRedisDown(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 1, time.Minute, 1, time.Minute)
+	mr.Close()
+	ctx := context.Background()
+
+	if err := l.AllowLogin(ctx, "10.0.0.4"); err != nil {
+		t.Errorf("AllowLogin with redis down = %v, want nil", err)
+	}
+	if err := l.AllowRegister(ctx, "10.0.0.4"); err != nil {
+		t.Errorf("AllowRegister with redis down = %v, want nil", err)
+	}
+	if err := l.AllowRefresh(ctx, "10.0.0.4"); err != nil {
+		t.Errorf("AllowRefresh with redis down = %v, want nil", err)
+	}
+}
+
+func TestRateLimiter_setsTTLOnFirstHit(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 5, time.Minute, 5, time.Minute)
+
+	if err := l.AllowLogin(context.Background(), "10.0.0.5"); err != nil {
+		t.Fatalf("AllowLogin: %v", err)
+	}
+	if got := mr.TTL("mentorix:rl:login:ip:10.0.0.5"); got != time.Minute {
+		t.Errorf("TTL = %v, want %v", got, time.Minute)
+	}
+}
+
+func TestRateLimiter_healsKeyWithoutTTL(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 5, time.Minute, 5, time.Minute)
+	key := "mentorix:rl:login:ip:10.0.0.6"
+	if err := mr.Set(key, "3"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := l.AllowLogin(context.Background(), "10.0.0.6"); err != nil {
+		t.Fatalf("AllowLogin: %v", err)
+	}
+	if got := mr.TTL(key); got != time.Minute {
+		t.Errorf("TTL of healed key = %v, want %v", got, time.Minute)
+	}
+}
+
+func TestRateLimiter_doesNotExtendWindow(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 5, time.Minute, 5, time.Minute)
+	ctx := context.Background()
+	key := "mentorix:rl:login:ip:10.0.0.7"
+
+	_ = l.AllowLogin(ctx, "10.0.0.7")
+	mr.FastForward(40 * time.Second)
+	_ = l.AllowLogin(ctx, "10.0.0.7")
+	if got := mr.TTL(key); got != 20*time.Second {
+		t.Errorf("TTL after second hit = %v, want 20s", got)
+	}
+}
+
+func TestRateLimiter_windowExpiryResets(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 1, time.Minute, 1, time.Minute)
+	ctx := context.Background()
+
+	_ = l.AllowLogin(ctx, "10.0.0.8")
+	if err := l.AllowLogin(ctx, "10.0.0.8"); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("second AllowLogin = %v, want ErrRateLimited", err)
+	}
+	mr.FastForward(time.Minute + time.Second)
+	if err := l.AllowLogin(ctx, "10.0.0.8"); err != nil {
+		t.Errorf("AllowLogin after window = %v, want nil", err)
+	}
+}

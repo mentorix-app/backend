@@ -28,7 +28,7 @@ Prefer plain string keys over hashes unless one identity needs multiple fields.
 
 ## TTL
 
-- Rate-limit windows expire: set `EXPIRE` on first increment.
+- Rate-limit windows expire: increment and TTL are set in one Lua script (`EXPIRE` on first hit, or when the key has no TTL).
 - Session-like state has no TTL (`0`): overwrite it on update or clear it explicitly (e.g. active trainer: `Delete` on stale read).
 
 ## Adding a key

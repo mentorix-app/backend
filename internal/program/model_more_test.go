@@ -2,6 +2,7 @@ package program
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -391,4 +392,42 @@ func TestStatusAndCategory_valid(t *testing.T) {
 
 func strPtr(v string) *string {
 	return &v
+}
+
+func TestTextLimits(t *testing.T) {
+	str := func(n int) *string {
+		v := strings.Repeat("я", n)
+		return &v
+	}
+	tests := []struct {
+		name     string
+		validate func() error
+		wantErr  bool
+	}{
+		{"program name at limit", func() error { return UpdateInput{Name: str(1000)}.Validate() }, false},
+		{"program name over limit", func() error { return UpdateInput{Name: str(1001)}.Validate() }, true},
+		{"program name_ru over limit", func() error { return UpdateInput{NameRu: str(1001)}.Validate() }, true},
+		{"program description at limit", func() error { return UpdateInput{Description: str(5000)}.Validate() }, false},
+		{"program description over limit", func() error { return UpdateInput{Description: str(5001)}.Validate() }, true},
+		{"program description_ru over limit", func() error { return UpdateInput{DescriptionRu: str(5001)}.Validate() }, true},
+		{"block instruction at limit", func() error { return BlockPatchInput{Instruction: str(5000)}.Validate() }, false},
+		{"block instruction over limit", func() error { return BlockPatchInput{Instruction: str(5001)}.Validate() }, true},
+		{"exercise instruction at limit", func() error {
+			return DayExerciseInput{ExerciseID: uuid.New(), Instruction: str(5000)}.ValidateDraft()
+		}, false},
+		{"exercise instruction over limit", func() error {
+			return DayExerciseInput{ExerciseID: uuid.New(), Instruction: str(5001)}.ValidateDraft()
+		}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.validate()
+			if tt.wantErr && !errors.Is(err, ErrValidation) {
+				t.Fatalf("error = %v, want ErrValidation", err)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
 }

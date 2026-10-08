@@ -19,6 +19,7 @@ Rules that are not obvious:
 
 - `POST /programs` → `draft`, empty `name`, week 1 with **7 empty days** automatically.
 - `PUT …/reorder` (weeks, days, blocks, exercises in block): body is **complete** ordered sibling id list (each exactly once); partial list → 400 `invalid reorder: … count mismatch`.
+- Text limits (characters, not bytes), over the limit → `400`: program `name`, `name_ru` 1000; program `description`, `description_ru` and block / block exercise `instruction` 5000. `page` above 100000 → `400`.
 - Statuses: `draft` → `published` → `archived`; no `published` → `draft`.
 - Publish from `archived` — status change only, no new version.
 - Publish (draft): validate name/category/difficulty, ≥1 week; each non-empty day has blocks with exercises (`single`: 1 exercise; group: ≥1); `sets`/`reps` optional (`null`/omit); when present, string format: digits only (`3`), single `/` (`5/4`), or single `-` (`3-6`).

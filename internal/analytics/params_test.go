@@ -42,6 +42,8 @@ func TestParseCompletionsParams(t *testing.T) {
 		page, limit, fromS, toS string
 	}{
 		{"bad page", "0", "", "", ""},
+		{"page over max", "100001", "", "", ""},
+		{"page overflowing int32 offset", "21474838", "100", "", ""},
 		{"bad limit", "1", "abc", "", ""},
 		{"limit over max", "1", "101", "", ""},
 		{"bad from", "1", "10", "yesterday", ""},
@@ -55,6 +57,18 @@ func TestParseCompletionsParams(t *testing.T) {
 				t.Fatalf("err = %v, want ErrValidation", err)
 			}
 		})
+	}
+}
+
+func TestParsePageLimit_pageBounds(t *testing.T) {
+	if _, err := ParseCompletionsParams("100000", "", "", ""); err != nil {
+		t.Errorf("completions page at max: %v", err)
+	}
+	if _, err := ParseProgramsParams("100000", "", "", ""); err != nil {
+		t.Errorf("programs page at max: %v", err)
+	}
+	if _, err := ParseProgramsParams("100001", "", "", ""); !errors.Is(err, ErrValidation) {
+		t.Errorf("programs page over max: err = %v, want ErrValidation", err)
 	}
 }
 

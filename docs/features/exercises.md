@@ -21,6 +21,8 @@ Rules that are not obvious:
 - Response includes `scope` (`global|private`) and `owner_user_id`; list filter `?scope=`.
 - Trainer can add global and **own** exercises to a program; other trainers' private exercises → 400. Existing links are grandfathered — check only on add/replace.
 - Enum in database/API: `snake_case` (`exercise_type`).
+- Text limits (characters, not bytes), over the limit → `400`: `name`, `name_ru` 1000; `description`, `description_ru` 5000.
+- `page` above 100000 → `400`.
 - `video_url` — optional; if set, only HTTPS URL to YouTube (`youtube.com`, `youtu.be`: `/watch`, `/embed`, `/shorts`, `/live`).
 
 ## See also

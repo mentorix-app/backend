@@ -85,15 +85,18 @@ func TestAuthStore_RotateRefreshSession(t *testing.T) {
 	newHash := randomTokenHash(t)
 	newExpires := time.Now().UTC().Add(30 * 24 * time.Hour)
 
-	gotUserID, err := store.RotateRefreshSession(ctx, oldHash, newHash, newExpires)
+	gotUserID, gotEmail, err := store.RotateRefreshSession(ctx, oldHash, newHash, newExpires)
 	if err != nil {
 		t.Fatalf("RotateRefreshSession() error = %v", err)
 	}
 	if gotUserID != userID {
 		t.Errorf("user id = %v, want %v", gotUserID, userID)
 	}
+	if gotEmail != "rotate@test.com" {
+		t.Errorf("email = %q, want rotate@test.com", gotEmail)
+	}
 
-	_, err = store.RotateRefreshSession(ctx, oldHash, newHash, newExpires)
+	_, _, err = store.RotateRefreshSession(ctx, oldHash, newHash, newExpires)
 	if !errors.Is(err, auth.ErrInvalidRefresh) {
 		t.Errorf("rotate with revoked hash error = %v, want ErrInvalidRefresh", err)
 	}

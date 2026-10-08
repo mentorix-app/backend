@@ -104,7 +104,7 @@ func main() {
 			cfg.AuthLoginRateWindow,
 			cfg.AuthRegisterRateMax,
 			cfg.AuthRegisterRateWin,
-		)
+		).WithLogger(logger)
 		subsSvc := subscription.NewService(pool)
 		subscription.NewHandlers(auth.JWTMiddleware(cfg.JWTSecret)).Mount(e)
 

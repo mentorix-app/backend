@@ -14,6 +14,7 @@ const (
 	defaultPage      = 1
 	defaultLimit     = 20
 	maxLimit         = 100
+	maxPage          = 100000
 	sortOrderAsc     = "asc"
 	sortOrderDesc    = "desc"
 	defaultSortOrder = sortOrderDesc
@@ -105,6 +106,9 @@ func parsePageLimit(pageStr, limitStr string) (int, int, error) {
 		v, err := strconv.Atoi(pageStr)
 		if err != nil || v < 1 {
 			return 0, 0, fmt.Errorf("%w: invalid page", ErrValidation)
+		}
+		if v > maxPage {
+			return 0, 0, fmt.Errorf("%w: page exceeds maximum of %d", ErrValidation, maxPage)
 		}
 		page = v
 	}

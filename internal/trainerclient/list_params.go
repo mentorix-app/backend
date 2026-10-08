@@ -13,6 +13,7 @@ const (
 	defaultPage      = 1
 	defaultLimit     = 20
 	maxLimit         = 100
+	maxPage          = 100000
 	defaultSortBy    = "linked_at"
 	sortOrderAsc     = "asc"
 	sortOrderDesc    = "desc"
@@ -52,6 +53,9 @@ func ParseListParams(pageStr, limitStr, sortBy, sortOrder, q string) (ListParams
 		page, err := strconv.Atoi(pageStr)
 		if err != nil || page < 1 {
 			return ListParams{}, fmt.Errorf("%w: invalid page", ErrValidation)
+		}
+		if page > maxPage {
+			return ListParams{}, fmt.Errorf("%w: page exceeds maximum of %d", ErrValidation, maxPage)
 		}
 		params.Page = page
 	}
