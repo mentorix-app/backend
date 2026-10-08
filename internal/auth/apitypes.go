@@ -29,6 +29,13 @@ type IDTokenRequest struct {
 	IDToken string `json:"id_token"`
 }
 
+// AppleSignInRequest is the JSON body for POST /auth/apple. Apple puts no name
+// in the token, so the app sends the one it received on the first authorization.
+type AppleSignInRequest struct {
+	IDToken string `json:"id_token"`
+	Name    string `json:"name"`
+}
+
 // RefreshRequest is the optional JSON body for POST /auth/refresh and POST /auth/logout.
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`

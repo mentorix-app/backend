@@ -44,6 +44,33 @@ func TestAuthStore_FindOrCreateClientByIdentity(t *testing.T) {
 	assertUserAndIdentityCounts(t, pool, id.Subject, 1)
 }
 
+func TestAuthStore_FindOrCreateClientByIdentity_keepsNameOfExistingAccount(t *testing.T) {
+	pool := NewPool(t)
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+
+	id := auth.ClientIdentity{Provider: auth.ProviderApple, Subject: "apple-sub-1", DisplayName: "First Name"}
+	first, err := store.FindOrCreateClientByIdentity(ctx, id)
+	if err != nil {
+		t.Fatalf("first sign-in: %v", err)
+	}
+	id.DisplayName = "Another Name"
+	second, err := store.FindOrCreateClientByIdentity(ctx, id)
+	if err != nil {
+		t.Fatalf("second sign-in: %v", err)
+	}
+	if second != first {
+		t.Fatalf("second sign-in user = %v, want %v", second, first)
+	}
+	profile, err := store.UserProfile(ctx, first)
+	if err != nil {
+		t.Fatalf("UserProfile() error = %v", err)
+	}
+	if profile.Name != "First Name" {
+		t.Errorf("name = %q, want it unchanged", profile.Name)
+	}
+}
+
 func TestAuthStore_FindOrCreateClientByIdentity_withoutEmail(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)

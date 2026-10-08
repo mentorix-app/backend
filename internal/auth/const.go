@@ -6,6 +6,7 @@ const (
 	ProviderEmailPassword = "email_password"
 	ProviderTelegram      = "telegram"
 	ProviderGoogle        = "google"
+	ProviderApple         = "apple"
 )
 
 const (

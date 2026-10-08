@@ -34,9 +34,13 @@ type fakeAuthService struct {
 	profileErr     error
 	googleIssued   IssuedAuth
 	googleErr      error
+	appleIssued    IssuedAuth
+	appleErr       error
 
 	// Arguments of the last calls, for body-mode assertions.
 	googleToken  string
+	appleToken   string
+	appleName    string
 	refreshToken string
 	logoutToken  string
 }
@@ -101,6 +105,27 @@ func (f *fakeAuthService) SignInWithGoogle(_ context.Context, rawIDToken string)
 	}
 	if out.RefreshToken == "" {
 		out.RefreshToken = "google-refresh-token"
+	}
+	if out.AccessExpires.IsZero() {
+		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	return out, nil
+}
+
+func (f *fakeAuthService) SignInWithApple(_ context.Context, rawIDToken, name string) (IssuedAuth, error) {
+	f.appleToken, f.appleName = rawIDToken, name
+	if f.appleErr != nil {
+		return IssuedAuth{}, f.appleErr
+	}
+	out := f.appleIssued
+	if out.UserID == uuid.Nil {
+		out.UserID = uuid.New()
+	}
+	if out.AccessToken == "" {
+		out.AccessToken = "apple-access-token"
+	}
+	if out.RefreshToken == "" {
+		out.RefreshToken = "apple-refresh-token"
 	}
 	if out.AccessExpires.IsZero() {
 		out.AccessExpires = time.Now().UTC().Add(time.Hour)

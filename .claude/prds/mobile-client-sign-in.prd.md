@@ -59,13 +59,14 @@ We believe that Google and Apple sign-in, plus a Telegram link in settings, will
 
 | # | Milestone | Outcome | Status | Plan |
 |---|---|---|---|---|
-| 1 | Google sign-in | A person signs in to the app with Google, gets a client account, stays signed in after a restart, can sign out | in-progress | `.claude/plans/mobile-client-sign-in-google.plan.md` |
-| 2 | Apple sign-in | The same with Apple | pending | |
+| 1 | Google sign-in | A person signs in to the app with Google, gets a client account, stays signed in after a restart, can sign out | complete | `.claude/plans/mobile-client-sign-in-google.plan.md` |
+| 2 | Apple sign-in | The same with Apple | in-progress | `.claude/plans/mobile-client-sign-in-apple.plan.md` |
 | 3 | Telegram link | A client links Telegram from settings; an existing Telegram client lands in the old account | pending | |
 | 4 | Invite in the app | A client without Telegram joins a trainer with the trainer's invite | pending | |
 
 ## Open Questions
 
+- [ ] Android return page for Apple sign-in: Apple posts the result to a web address that must send the browser back to the app. Needs the Flutter package's expected link format and the Android package name from the Flutter developer; a small follow-up PR.
 - [ ] Google and Apple client ids do not exist. Who creates them and when? Milestones 1 and 2 can be built and tested without them but cannot be checked against real sign-in.
 - [x] Platforms at launch: iOS and Android together (owner, 2026-10-08). Apple sign-in on Android goes through a web form.
 - [x] In-app account deletion, required by App Store review: a separate plan before the store submission (owner, 2026-10-08).

@@ -41,6 +41,9 @@ type Config struct {
 	// GoogleClientIDs are the OAuth client ids whose ID tokens POST /auth/google
 	// accepts. Empty disables Google sign-in.
 	GoogleClientIDs []string
+	// AppleClientIDs are the audiences POST /auth/apple accepts: the iOS bundle
+	// id and, for Android, the Services ID. Empty disables Apple sign-in.
+	AppleClientIDs []string
 	// ClientAnalyticsPageURL is the frontend page the Telegram bot links to for
 	// client self-analytics. Empty disables the "Статистика" button.
 	ClientAnalyticsPageURL string
@@ -134,6 +137,7 @@ func Load() (Config, error) {
 		BotWebhookURL:          strings.TrimRight(strings.TrimSpace(os.Getenv("BOT_WEBHOOK_URL")), "/"),
 		BotWebhookSecret:       strings.TrimSpace(os.Getenv("BOT_WEBHOOK_SECRET")),
 		GoogleClientIDs:        parseCommaSeparated(os.Getenv("GOOGLE_CLIENT_IDS")),
+		AppleClientIDs:         parseCommaSeparated(os.Getenv("APPLE_CLIENT_IDS")),
 		ClientAnalyticsPageURL: strings.TrimSpace(os.Getenv("CLIENT_ANALYTICS_PAGE_URL")),
 		GitCommit:              strings.TrimSpace(os.Getenv("RENDER_GIT_COMMIT")),
 	}

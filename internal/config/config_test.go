@@ -150,6 +150,32 @@ func TestLoad_googleClientIDsDefaultEmpty(t *testing.T) {
 	}
 }
 
+func TestLoad_appleClientIDs(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("APPLE_CLIENT_IDS", " com.example.app , com.example.service ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.AppleClientIDs) != 2 || cfg.AppleClientIDs[0] != "com.example.app" || cfg.AppleClientIDs[1] != "com.example.service" {
+		t.Fatalf("AppleClientIDs = %v", cfg.AppleClientIDs)
+	}
+}
+
+func TestLoad_appleClientIDsDefaultEmpty(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("APPLE_CLIENT_IDS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.AppleClientIDs) != 0 {
+		t.Fatalf("AppleClientIDs = %v, want empty", cfg.AppleClientIDs)
+	}
+}
+
 func TestLoad_invalidAppEnv(t *testing.T) {
 	setMinimalEnv(t)
 	t.Setenv("APP_ENV", "staging")

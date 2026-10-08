@@ -32,6 +32,7 @@ type Service struct {
 	refreshTTL time.Duration
 
 	googleVerifier IDTokenVerifier
+	appleVerifier  IDTokenVerifier
 }
 
 type IssuedAuth struct {
@@ -48,6 +49,11 @@ type ServiceOption func(*Service)
 // WithGoogleVerifier enables SignInWithGoogle.
 func WithGoogleVerifier(v IDTokenVerifier) ServiceOption {
 	return func(s *Service) { s.googleVerifier = v }
+}
+
+// WithAppleVerifier enables SignInWithApple.
+func WithAppleVerifier(v IDTokenVerifier) ServiceOption {
+	return func(s *Service) { s.appleVerifier = v }
 }
 
 func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration, opts ...ServiceOption) *Service {
@@ -155,18 +161,35 @@ func (s *Service) Login(ctx context.Context, email, password string) (IssuedAuth
 // SignInWithGoogle verifies a Google ID token and signs in the matching client,
 // creating the account on the first sign-in.
 func (s *Service) SignInWithGoogle(ctx context.Context, rawIDToken string) (IssuedAuth, error) {
+	return s.signInWithProvider(ctx, ProviderGoogle, s.googleVerifier, rawIDToken, "")
+}
+
+// SignInWithApple verifies an Apple ID token and signs in the matching client,
+// creating the account on the first sign-in. Apple puts no name in the token,
+// so name from the request is used when the account is created.
+func (s *Service) SignInWithApple(ctx context.Context, rawIDToken, name string) (IssuedAuth, error) {
+	return s.signInWithProvider(ctx, ProviderApple, s.appleVerifier, rawIDToken, name)
+}
+
+// signInWithProvider uses fallbackName only when the token carries no name. The
+// store applies the name on creation only, so an existing account keeps its own.
+func (s *Service) signInWithProvider(ctx context.Context, provider string, verifier IDTokenVerifier, rawIDToken, fallbackName string) (IssuedAuth, error) {
 	var out IssuedAuth
-	if s.googleVerifier == nil {
+	if verifier == nil {
 		return out, ErrProviderNotConfigured
 	}
-	claims, err := s.googleVerifier.Verify(ctx, rawIDToken)
+	claims, err := verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return out, err
 	}
+	name := cleanProviderName(claims.Name)
+	if name == "" {
+		name = cleanProviderName(fallbackName)
+	}
 	id := ClientIdentity{
-		Provider:    ProviderGoogle,
+		Provider:    provider,
 		Subject:     claims.Subject,
-		DisplayName: truncateRunes(normalizeDisplayName(claims.Name), maxDisplayNameLen),
+		DisplayName: truncateRunes(name, maxDisplayNameLen),
 	}
 	if claims.EmailVerified {
 		id.Email = NormalizeEmail(claims.Email)
@@ -203,6 +226,11 @@ func (s *Service) issueSession(ctx context.Context, userID uuid.UUID, email stri
 		UserID:        userID,
 		Email:         email,
 	}, nil
+}
+
+// cleanProviderName drops NUL characters, which Postgres rejects in text, then trims.
+func cleanProviderName(name string) string {
+	return normalizeDisplayName(strings.ReplaceAll(name, "\x00", ""))
 }
 
 func truncateRunes(s string, n int) string {

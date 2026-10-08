@@ -76,6 +76,9 @@ func Mount(e *echo.Echo, d Deps) Result {
 	if len(cfg.GoogleClientIDs) > 0 {
 		authOpts = append(authOpts, auth.WithGoogleVerifier(auth.NewGoogleIDTokenVerifier(cfg.GoogleClientIDs)))
 	}
+	if len(cfg.AppleClientIDs) > 0 {
+		authOpts = append(authOpts, auth.WithAppleVerifier(auth.NewAppleIDTokenVerifier(cfg.AppleClientIDs)))
+	}
 	svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL(), authOpts...)
 	auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter,
 		auth.WithSubscriptions(subsSvc),
