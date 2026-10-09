@@ -4,7 +4,7 @@ Go REST API (Echo + PostgreSQL + Redis).
 
 ## Quick start
 
-You need Go 1.25+, Postgres 16 and Redis (e.g. `brew install postgresql@16 redis`).
+You need Go 1.26+, Postgres 16 and Redis (e.g. `brew install postgresql@16 redis`).
 
 ```bash
 make install-tools   # once
