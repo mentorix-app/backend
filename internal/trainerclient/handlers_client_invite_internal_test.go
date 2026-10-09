@@ -15,7 +15,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/auth"
-	"mentorix-backend/internal/subscription"
 )
 
 const clientInviteTestSecret = "test-jwt-secret-at-least-32-chars-long"
@@ -122,19 +121,19 @@ func TestClientAcceptInvite_invalidJSON(t *testing.T) {
 
 func TestClientAcceptInvite_errorStatuses(t *testing.T) {
 	tests := []struct {
-		name string
-		err  error
-		want int
+		name    string
+		err     error
+		want    int
+		message string
 	}{
-		{"invite not found", ErrInviteNotFound, http.StatusNotFound},
-		{"user not found", ErrUserNotFound, http.StatusNotFound},
-		{"consumed", ErrInviteConsumed, http.StatusConflict},
-		{"client limit", ErrClientLimitReached, http.StatusConflict},
-		{"quota", &subscription.QuotaError{Resource: subscription.ResourceClients}, http.StatusConflict},
-		{"expired", ErrInviteExpired, http.StatusGone},
-		{"admin caller", ErrAdminCannotAccept, http.StatusForbidden},
-		{"own invite", ErrSelfInvite, http.StatusUnprocessableEntity},
-		{"unexpected", errors.New("boom"), http.StatusInternalServerError},
+		{"invite not found", ErrInviteNotFound, http.StatusNotFound, ""},
+		{"user not found", ErrUserNotFound, http.StatusNotFound, ""},
+		{"consumed", ErrInviteConsumed, http.StatusConflict, "invite already consumed"},
+		{"client limit", ErrClientLimitReached, http.StatusConflict, "client limit reached"},
+		{"expired", ErrInviteExpired, http.StatusGone, ""},
+		{"admin caller", ErrAdminCannotAccept, http.StatusForbidden, ""},
+		{"own invite", ErrSelfInvite, http.StatusUnprocessableEntity, ""},
+		{"unexpected", errors.New("boom"), http.StatusInternalServerError, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,15 +142,17 @@ func TestClientAcceptInvite_errorStatuses(t *testing.T) {
 			if rec.Code != tt.want {
 				t.Fatalf("status = %d, want %d, body %s", rec.Code, tt.want, rec.Body)
 			}
+			if tt.message == "" {
+				return
+			}
+			var body map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body) != 1 || body["message"] != tt.message {
+				t.Fatalf("body = %s, want exactly message %q", rec.Body, tt.message)
+			}
 		})
-	}
-}
-
-func TestClientAcceptInvite_quotaKeepsStructuredBody(t *testing.T) {
-	f := &fakeInviteAcceptor{err: &subscription.QuotaError{Resource: subscription.ResourceClients}}
-	rec := postAccept(clientInviteEcho(f), bearerFor(t, uuid.New()), `{"token":"abc"}`)
-	if !strings.Contains(rec.Body.String(), "quota_exceeded") {
-		t.Fatalf("body = %s, want quota_exceeded", rec.Body)
 	}
 }
 

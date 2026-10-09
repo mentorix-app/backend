@@ -1059,7 +1059,9 @@ paths:
         "404":
           description: The invite does not exist, or the signed-in account no longer exists
         "409":
-          description: The invite was used by someone else, or the trainer has no free client places (`quota_exceeded`)
+          description: >
+            The invite was used by someone else (`message`: `invite already consumed`),
+            or the trainer has no free client places (`message`: `client limit reached`)
         "410":
           description: The invite expired
         "422":
