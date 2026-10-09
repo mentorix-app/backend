@@ -6,17 +6,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/program"
+	"mentorix-backend/internal/subscription"
 	"mentorix-backend/internal/trainerclient"
 )
 
@@ -253,10 +258,56 @@ func TestTrainerInvite_acceptAsUser_quotaFullKeepsInviteUnconsumed(t *testing.T)
 	if !errors.Is(err, trainerclient.ErrClientLimitReached) {
 		t.Fatalf("error = %v, want ErrClientLimitReached", err)
 	}
+	var qe *subscription.QuotaError
+	if errors.As(err, &qe) {
+		t.Fatalf("error = %v, the accept path must return the sentinel, not a QuotaError", err)
+	}
 	if env.linkCount(t, appUser) != 0 {
 		t.Fatal("quota refusal must not link")
 	}
 	env.assertNoClientRole(t, appUser)
+	env.assertUnconsumed(t, token)
+}
+
+// The real store and service behind the real handler: a full plan answers a plain
+// 409, not the structured quota_exceeded body that POST /trainer/invites returns.
+func TestTrainerInvite_acceptAsUser_quotaFullHTTPBody(t *testing.T) {
+	const secret = "test-jwt-secret-at-least-32-chars-long"
+	env := newAppInviteEnv(t)
+	ctx := context.Background()
+	trainerUserID := env.trainer(t, "app-quota-http-trainer@test.com", "Trainer")
+	token := env.invite(t, trainerUserID)
+	for i := 0; i < 3; i++ {
+		if _, err := env.store.AcceptInvite(ctx, env.invite(t, trainerUserID), fmt.Sprintf("app-quota-http-tg-%d", i), "Client"); err != nil {
+			t.Fatalf("fill quota %d: %v", i, err)
+		}
+	}
+	appUser := newClientWithIdentity(t, env.auth, auth.ProviderGoogle, "g-quota-http-1", "app-quota-http@test.com")
+	env.withoutRoles(t, appUser)
+
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    auth.Issuer,
+		Subject:   appUser.String(),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}).SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	trainerclient.NewHandlers(env.svc, env.pool, secret).Mount(e)
+
+	req := httptest.NewRequest(http.MethodPost, "/client/invites/accept", strings.NewReader(`{"token":"`+token+`"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.Header.Set(echo.HeaderAuthorization, "Bearer "+signed)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409, body %s", rec.Code, rec.Body)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"message":"client limit reached"}` {
+		t.Fatalf("body = %s, want exactly {\"message\":\"client limit reached\"}", got)
+	}
 	env.assertUnconsumed(t, token)
 }
 
