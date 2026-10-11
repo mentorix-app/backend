@@ -79,3 +79,16 @@ type ClientAcceptInviteResponse struct {
 	TrainerDisplayName string    `json:"trainer_display_name"`
 	AlreadyLinked      bool      `json:"already_linked"`
 }
+
+// ClientTrainer is one active link of the signed-in client to a trainer.
+// TrainerID is trainers.id, the id POST /client/invites/accept returns.
+type ClientTrainer struct {
+	TrainerID          uuid.UUID `json:"trainer_id"`
+	TrainerDisplayName string    `json:"trainer_display_name"`
+	LinkedAt           time.Time `json:"linked_at"`
+}
+
+// ClientTrainerList is the body of GET /client/trainers, newest link first.
+type ClientTrainerList struct {
+	Items []ClientTrainer `json:"items"`
+}

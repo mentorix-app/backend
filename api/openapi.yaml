@@ -1119,6 +1119,29 @@ paths:
         "422":
           description: The invite is the caller's own, or the trainer blocked the caller
 
+  /client/trainers:
+    get:
+      tags: [trainer]
+      summary: List the signed-in user's trainers
+      description: >
+        The trainers the caller has an active link with, newest link first.
+        An empty `items` array means the caller has no active trainer link, so
+        the app shows the invite screen. A trainer the caller is blocked by is not
+        listed. A token of an account that no longer exists also gets an empty
+        list; `GET /auth/me` answers `404` for it. No role is required.
+      operationId: clientListTrainers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's trainers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientTrainerListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /trainer/clients:
     get:
       tags: [trainer]
@@ -3531,6 +3554,31 @@ components:
           type: string
         already_linked:
           type: boolean
+
+    ClientTrainer:
+      type: object
+      required: [trainer_id, trainer_display_name, linked_at]
+      properties:
+        trainer_id:
+          type: string
+          format: uuid
+          description: trainers.id, the same id `POST /client/invites/accept` returns.
+        trainer_display_name:
+          type: string
+          description: May be an empty string when the trainer has not set a name.
+        linked_at:
+          type: string
+          format: date-time
+
+    ClientTrainerListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          description: Newest link first. Empty when the caller has no active trainer link.
+          items:
+            $ref: "#/components/schemas/ClientTrainer"
 
     TrainerClientProgramSummary:
       type: object

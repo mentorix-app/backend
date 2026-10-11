@@ -191,6 +191,18 @@ ORDER BY
   rl.client_user_id ASC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: ListActiveTrainersByClient :many
+SELECT
+  tc.trainer_id,
+  tu.display_name AS trainer_display_name,
+  tc.created_at
+FROM mentorix.trainer_clients tc
+INNER JOIN mentorix.trainers t ON t.id = tc.trainer_id
+INNER JOIN mentorix.users tu ON tu.id = t.user_id
+WHERE tc.client_user_id = $1
+  AND tc.status = 'active'
+ORDER BY tc.created_at DESC, tc.trainer_id ASC;
+
 -- name: GetAuthIdentityUserID :one
 SELECT user_id
 FROM mentorix.auth_identities
