@@ -75,6 +75,8 @@ func schemaBindings() []schemaBinding {
 		{name: "TrainerInvite", typ: reflect.TypeOf(trainerclient.Invite{})},
 		{name: "ClientAcceptInviteRequest", typ: reflect.TypeOf(trainerclient.ClientAcceptInviteRequest{})},
 		{name: "ClientAcceptInviteResponse", typ: reflect.TypeOf(trainerclient.ClientAcceptInviteResponse{})},
+		{name: "ClientTrainer", typ: reflect.TypeOf(trainerclient.ClientTrainer{})},
+		{name: "ClientTrainerListResponse", typ: reflect.TypeOf(trainerclient.ClientTrainerList{})},
 		{name: "TrainerClientProgramSummary", typ: reflect.TypeOf(trainerclient.ClientProgramSummary{})},
 		{name: "TrainerClient", typ: reflect.TypeOf(trainerclient.Client{})},
 		{name: "TrainerClientListResponse", typ: reflect.TypeOf(trainerclient.ClientListResult{})},

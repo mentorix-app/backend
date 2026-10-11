@@ -244,6 +244,25 @@ func utcTimePtr(t *time.Time) *time.Time {
 	return &u
 }
 
+// ListClientTrainers returns the trainers the client has an active link with,
+// newest link first. The slice is never nil. A user without links, or one that
+// does not exist, gets an empty slice.
+func (s *Store) ListClientTrainers(ctx context.Context, clientUserID uuid.UUID) ([]ClientTrainer, error) {
+	rows, err := s.q.ListActiveTrainersByClient(ctx, pgconv.ToPGUUID(clientUserID))
+	if err != nil {
+		return nil, fmt.Errorf("list client trainers: %w", err)
+	}
+	out := make([]ClientTrainer, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, ClientTrainer{
+			TrainerID:          pgconv.FromPGUUID(row.TrainerID),
+			TrainerDisplayName: row.TrainerDisplayName,
+			LinkedAt:           row.CreatedAt.UTC(),
+		})
+	}
+	return out, nil
+}
+
 func (s *Store) UserIDByTelegram(ctx context.Context, telegramUserID string) (uuid.UUID, error) {
 	userPG, err := s.q.GetAuthIdentityUserID(ctx, sqlc.GetAuthIdentityUserIDParams{
 		Provider: auth.ProviderTelegram,

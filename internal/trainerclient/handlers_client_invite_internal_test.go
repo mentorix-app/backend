@@ -172,6 +172,9 @@ func TestClientInviteMount_doesNotGuardOtherClientPaths(t *testing.T) {
 		{http.MethodGet, "/client/analytics", http.StatusOK},
 		{http.MethodGet, "/client/unknown", http.StatusNotFound},
 		{http.MethodGet, "/client/invites/accept", http.StatusMethodNotAllowed},
+		// The list route is guarded by the JWT middleware and answers GET only.
+		{http.MethodGet, "/client/trainers", http.StatusUnauthorized},
+		{http.MethodPost, "/client/trainers", http.StatusMethodNotAllowed},
 	}
 	for _, tt := range tests {
 		rec := httptest.NewRecorder()

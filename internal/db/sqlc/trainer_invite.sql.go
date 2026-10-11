@@ -235,6 +235,45 @@ func (q *Queries) InsertTrainerInvite(ctx context.Context, arg InsertTrainerInvi
 	return i, err
 }
 
+const listActiveTrainersByClient = `-- name: ListActiveTrainersByClient :many
+SELECT
+  tc.trainer_id,
+  tu.display_name AS trainer_display_name,
+  tc.created_at
+FROM mentorix.trainer_clients tc
+INNER JOIN mentorix.trainers t ON t.id = tc.trainer_id
+INNER JOIN mentorix.users tu ON tu.id = t.user_id
+WHERE tc.client_user_id = $1
+  AND tc.status = 'active'
+ORDER BY tc.created_at DESC, tc.trainer_id ASC
+`
+
+type ListActiveTrainersByClientRow struct {
+	TrainerID          pgtype.UUID `json:"trainer_id"`
+	TrainerDisplayName string      `json:"trainer_display_name"`
+	CreatedAt          time.Time   `json:"created_at"`
+}
+
+func (q *Queries) ListActiveTrainersByClient(ctx context.Context, clientUserID pgtype.UUID) ([]ListActiveTrainersByClientRow, error) {
+	rows, err := q.db.Query(ctx, listActiveTrainersByClient, clientUserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveTrainersByClientRow{}
+	for rows.Next() {
+		var i ListActiveTrainersByClientRow
+		if err := rows.Scan(&i.TrainerID, &i.TrainerDisplayName, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAllTrainerClients = `-- name: ListAllTrainerClients :many
 WITH ranked_link AS (
   SELECT DISTINCT ON (tc.client_user_id)

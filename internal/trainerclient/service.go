@@ -161,6 +161,11 @@ func (s *Service) AcceptInviteAsUser(ctx context.Context, userID uuid.UUID, rawT
 	return s.store.AcceptInviteAsUser(ctx, token, userID)
 }
 
+// ListClientTrainers returns the signed-in client's trainers with an active link.
+func (s *Service) ListClientTrainers(ctx context.Context, clientUserID uuid.UUID) ([]ClientTrainer, error) {
+	return s.store.ListClientTrainers(ctx, clientUserID)
+}
+
 func (s *Service) RefreshTelegramAvatar(ctx context.Context, telegramUserID string) error {
 	userID, err := s.store.UserIDByTelegram(ctx, telegramUserID)
 	if err != nil {

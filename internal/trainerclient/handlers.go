@@ -21,9 +21,15 @@ type clientInviteAcceptor interface {
 	AcceptInviteAsUser(ctx context.Context, userID uuid.UUID, rawToken string) (AcceptInviteResult, error)
 }
 
+// clientTrainerLister is the part of Service that GET /client/trainers uses.
+type clientTrainerLister interface {
+	ListClientTrainers(ctx context.Context, clientUserID uuid.UUID) ([]ClientTrainer, error)
+}
+
 type Handlers struct {
 	svc        *Service
 	invites    clientInviteAcceptor
+	trainers   clientTrainerLister
 	pool       *pgxpool.Pool
 	jwtSecret  string
 	httpClient *http.Client
@@ -33,6 +39,7 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 	return &Handlers{
 		svc:        svc,
 		invites:    svc,
+		trainers:   svc,
 		pool:       pool,
 		jwtSecret:  jwtSecret,
 		httpClient: telegram.HTTPClient,
@@ -57,6 +64,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	// Per-route middleware: a /client group would also guard the public signed-link
 	// GET /client/analytics and answer 401 for unknown paths.
 	e.POST("/client/invites/accept", h.ClientAcceptInvite, auth.JWTMiddleware(h.jwtSecret))
+	e.GET("/client/trainers", h.ClientListTrainers, auth.JWTMiddleware(h.jwtSecret))
 }
 
 func (h *Handlers) ClientAcceptInvite(c echo.Context) error {
@@ -77,6 +85,20 @@ func (h *Handlers) ClientAcceptInvite(c echo.Context) error {
 		TrainerDisplayName: result.TrainerDisplayName,
 		AlreadyLinked:      result.AlreadyLinked,
 	})
+}
+
+// ClientListTrainers answers with the caller's trainers. The user id comes only
+// from the access token, so there is no role check and no way to ask for another user.
+func (h *Handlers) ClientListTrainers(c echo.Context) error {
+	userID, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	items, err := h.trainers.ListClientTrainers(c.Request().Context(), userID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal).SetInternal(err)
+	}
+	return c.JSON(http.StatusOK, ClientTrainerList{Items: items})
 }
 
 func (h *Handlers) CreateInvite(c echo.Context) error {
