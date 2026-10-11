@@ -63,10 +63,11 @@ We believe that Google and Apple sign-in, plus a Telegram link in settings, will
 | 2 | Apple sign-in | The same with Apple | complete | `.claude/plans/mobile-client-sign-in-apple.plan.md` |
 | 3 | Telegram link | A client links Telegram from settings; an existing Telegram client lands in the old account | complete | `.claude/plans/mobile-client-sign-in-telegram-link.plan.md` |
 | 4 | Invite in the app | A client without Telegram joins a trainer with the trainer's invite | complete | `.claude/plans/mobile-client-sign-in-invite.plan.md` |
+| 5 | Apple sign-in return for Android | A person on Android finishes Sign in with Apple in the browser and lands back in the app | in-progress | `.claude/plans/mobile-client-sign-in-apple-android-return.plan.md` |
 
 ## Open Questions
 
-- [ ] Android return page for Apple sign-in: Apple posts the result to a web address that must send the browser back to the app. Needs the Flutter package's expected link format and the Android package name from the Flutter developer; a small follow-up PR.
+- [x] Android return page for Apple sign-in: Apple posts the result to a web address that must send the browser back to the app. Resolved: the Flutter developer confirmed the `intent://` link format and the package `com.mentorix.mobile`, and `POST /auth/apple/callback` answers `307` with that link (milestone 5).
 - [ ] Google and Apple client ids do not exist. Who creates them and when? Milestones 1 and 2 can be built and tested without them but cannot be checked against real sign-in.
 - [x] Platforms at launch: iOS and Android together (owner, 2026-10-08). Apple sign-in on Android goes through a web form.
 - [x] In-app account deletion, required by App Store review: a separate plan before the store submission (owner, 2026-10-08).

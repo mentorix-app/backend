@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,10 @@ type Config struct {
 	// AppleClientIDs are the audiences POST /auth/apple accepts: the iOS bundle
 	// id and, for Android, the Services ID. Empty disables Apple sign-in.
 	AppleClientIDs []string
+	// AppleAndroidPackage is the Android application id that POST
+	// /auth/apple/callback sends the browser back to. Empty disables the
+	// callback.
+	AppleAndroidPackage string
 	// ClientAnalyticsPageURL is the frontend page the Telegram bot links to for
 	// client self-analytics. Empty disables the "Статистика" button.
 	ClientAnalyticsPageURL string
@@ -138,6 +143,7 @@ func Load() (Config, error) {
 		BotWebhookSecret:       strings.TrimSpace(os.Getenv("BOT_WEBHOOK_SECRET")),
 		GoogleClientIDs:        parseCommaSeparated(os.Getenv("GOOGLE_CLIENT_IDS")),
 		AppleClientIDs:         parseCommaSeparated(os.Getenv("APPLE_CLIENT_IDS")),
+		AppleAndroidPackage:    strings.TrimSpace(os.Getenv("APPLE_ANDROID_PACKAGE")),
 		ClientAnalyticsPageURL: strings.TrimSpace(os.Getenv("CLIENT_ANALYTICS_PAGE_URL")),
 		GitCommit:              strings.TrimSpace(os.Getenv("RENDER_GIT_COMMIT")),
 	}
@@ -163,6 +169,12 @@ func Load() (Config, error) {
 	if cfg.ClientAnalyticsPageURL != "" {
 		if err := validatePageURL(cfg.ClientAnalyticsPageURL); err != nil {
 			return Config{}, fmt.Errorf("config: CLIENT_ANALYTICS_PAGE_URL %w", err)
+		}
+	}
+
+	if cfg.AppleAndroidPackage != "" {
+		if err := validateAndroidPackage(cfg.AppleAndroidPackage); err != nil {
+			return Config{}, fmt.Errorf("config: APPLE_ANDROID_PACKAGE %w", err)
 		}
 	}
 
@@ -240,6 +252,17 @@ func validatePageURL(raw string) error {
 	}
 	if strings.ContainsAny(raw, "?#") {
 		return fmt.Errorf("must not contain query or fragment")
+	}
+	return nil
+}
+
+var androidPackagePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$`)
+
+// validateAndroidPackage accepts only a dotted Android application id. The value
+// goes into a redirect link, so characters such as ';' and '#' must not pass.
+func validateAndroidPackage(raw string) error {
+	if !androidPackagePattern.MatchString(raw) {
+		return fmt.Errorf("must be an Android package name such as com.example.app, got %q", raw)
 	}
 	return nil
 }

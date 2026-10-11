@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 
 	"mentorix-backend/internal/config"
 	httpx "mentorix-backend/internal/http"
@@ -43,6 +44,8 @@ type Handlers struct {
 	refreshTTL time.Duration
 	limiter    *RateLimiter
 	subs       SubscriptionProvider
+
+	appleAndroidPackage string
 }
 
 type HandlersOption func(*Handlers)
@@ -50,6 +53,12 @@ type HandlersOption func(*Handlers)
 // WithSubscriptions enables the subscription block in /auth/me responses.
 func WithSubscriptions(p SubscriptionProvider) HandlersOption {
 	return func(h *Handlers) { h.subs = p }
+}
+
+// WithAppleAndroidPackage sets the Android application id that POST
+// /auth/apple/callback sends the browser back to. Without it the callback answers 503.
+func WithAppleAndroidPackage(pkg string) HandlersOption {
+	return func(h *Handlers) { h.appleAndroidPackage = pkg }
 }
 
 func NewHandlers(svc *Service, jwtSecret string, cookie config.RefreshCookieSettings, refreshTTL time.Duration, limiter *RateLimiter, opts ...HandlersOption) *Handlers {
@@ -71,6 +80,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	e.POST("/auth/login", h.Login)
 	e.POST("/auth/google", h.Google)
 	e.POST("/auth/apple", h.Apple)
+	e.POST("/auth/apple/callback", h.AppleCallback, middleware.BodyLimit("16K"))
 	e.POST("/auth/refresh", h.Refresh)
 	e.POST("/auth/logout", h.Logout)
 	// Per-route middleware: an empty-prefix Group would add a catch-all that answers 401 for unknown paths.
@@ -232,6 +242,39 @@ func (h *Handlers) Apple(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "apple sign-in failed").SetInternal(err)
 	}
 	return h.writeAuthBodyJSON(c, http.StatusOK, issued)
+}
+
+// AppleCallback ends Sign in with Apple on Android. Apple makes the browser POST
+// the result as a form; the answer sends the browser back into the app with an
+// intent link that carries the form fields. It creates no session and checks no
+// token: the app sends the id_token to POST /auth/apple afterwards.
+func (h *Handlers) AppleCallback(c echo.Context) error {
+	if h.appleAndroidPackage == "" {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "apple sign-in return is not configured")
+	}
+	req := c.Request()
+	// ParseForm reads only an application/x-www-form-urlencoded body. For another
+	// content type it leaves PostForm empty, and for a Content-Type header it
+	// cannot parse it returns an error; both end in 400.
+	if err := req.ParseForm(); err != nil {
+		// The body limit middleware reports an oversized body as a read error.
+		var httpErr *echo.HTTPError
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusRequestEntityTooLarge {
+			return echo.NewHTTPError(http.StatusRequestEntityTooLarge)
+		}
+		// The parse error can quote a fragment of the form, so it stays out of the answer and the logs.
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid form body")
+	}
+	// PostForm only: ParseForm also merges the URL query into Form, and nothing
+	// but Apple's form body may reach the app.
+	form := req.PostForm
+	if len(form) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "form body is required")
+	}
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
+	// Encode escapes '#', ';' and '&', so a field cannot change the part after '#'.
+	return c.Redirect(http.StatusTemporaryRedirect,
+		"intent://callback?"+form.Encode()+"#Intent;package="+h.appleAndroidPackage+";scheme=signinwithapple;end")
 }
 
 // TelegramLink redeems the bot's one-time code for the signed-in user. The

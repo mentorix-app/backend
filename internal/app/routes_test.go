@@ -5,6 +5,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"sort"
 	"strings"
 	"testing"
@@ -129,5 +132,30 @@ func TestMount_notifierOnlyWithBotToken(t *testing.T) {
 	}
 	if noToken.TrainerClient == nil {
 		t.Fatal("trainer client missing without a bot token")
+	}
+}
+
+// A deploy that drops the setting on its way to the handler answers 503 on the
+// Apple return address, which only a real Android sign-in would notice.
+func TestMount_passesAppleAndroidPackageToCallback(t *testing.T) {
+	cfg := productionLikeConfig()
+	cfg.AppleAndroidPackage = "com.mentorix.mobile"
+	e := echo.New()
+	res := app.Mount(e, app.Deps{Config: cfg, Pool: lazyPool(t), Logger: slog.Default()})
+	if res.Notifier != nil {
+		t.Cleanup(func() { _ = res.Notifier.Close(context.Background()) })
+	}
+
+	form := url.Values{"state": {"s"}, "code": {"c"}}
+	req := httptest.NewRequest(http.MethodPost, "/auth/apple/callback", strings.NewReader(form.Encode()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d; body = %s", rec.Code, http.StatusTemporaryRedirect, rec.Body.String())
+	}
+	if loc := rec.Header().Get(echo.HeaderLocation); !strings.Contains(loc, "package=com.mentorix.mobile") {
+		t.Fatalf("Location = %q, want package=com.mentorix.mobile", loc)
 	}
 }

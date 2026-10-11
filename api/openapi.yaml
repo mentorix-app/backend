@@ -173,6 +173,58 @@ paths:
         "503":
           description: Apple sign-in is not configured (APPLE_CLIENT_IDS is empty)
 
+  /auth/apple/callback:
+    post:
+      tags: [auth]
+      summary: Return address of Sign in with Apple on Android
+      description: >
+        Called by the user's browser when Apple ends the web sign-in with a
+        form POST. Creates no session and checks no token. Answers with a
+        redirect that sends the browser back into the Android app, carrying the
+        form fields in the intent link. The app then sends the id_token to
+        `POST /auth/apple`. The app never calls this address itself.
+      operationId: appleSignInCallback
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              description: >
+                The fields Apple posts. Every other field is passed through as well.
+              properties:
+                code:
+                  type: string
+                id_token:
+                  type: string
+                state:
+                  type: string
+                user:
+                  type: string
+                  description: JSON string with the name and email, sent on the first authorization only
+                error:
+                  type: string
+                  description: Sent instead of code, id_token and user when sign-in failed, for example user_cancelled_authorize. state is still sent.
+      responses:
+        "307":
+          description: Redirect into the app
+          headers:
+            Location:
+              description: >
+                intent://callback?{form fields, url-encoded}#Intent;package={APPLE_ANDROID_PACKAGE};scheme=signinwithapple;end
+              schema:
+                type: string
+            Cache-Control:
+              description: Always no-store, the link carries the ID token and the authorization code
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          description: The form body is over 16 KB
+        "503":
+          description: The return address is not configured (APPLE_ANDROID_PACKAGE is empty)
+
   /auth/telegram/link:
     post:
       tags: [auth]
