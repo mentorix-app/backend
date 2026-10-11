@@ -2,6 +2,7 @@ package config
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -173,6 +174,78 @@ func TestLoad_appleClientIDsDefaultEmpty(t *testing.T) {
 	}
 	if len(cfg.AppleClientIDs) != 0 {
 		t.Fatalf("AppleClientIDs = %v, want empty", cfg.AppleClientIDs)
+	}
+}
+
+func TestLoad_appleAndroidPackage(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"two segments", "com.mentorix", "com.mentorix"},
+		{"three segments", "com.mentorix.mobile", "com.mentorix.mobile"},
+		{"underscore and digits", "com.mentorix_app.v2", "com.mentorix_app.v2"},
+		{"surrounding spaces are trimmed", " com.mentorix.mobile ", "com.mentorix.mobile"},
+		{"whitespace only means off", " \t ", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("APPLE_ANDROID_PACKAGE", tc.raw)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.AppleAndroidPackage != tc.want {
+				t.Errorf("AppleAndroidPackage = %q, want %q", cfg.AppleAndroidPackage, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoad_appleAndroidPackageDefaultEmpty(t *testing.T) {
+	setMinimalEnv(t)
+	t.Setenv("APPLE_ANDROID_PACKAGE", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AppleAndroidPackage != "" {
+		t.Fatalf("AppleAndroidPackage = %q, want empty", cfg.AppleAndroidPackage)
+	}
+}
+
+func TestLoad_appleAndroidPackage_invalid(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  string
+	}{
+		{"semicolon injects intent extras", "com.x;S.evil=1"},
+		{"space inside", "com.mentorix mobile"},
+		{"line break inside", "com.mentorix\nmobile"},
+		{"single segment", "mentorix"},
+		{"trailing dot", "com.mentorix.mobile."},
+		{"leading dot", ".com.mentorix"},
+		{"empty segment", "com..mentorix"},
+		{"first segment starts with a digit", "1com.mentorix"},
+		{"later segment starts with a digit", "com.1mentorix"},
+		{"hyphen", "com.mentorix-mobile"},
+		{"fragment marker", "com.mentorix#Intent"},
+		{"non-ASCII letters", "com.мир"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("APPLE_ANDROID_PACKAGE", tc.raw)
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("expected error for %q", tc.raw)
+			}
+			if !strings.Contains(err.Error(), "APPLE_ANDROID_PACKAGE") {
+				t.Errorf("error %q does not name APPLE_ANDROID_PACKAGE", err)
+			}
+		})
 	}
 }
 

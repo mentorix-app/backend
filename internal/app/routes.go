@@ -86,6 +86,7 @@ func Mount(e *echo.Echo, d Deps) Result {
 	svc := auth.NewService(pool, cfg.JWTSecret, cfg.AccessTokenTTL(), cfg.RefreshTokenTTL(), authOpts...)
 	auth.NewHandlers(svc, cfg.JWTSecret, cfg.RefreshCookie, cfg.RefreshTokenTTL(), limiter,
 		auth.WithSubscriptions(subsSvc),
+		auth.WithAppleAndroidPackage(cfg.AppleAndroidPackage),
 	).Mount(e)
 
 	adminSvc := admin.NewService(pool)
