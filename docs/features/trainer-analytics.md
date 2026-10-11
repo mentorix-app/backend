@@ -15,7 +15,7 @@ Uses `client_workout_completions`, `program_assignments`, `program_versions`, `p
 
 Contract: `api/openapi.yaml` defines `GET /trainer/clients/{client_user_id}/analytics`, `GET /trainer/clients/{client_user_id}/completions`, `GET /trainer/programs/analytics`, `GET /trainer/programs/{program_id}/analytics`, and `GET /trainer/programs/{program_id}/weeks/{week_number}/results`. All require the `trainer` role (returns `403` for admin).
 
-Access control: the client must be in the trainer's `trainer_clients` list, and the program must be `created_by` that trainer; otherwise returns `404`.
+Access control: the client must be in the trainer's `trainer_clients` list, and the program must be `created_by` that trainer; otherwise returns `404`, with code `client_not_found` when the client is the missing part.
 
 Non-obvious rules:
 

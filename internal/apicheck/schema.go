@@ -10,6 +10,7 @@ import (
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
+	httpx "mentorix-backend/internal/http"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/subscription"
 	"mentorix-backend/internal/trainerclient"
@@ -23,6 +24,8 @@ type schemaBinding struct {
 
 func schemaBindings() []schemaBinding {
 	return []schemaBinding{
+		{name: "ErrorResponse", typ: reflect.TypeOf(httpx.ErrorBody{})},
+		{name: "QuotaExceededError", typ: reflect.TypeOf(subscription.QuotaErrorBody{})},
 		{name: "HealthStatus", typ: reflect.TypeOf(health.LivenessResponse{})},
 		{name: "ReadyResponse", typ: reflect.TypeOf(health.ReadyResponse{})},
 		{name: "AuthCredentials", typ: reflect.TypeOf(auth.AuthCredentials{})},

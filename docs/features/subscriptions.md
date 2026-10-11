@@ -21,7 +21,7 @@ Plans `free`, `advance`, and `elite` for trainers with limits on their own exerc
 
 ## Quotas and read-only
 
-- Quota checks run in a transaction: `LockTrainer` (advisory-like `SELECT … FOR UPDATE` on `trainers`) followed by `CheckQuota`. Exceeding a limit returns `409` with `{error: quota_exceeded, resource, plan, limit, usage}`.
+- Quota checks run in a transaction: `LockTrainer` (advisory-like `SELECT … FOR UPDATE` on `trainers`) followed by `CheckQuota`. Exceeding a limit returns `409` with `{code: quota_exceeded, message, error: quota_exceeded, resource, plan, limit, usage}`. `code` and `message` are the fields of every error body; `error` repeats `code`, and the web cabinet's quota parser reads `error`.
 - `OpCreate` blocks when `usage >= limit`; `OpMutate` (read-only after downgrade) blocks when `usage > limit`.
 - Always allowed: reads, deleting exercises, archiving/deleting programs, clearing assignments, blocking clients.
 - Invites are not created when the client limit is full; accepting an invite in the bot rechecks the quota (error message is «нет свободных мест»).

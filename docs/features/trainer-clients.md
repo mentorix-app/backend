@@ -30,6 +30,7 @@ Non-obvious rules:
 - Assignment endpoint: `PUT /trainer/clients/program-assignment` takes `client_user_ids` (1–100) and `program_id`; response lists `assigned`, `cleared`, and `skipped` (same as sync). A single client is sent as an array with one id.
 - Each `program_assignment` in the list includes `assignment_id`, `program_id`, `program_version_id`, `assigned_at`, `program_name`, `program_name_ru` (from frozen version), and `is_behind_latest` (can sync if `true`; `assignment_id` goes in the sync request body).
 - Syncing active assignments uses program endpoints (`POST .../assignments/sync`).
+- Error codes: `PUT …/program-assignment` answers `422 program_not_published` when the program is not published (an unlinked or blocked client is a `skipped` entry, not an error); `GET …/program-assignment` answers `403 client_not_linked` for a client the trainer is not linked to and `422 client_blocked` for a client the trainer blocked; it has no `404`.
 
 ## See also
 

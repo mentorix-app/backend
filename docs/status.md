@@ -24,6 +24,7 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Client stats page signed from Telegram (`GET /client/analytics`, button «📊 Статистика») | [features/client-analytics.md](features/client-analytics.md) |
 | Trainer responses to workout results (comment + push to Telegram) | [features/workout-comments.md](features/workout-comments.md) |
 | OpenAPI contract + apicheck | [architecture.md](architecture.md), `api/openapi.yaml` |
+| Error body with a stable `code` next to `message` on every error except the `503` of `GET /health/ready` (status-based default, specific codes for sign-in, Telegram link, invites, program assignment, analytics, quota) | [features/auth.md](features/auth.md), [features/trainer-invites.md](features/trainer-invites.md), [features/subscriptions.md](features/subscriptions.md), [api-endpoints.md](../.claude/rules/api-endpoints.md) |
 | CI/CD (`make check-ci`, Deploy Hook stage, migrate preDeploy) | [environments.md](environments.md), [maintenance.md](maintenance.md) |
 | sqlc store + integration tests | `internal/db/` |
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |

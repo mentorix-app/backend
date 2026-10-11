@@ -20,6 +20,7 @@ import (
 	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
+	httpx "mentorix-backend/internal/http"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/subscription"
 	"mentorix-backend/internal/trainerclient"
@@ -365,5 +366,67 @@ func TestTrainerInvite_acceptAsUser_adminIsRefused(t *testing.T) {
 	env.assertUnconsumed(t, token)
 	if roles := env.roles(t, admin); len(roles) != 1 || roles[0] != auth.RoleAdmin {
 		t.Fatalf("roles = %v, want [admin]", roles)
+	}
+}
+
+// The two 409 answers of POST /client/invites/accept come from different rows in
+// the real database, and the client tells them apart by code alone.
+func TestTrainerInvite_acceptAsUser_conflictsAreToldApartByCode(t *testing.T) {
+	const secret = "test-jwt-secret-at-least-32-chars-long"
+	env := newAppInviteEnv(t)
+	ctx := context.Background()
+
+	fullTrainer := env.trainer(t, "app-codes-full-trainer@test.com", "Full")
+	// An invite cannot be created once the places are taken, so it exists first.
+	fullToken := env.invite(t, fullTrainer)
+	for i := 0; i < 3; i++ {
+		if _, err := env.store.AcceptInvite(ctx, env.invite(t, fullTrainer), fmt.Sprintf("app-codes-tg-%d", i), "Client"); err != nil {
+			t.Fatalf("fill quota %d: %v", i, err)
+		}
+	}
+
+	usedTrainer := env.trainer(t, "app-codes-used-trainer@test.com", "Used")
+	usedToken := env.invite(t, usedTrainer)
+	if _, err := env.store.AcceptInvite(ctx, usedToken, "app-codes-tg-first", "First"); err != nil {
+		t.Fatalf("consume invite: %v", err)
+	}
+
+	appUser := newClientWithIdentity(t, env.auth, auth.ProviderGoogle, "g-codes-1", "app-codes@test.com")
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    auth.Issuer,
+		Subject:   appUser.String(),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}).SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	e.HTTPErrorHandler = httpx.ErrorHandler
+	trainerclient.NewHandlers(env.svc, env.pool, secret).Mount(e)
+
+	tests := []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{"no free client places", fullToken, `{"code":"client_limit_reached","message":"client limit reached"}`},
+		{"invite used by someone else", usedToken, `{"code":"invite_consumed","message":"invite already consumed"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/client/invites/accept", strings.NewReader(`{"token":"`+tt.token+`"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			req.Header.Set(echo.HeaderAuthorization, "Bearer "+signed)
+			rec := httptest.NewRecorder()
+
+			e.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("status = %d, want 409, body %s", rec.Code, rec.Body)
+			}
+			if got := strings.TrimSpace(rec.Body.String()); got != tt.want {
+				t.Fatalf("body = %s, want %s", got, tt.want)
+			}
+		})
 	}
 }
