@@ -29,7 +29,7 @@ Rules that are not obvious:
 - Plan quota on active programs (draft+published): create draft and re-publish from archive → `409 quota_exceeded` if limit filled; mutations of existing blocked on exceeded (read-only after downgrade); archive/delete always allowed. See [subscriptions.md](subscriptions.md).
 - Structure edits that count first (add/delete week, add/delete day) and publish run under the program row lock: concurrent requests cannot remove the last week or day, exceed 7 days, or duplicate numbers. A second concurrent publish answers like a sequential repeat (`409` invalid status transition for a draft, `422` no unpublished changes for publish-update).
 - `DELETE /programs/{id}` — assignments and soft delete in one transaction; already deleted → `204`.
-- `POST /programs/{id}/assignments/sync` — owner only (`created_by`); admin without ownership → `403` (like assign). After sync — auto-cleanup unused versions.
+- `POST /programs/{id}/assignments/sync` — owner only (`created_by`); admin without ownership → `403` (like assign). A program with no published version answers `422 program_not_published`; an empty selection answers `422 unprocessable_entity`. After sync — auto-cleanup unused versions.
 
 ## See also
 

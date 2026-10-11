@@ -93,6 +93,17 @@ Day id **only** where the operation is about the day's block list (create, reord
 
 Include `created_at` when column exists (except health).
 
+## Errors
+
+Every error body carries `code` and `message`, except the `503` of `GET /health/ready`, which answers with its readiness body. The body is `httpx.ErrorBody`, `{"code": "...", "message": "..."}`, except the quota refusal, a superset (`subscription.QuotaErrorBody`). `httpx.ErrorHandler`, which `app.Mount` installs, writes it.
+
+- `code` is a stable `snake_case` identifier clients branch on; `message` is text for people and may change. OpenAPI `ErrorResponse` mirrors the type.
+- Default: the code of the HTTP status (`not_found`, `conflict`, ...). A plain `echo.NewHTTPError` is enough.
+- A specific code, `httpx.NewError(status, httpx.CodeX, msg)`, only where one status has several meanings or the app must branch. `NewErrorCause` keeps a cause for the log. List the code on the operation in OpenAPI.
+- One text, one code: a sentinel or shared message with a code gets it at every place that turns it into a response. Grep it across `internal/`.
+- An error whose message is a struct is written as it is, so the struct must carry `code` and `message` itself (`subscription.QuotaErrorBody` is the only one).
+- The cause never reaches the body, also with `e.Debug`. A test that checks codes needs an Echo with `httpx.ErrorHandler`; a bare `echo.New()` renders Echo's default body.
+
 ## New endpoint checklist
 
 1. Echo route (match patterns above), mounted from `internal/app/routes.go` (shared by `cmd/api` and the contract test)

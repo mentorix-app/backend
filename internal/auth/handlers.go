@@ -143,7 +143,7 @@ func tokenResponse(issued IssuedAuth) TokenResponse {
 
 func (h *Handlers) Register(c echo.Context) error {
 	if err := h.limiter.AllowRegister(c.Request().Context(), c.RealIP()); err != nil {
-		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
 	}
 	var body RegisterRequest
 	if err := c.Bind(&body); err != nil {
@@ -166,7 +166,7 @@ func (h *Handlers) Register(c echo.Context) error {
 	issued, err := h.svc.RegisterTrainer(c.Request().Context(), email, body.Password, body.Name)
 	if err != nil {
 		if errors.Is(err, ErrEmailTaken) {
-			return echo.NewHTTPError(http.StatusConflict, ErrEmailTaken.Error())
+			return httpx.NewError(http.StatusConflict, httpx.CodeEmailTaken, ErrEmailTaken.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "registration failed")
 	}
@@ -175,7 +175,7 @@ func (h *Handlers) Register(c echo.Context) error {
 
 func (h *Handlers) Login(c echo.Context) error {
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
 	}
 	var body AuthCredentials
 	if err := c.Bind(&body); err != nil {
@@ -183,13 +183,13 @@ func (h *Handlers) Login(c echo.Context) error {
 	}
 	addr, err := mail.ParseAddress(body.Email)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidCredentials.Error())
+		return httpx.NewError(http.StatusUnauthorized, httpx.CodeInvalidCredentials, ErrInvalidCredentials.Error())
 	}
 	email := NormalizeEmail(addr.Address)
 	issued, err := h.svc.Login(c.Request().Context(), email, body.Password)
 	if err != nil {
 		if errors.Is(err, ErrInvalidCredentials) {
-			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidCredentials.Error())
+			return httpx.NewError(http.StatusUnauthorized, httpx.CodeInvalidCredentials, ErrInvalidCredentials.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "login failed")
 	}
@@ -198,7 +198,7 @@ func (h *Handlers) Login(c echo.Context) error {
 
 func (h *Handlers) Google(c echo.Context) error {
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
 	}
 	var body IDTokenRequest
 	if err := c.Bind(&body); err != nil {
@@ -211,9 +211,9 @@ func (h *Handlers) Google(c echo.Context) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrProviderNotConfigured):
-			return echo.NewHTTPError(http.StatusServiceUnavailable, "google sign-in is not configured")
+			return httpx.NewError(http.StatusServiceUnavailable, httpx.CodeProviderNotConfigured, "google sign-in is not configured")
 		case errors.Is(err, ErrInvalidIDToken):
-			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidIDToken.Error()).SetInternal(err)
+			return httpx.NewErrorCause(http.StatusUnauthorized, httpx.CodeInvalidIDToken, ErrInvalidIDToken.Error(), err)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "google sign-in failed").SetInternal(err)
 	}
@@ -222,7 +222,7 @@ func (h *Handlers) Google(c echo.Context) error {
 
 func (h *Handlers) Apple(c echo.Context) error {
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
 	}
 	var body AppleSignInRequest
 	if err := c.Bind(&body); err != nil {
@@ -235,9 +235,9 @@ func (h *Handlers) Apple(c echo.Context) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrProviderNotConfigured):
-			return echo.NewHTTPError(http.StatusServiceUnavailable, "apple sign-in is not configured")
+			return httpx.NewError(http.StatusServiceUnavailable, httpx.CodeProviderNotConfigured, "apple sign-in is not configured")
 		case errors.Is(err, ErrInvalidIDToken):
-			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidIDToken.Error()).SetInternal(err)
+			return httpx.NewErrorCause(http.StatusUnauthorized, httpx.CodeInvalidIDToken, ErrInvalidIDToken.Error(), err)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "apple sign-in failed").SetInternal(err)
 	}
@@ -286,7 +286,7 @@ func (h *Handlers) TelegramLink(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
 	}
 	var body TelegramLinkRequest
 	if err := c.Bind(&body); err != nil {
@@ -296,15 +296,15 @@ func (h *Handlers) TelegramLink(c echo.Context) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidLinkCode):
-			return echo.NewHTTPError(http.StatusBadRequest, ErrInvalidLinkCode.Error())
+			return httpx.NewError(http.StatusBadRequest, httpx.CodeInvalidLinkCode, ErrInvalidLinkCode.Error())
 		case errors.Is(err, ErrLinkCodesUnavailable):
-			return echo.NewHTTPError(http.StatusServiceUnavailable, "telegram linking is unavailable").SetInternal(err)
+			return httpx.NewErrorCause(http.StatusServiceUnavailable, httpx.CodeTelegramLinkUnavailable, "telegram linking is unavailable", err)
 		case errors.Is(err, pgx.ErrNoRows):
-			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+			return httpx.NewError(http.StatusNotFound, httpx.CodeUserNotFound, httpx.MsgUserNotFound)
 		case errors.Is(err, ErrTelegramLinkConflict):
-			return echo.NewHTTPError(http.StatusConflict, ErrTelegramLinkConflict.Error()).SetInternal(err)
+			return httpx.NewErrorCause(http.StatusConflict, httpx.CodeTelegramLinkConflict, ErrTelegramLinkConflict.Error(), err)
 		case errors.Is(err, ErrTelegramAlreadyLinked):
-			return echo.NewHTTPError(http.StatusConflict, ErrTelegramAlreadyLinked.Error()).SetInternal(err)
+			return httpx.NewErrorCause(http.StatusConflict, httpx.CodeTelegramAlreadyLinked, ErrTelegramAlreadyLinked.Error(), err)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "telegram link failed").SetInternal(err)
 	}
@@ -313,7 +313,7 @@ func (h *Handlers) TelegramLink(c echo.Context) error {
 
 func (h *Handlers) Refresh(c echo.Context) error {
 	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
-		return echo.NewHTTPError(http.StatusTooManyRequests, ErrRateLimited.Error())
+		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
 	}
 	bodyToken := refreshFromBody(c)
 	inBody := bodyToken != ""
@@ -322,7 +322,7 @@ func (h *Handlers) Refresh(c echo.Context) error {
 		plain = h.refreshFromRequest(c)
 	}
 	if plain == "" {
-		return echo.NewHTTPError(http.StatusUnauthorized, "missing refresh token")
+		return httpx.NewError(http.StatusUnauthorized, httpx.CodeMissingRefreshToken, "missing refresh token")
 	}
 	issued, err := h.svc.Refresh(c.Request().Context(), plain)
 	if err != nil {
@@ -330,7 +330,7 @@ func (h *Handlers) Refresh(c echo.Context) error {
 			if !inBody {
 				h.clearRefreshCookie(c)
 			}
-			return echo.NewHTTPError(http.StatusUnauthorized, ErrInvalidRefresh.Error())
+			return httpx.NewError(http.StatusUnauthorized, httpx.CodeInvalidRefreshToken, ErrInvalidRefresh.Error())
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "refresh failed")
 	}
@@ -399,7 +399,7 @@ func (h *Handlers) Me(c echo.Context) error {
 	profile, err := h.svc.UserProfile(c.Request().Context(), uid)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+			return httpx.NewError(http.StatusNotFound, httpx.CodeUserNotFound, httpx.MsgUserNotFound)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
@@ -421,7 +421,7 @@ func (h *Handlers) UpdateMe(c echo.Context) error {
 	profile, err := h.svc.UpdateProfileName(c.Request().Context(), uid, body.Name)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+			return httpx.NewError(http.StatusNotFound, httpx.CodeUserNotFound, httpx.MsgUserNotFound)
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}

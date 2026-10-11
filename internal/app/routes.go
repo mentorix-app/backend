@@ -16,6 +16,7 @@ import (
 	"mentorix-backend/internal/config"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
+	httpx "mentorix-backend/internal/http"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/subscription"
 	"mentorix-backend/internal/telegram"
@@ -48,10 +49,13 @@ type Result struct {
 	LinkCodes *auth.LinkCodeStore
 }
 
-// Mount registers every HTTP route that is part of the OpenAPI contract. The
-// Telegram webhook is deliberately not here: it is outside OpenAPI and stays
-// mounted by cmd/api.
+// Mount installs the API error handler and registers every HTTP route that is
+// part of the OpenAPI contract. The handler goes in first so every caller, even
+// one without a database, answers errors with the same body. The Telegram
+// webhook is deliberately not here: it is outside OpenAPI and stays mounted by
+// cmd/api.
 func Mount(e *echo.Echo, d Deps) Result {
+	e.HTTPErrorHandler = httpx.ErrorHandler
 	cfg := d.Config
 	health.RegisterLiveness(e, cfg.GitCommit)
 	health.RegisterReady(e, d.Pool, d.Redis)

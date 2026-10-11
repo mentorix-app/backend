@@ -180,7 +180,7 @@ func HTTPErrorFrom(err error) *echo.HTTPError {
 	case errors.Is(err, ErrForbidden):
 		return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
 	case errors.Is(err, ErrClientNotFound):
-		return echo.NewHTTPError(http.StatusNotFound, "client not found")
+		return httpx.NewError(http.StatusNotFound, httpx.CodeClientNotFound, "client not found")
 	case errors.Is(err, ErrProgramNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, httpx.MsgProgramNotFound)
 	case errors.Is(err, ErrWeekNotFound):

@@ -20,11 +20,11 @@ func JWTMiddleware(secret string) echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			h := c.Request().Header.Get(echo.HeaderAuthorization)
 			if h == "" {
-				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgMissingAuth)
+				return httpx.NewError(http.StatusUnauthorized, httpx.CodeMissingAuthorization, httpx.MsgMissingAuth)
 			}
 			parts := strings.SplitN(h, " ", 2)
 			if len(parts) != 2 || !strings.EqualFold(parts[0], AuthSchemeBearer) {
-				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgMissingBearerToken)
+				return httpx.NewError(http.StatusUnauthorized, httpx.CodeMissingAuthorization, httpx.MsgMissingBearerToken)
 			}
 			raw := strings.TrimSpace(parts[1])
 			claims := &jwt.RegisteredClaims{}
@@ -35,11 +35,11 @@ func JWTMiddleware(secret string) echo.MiddlewareFunc {
 				return key, nil
 			}, jwt.WithIssuer(Issuer))
 			if err != nil {
-				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgInvalidToken)
+				return httpx.NewError(http.StatusUnauthorized, httpx.CodeInvalidToken, httpx.MsgInvalidToken)
 			}
 			id, err := uuid.Parse(claims.Subject)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgInvalidToken)
+				return httpx.NewError(http.StatusUnauthorized, httpx.CodeInvalidToken, httpx.MsgInvalidToken)
 			}
 			c.Set(ContextUserIDKey, id)
 			return next(c)

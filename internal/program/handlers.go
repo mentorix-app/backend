@@ -729,11 +729,13 @@ func mapProgramError(err error) *echo.HTTPError {
 	case errors.Is(err, ErrReadOnly):
 		return echo.NewHTTPError(http.StatusForbidden, err.Error())
 	case errors.Is(err, ErrClientNotLinked):
-		return echo.NewHTTPError(http.StatusForbidden, err.Error())
-	case errors.Is(err, ErrClientBlocked), errors.Is(err, ErrProgramNotPublished):
-		return echo.NewHTTPError(http.StatusUnprocessableEntity, err.Error())
+		return httpx.NewError(http.StatusForbidden, httpx.CodeClientNotLinked, err.Error())
+	case errors.Is(err, ErrClientBlocked):
+		return httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeClientBlocked, err.Error())
+	case errors.Is(err, ErrProgramNotPublished):
+		return httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeProgramNotPublished, err.Error())
 	case errors.Is(err, ErrClientNotFound):
-		return echo.NewHTTPError(http.StatusNotFound, httpx.MsgUserNotFound)
+		return httpx.NewError(http.StatusNotFound, httpx.CodeUserNotFound, httpx.MsgUserNotFound)
 	case errors.Is(err, ErrForbidden):
 		return echo.NewHTTPError(http.StatusForbidden, httpx.MsgForbidden)
 	case errors.Is(err, ErrValidation):

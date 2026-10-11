@@ -88,9 +88,12 @@ func TestQuotaErrorAndHTTP(t *testing.T) {
 	if he.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", he.Code)
 	}
-	body, ok := he.Message.(quotaErrorBody)
+	body, ok := he.Message.(QuotaErrorBody)
 	if !ok || body.Error != "quota_exceeded" || body.Resource != ResourceExercises {
 		t.Fatalf("body = %#v", he.Message)
+	}
+	if body.Code != "quota_exceeded" || body.Message != "quota exceeded" {
+		t.Fatalf("code = %q, message = %q", body.Code, body.Message)
 	}
 }
 

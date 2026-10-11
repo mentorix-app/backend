@@ -6,6 +6,20 @@ info:
     REST API for Mentorix: authentication, exercise catalog, training programs
     (draft/publish workflow), and admin operations.
 
+    Every error response has the JSON body `ErrorResponse`: `{"code": "...",
+    "message": "..."}`. `code` is a stable identifier to branch on; `message`
+    is text for people and may change. The one exception is `GET /health/ready`,
+    which answers `503` with its readiness body. An error without a code of its
+    own carries the code of its HTTP status. Today a client can receive these
+    from the status alone: `bad_request`, `unauthorized`, `forbidden`,
+    `not_found`, `method_not_allowed`, `conflict`, `payload_too_large`,
+    `unprocessable_entity`, `internal_error` and `service_unavailable`. A `410`,
+    `415` or `429` would map to `gone`, `unsupported_media_type` or
+    `too_many_requests`, but today every `410` and `429` carries a specific code
+    and nothing answers `415`. Any other status from 500 up is `internal_error`,
+    and any other status below 500 is `bad_request`. Operations list the
+    specific codes next to the statuses where one status has several meanings.
+
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -80,7 +94,11 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
-          description: Email already registered
+          description: Email already registered (code `email_taken`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
@@ -108,7 +126,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "401":
-          description: Invalid credentials
+          description: Invalid credentials (code `invalid_credentials`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
@@ -136,11 +158,19 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
-          description: Invalid ID token
+          description: Invalid ID token (code `invalid_id_token`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "503":
-          description: Google sign-in is not configured (GOOGLE_CLIENT_IDS is empty)
+          description: Google sign-in is not configured (GOOGLE_CLIENT_IDS is empty; code `provider_not_configured`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /auth/apple:
     post:
@@ -167,11 +197,19 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
-          description: Invalid ID token
+          description: Invalid ID token (code `invalid_id_token`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "503":
-          description: Apple sign-in is not configured (APPLE_CLIENT_IDS is empty)
+          description: Apple sign-in is not configured (APPLE_CLIENT_IDS is empty; code `provider_not_configured`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /auth/apple/callback:
     post:
@@ -182,7 +220,8 @@ paths:
         form POST. Creates no session and checks no token. Answers with a
         redirect that sends the browser back into the Android app, carrying the
         form fields in the intent link. The app then sends the id_token to
-        `POST /auth/apple`. The app never calls this address itself.
+        `POST /auth/apple`. The app never calls this address itself. Its errors
+        carry the code of their HTTP status.
       operationId: appleSignInCallback
       requestBody:
         required: true
@@ -255,20 +294,39 @@ paths:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "400":
-          description: Invalid JSON, or the code is empty, unknown or expired
+          description: >
+            Invalid JSON (code `bad_request`), or the code is empty, unknown or
+            expired (code `invalid_link_code`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          description: The signed-in account no longer exists
+          description: The signed-in account no longer exists (code `user_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: >
             The Telegram belongs to an account that cannot be merged (the caller's
-            account has a trainer link or a role besides client), or the caller's
-            account already has another Telegram
+            account has a trainer link or a role besides client; code
+            `telegram_link_conflict`), or the caller's account already has
+            another Telegram (code `telegram_already_linked`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "503":
-          description: Link codes are unavailable (Redis is not configured or down)
+          description: Link codes are unavailable (Redis is not configured or down; code `telegram_link_unavailable`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /auth/refresh:
     post:
@@ -295,7 +353,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "401":
-          description: Missing or invalid refresh token
+          description: >
+            No refresh token was sent (code `missing_refresh_token`), or the
+            token is unknown, expired or revoked (code `invalid_refresh_token`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
@@ -351,7 +415,11 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          description: User not found
+          description: User not found (code `user_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     patch:
       tags: [auth]
       summary: Update current user profile name
@@ -376,7 +444,11 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          description: User not found
+          description: User not found (code `user_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /plans:
     get:
@@ -975,7 +1047,10 @@ paths:
         "404":
           description: Program not found
         "422":
-          description: Invalid sync request (e.g. empty selection)
+          description: >
+            Invalid sync request, for example an empty selection (code
+            `unprocessable_entity`), or the program has no published version
+            (code `program_not_published`)
 
   /programs/{id}/versions:
     parameters:
@@ -1073,7 +1148,7 @@ paths:
         "409":
           $ref: "#/components/responses/QuotaExceeded"
         "503":
-          description: Telegram invite not configured
+          description: Telegram invite not configured (code `invite_not_configured`)
 
   /client/invites/accept:
     post:
@@ -1103,21 +1178,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/ClientAcceptInviteResponse"
         "400":
-          description: Invalid JSON
+          description: Invalid JSON (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: The caller is an admin, and an admin cannot become a client
+          description: The caller is an admin, and an admin cannot become a client (code `admin_cannot_accept`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: The invite does not exist, or the signed-in account no longer exists
+          description: >
+            The invite does not exist (code `invite_not_found`), or the signed-in
+            account no longer exists (code `user_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: >
-            The invite was used by someone else (`message`: `invite already consumed`),
-            or the trainer has no free client places (`message`: `client limit reached`)
+            The invite was used by someone else (code `invite_consumed`), or the
+            trainer has no free client places (code `client_limit_reached`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "410":
-          description: The invite expired
+          description: The invite expired (code `invite_expired`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "422":
-          description: The invite is the caller's own, or the trainer blocked the caller
+          description: >
+            The invite is the caller's own (code `self_invite`), or the trainer
+            blocked the caller (code `client_blocked`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /client/trainers:
     get:
@@ -1221,7 +1324,11 @@ paths:
                 type: string
                 format: binary
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Link signature invalid or expired (code `unauthorized`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Avatar not found
 
@@ -1259,7 +1366,7 @@ paths:
         "404":
           description: Program not found
         "422":
-          description: Program is not published
+          description: Program is not published (code `program_not_published`)
 
   /trainer/clients/{client_user_id}/program-assignment:
     parameters:
@@ -1284,9 +1391,9 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
-          description: Forbidden (client is not linked to trainer)
-        "404":
-          description: Client user not found
+          description: Forbidden (client is not linked to trainer; code `client_not_linked`)
+        "422":
+          description: The client is blocked by the trainer (code `client_blocked`)
 
   /trainer/clients/{client_user_id}/analytics:
     parameters:
@@ -1318,7 +1425,7 @@ paths:
         "403":
           description: Trainer role required
         "404":
-          description: Client is not linked to the trainer
+          description: Client is not linked to the trainer (code `client_not_found`)
 
   /trainer/clients/{client_user_id}/completions:
     parameters:
@@ -1362,7 +1469,7 @@ paths:
         "403":
           description: Trainer role required
         "404":
-          description: Client is not linked to the trainer
+          description: Client is not linked to the trainer (code `client_not_found`)
 
   /trainer/clients/{client_user_id}/completions/{completion_id}/comments:
     parameters:
@@ -1455,7 +1562,7 @@ paths:
         "401":
           description: Link signature invalid or expired
         "404":
-          description: Client is not linked to the trainer or the link is blocked
+          description: Client is not linked to the trainer or the link is blocked (code `client_not_found`)
 
   /trainer/programs/analytics:
     get:
@@ -2358,11 +2465,26 @@ components:
 
   responses:
     BadRequest:
-      description: Invalid request
+      description: Invalid request (code `bad_request` unless the operation lists another)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     Unauthorized:
-      description: Missing or invalid access token
+      description: >
+        Missing or invalid access token: code `missing_authorization` when the
+        Authorization header is missing or is not a Bearer token, `invalid_token`
+        when the token is malformed, expired or signed with another key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     TooManyRequests:
-      description: Rate limit exceeded
+      description: Rate limit exceeded (code `rate_limited`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     QuotaExceeded:
       description: Plan quota exceeded
       content:
@@ -2371,6 +2493,21 @@ components:
             $ref: "#/components/schemas/QuotaExceededError"
 
   schemas:
+    ErrorResponse:
+      type: object
+      description: >
+        Body of every error response. `code` is stable: clients may branch on it.
+        `message` is text for people and may change, so clients must not parse it.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable snake_case identifier of the error
+          example: invite_expired
+        message:
+          type: string
+          example: invite expired
+
     HealthStatus:
       type: object
       required: [status]
@@ -2633,10 +2770,17 @@ components:
 
     QuotaExceededError:
       type: object
-      required: [error, resource, plan, limit, usage]
+      required: [code, message, error, resource, plan, limit, usage]
       properties:
+        code:
+          type: string
+          enum: [quota_exceeded]
+        message:
+          type: string
+          example: quota exceeded
         error:
           type: string
+          description: Repeats `code`; the web cabinet's quota parser reads it
           enum: [quota_exceeded]
         resource:
           type: string

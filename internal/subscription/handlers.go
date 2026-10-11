@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+
+	httpx "mentorix-backend/internal/http"
 )
 
 // Handlers serves the public plan catalog.
@@ -28,7 +30,11 @@ func (h *Handlers) ListPlans(c echo.Context) error {
 	return c.JSON(http.StatusOK, planListResponse{Items: Catalog()})
 }
 
-type quotaErrorBody struct {
+// QuotaErrorBody is the JSON body of a quota refusal. It carries the same code
+// and message as every other error body next to the quota details.
+type QuotaErrorBody struct {
+	Code     string   `json:"code"`
+	Message  string   `json:"message"`
 	Error    string   `json:"error"`
 	Resource Resource `json:"resource"`
 	Plan     Plan     `json:"plan"`
@@ -38,8 +44,10 @@ type quotaErrorBody struct {
 
 // QuotaHTTPError renders the machine-readable 409 quota payload.
 func QuotaHTTPError(qe *QuotaError) *echo.HTTPError {
-	return echo.NewHTTPError(http.StatusConflict, quotaErrorBody{
-		Error:    "quota_exceeded",
+	return echo.NewHTTPError(http.StatusConflict, QuotaErrorBody{
+		Code:     httpx.CodeQuotaExceeded,
+		Message:  "quota exceeded",
+		Error:    httpx.CodeQuotaExceeded,
 		Resource: qe.Resource,
 		Plan:     qe.Plan,
 		Limit:    qe.Limit,

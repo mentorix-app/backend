@@ -159,3 +159,47 @@ func TestMount_passesAppleAndroidPackageToCallback(t *testing.T) {
 		t.Fatalf("Location = %q, want package=com.mentorix.mobile", loc)
 	}
 }
+
+// The handler is installed by Mount itself, before the early return for a missing
+// pool, so cmd/api, the contract mount and the HTTP tests all answer errors the
+// same way.
+func TestMount_installsTheErrorHandler(t *testing.T) {
+	tests := []struct {
+		name string
+		deps func(t *testing.T) app.Deps
+	}{
+		{"without a pool", func(*testing.T) app.Deps {
+			return app.Deps{Config: productionLikeConfig(), Logger: slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))}
+		}},
+		{"with a pool", func(t *testing.T) app.Deps {
+			return app.Deps{Config: productionLikeConfig(), Pool: lazyPool(t), Logger: slog.Default()}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			res := app.Mount(e, tt.deps(t))
+			if res.Notifier != nil {
+				t.Cleanup(func() { _ = res.Notifier.Close(context.Background()) })
+			}
+
+			unknown := httptest.NewRecorder()
+			e.ServeHTTP(unknown, httptest.NewRequest(http.MethodGet, "/does-not-exist", nil))
+			wrongMethod := httptest.NewRecorder()
+			e.ServeHTTP(wrongMethod, httptest.NewRequest(http.MethodPost, "/health", nil))
+
+			if unknown.Code != http.StatusNotFound {
+				t.Errorf("unknown path status = %d, want 404", unknown.Code)
+			}
+			if got, want := strings.TrimSpace(unknown.Body.String()), `{"code":"not_found","message":"Not Found"}`; got != want {
+				t.Errorf("unknown path body = %s, want %s", got, want)
+			}
+			if wrongMethod.Code != http.StatusMethodNotAllowed {
+				t.Errorf("wrong method status = %d, want 405", wrongMethod.Code)
+			}
+			if got, want := strings.TrimSpace(wrongMethod.Body.String()), `{"code":"method_not_allowed","message":"Method Not Allowed"}`; got != want {
+				t.Errorf("wrong method body = %s, want %s", got, want)
+			}
+		})
+	}
+}
