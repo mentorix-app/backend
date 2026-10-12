@@ -25,7 +25,9 @@ type authStore interface {
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
 	LinkTelegram(ctx context.Context, appUserID uuid.UUID, telegramUserID string) (uuid.UUID, error)
-	DeleteClientAccount(ctx context.Context, userID uuid.UUID) (telegramUserID string, err error)
+	DeleteClientAccount(ctx context.Context, userID uuid.UUID, revokedAppleSubject string) (telegramUserID string, err error)
+	UserRoles(ctx context.Context, userID uuid.UUID) ([]string, error)
+	UserAppleSubjects(ctx context.Context, userID uuid.UUID) ([]string, error)
 }
 
 // linkCodeTaker redeems a one-time Telegram link code. Implemented by *LinkCodeStore.
@@ -41,6 +43,7 @@ type Service struct {
 
 	googleVerifier IDTokenVerifier
 	appleVerifier  IDTokenVerifier
+	appleRevoker   AppleRevoker
 	linkCodes      linkCodeTaker
 
 	log *slog.Logger
@@ -67,6 +70,12 @@ func WithGoogleVerifier(v IDTokenVerifier) ServiceOption {
 // WithAppleVerifier enables SignInWithApple.
 func WithAppleVerifier(v IDTokenVerifier) ServiceOption {
 	return func(s *Service) { s.appleVerifier = v }
+}
+
+// WithAppleRevoker enables DeleteAccount for accounts with an Apple sign-in. Without it
+// such an account is not deleted.
+func WithAppleRevoker(r AppleRevoker) ServiceOption {
+	return func(s *Service) { s.appleRevoker = r }
 }
 
 // WithLinkCodes enables LinkTelegram.

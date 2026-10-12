@@ -1,6 +1,11 @@
 package config
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -49,6 +54,12 @@ type Config struct {
 	// /auth/apple/callback sends the browser back to. Empty disables the
 	// callback.
 	AppleAndroidPackage string
+	// AppleTeamID, AppleKeyID and ApplePrivateKey sign the client secret that
+	// DELETE /auth/me uses to revoke a Sign in with Apple authorization. All three
+	// are set or none is; none disables the revocation.
+	AppleTeamID     string
+	AppleKeyID      string
+	ApplePrivateKey *ecdsa.PrivateKey
 	// ClientAnalyticsPageURL is the frontend page the Telegram bot links to for
 	// client self-analytics. Empty disables the "Статистика" button.
 	ClientAnalyticsPageURL string
@@ -146,6 +157,8 @@ func Load() (Config, error) {
 		AppleAndroidPackage:    strings.TrimSpace(os.Getenv("APPLE_ANDROID_PACKAGE")),
 		ClientAnalyticsPageURL: strings.TrimSpace(os.Getenv("CLIENT_ANALYTICS_PAGE_URL")),
 		GitCommit:              strings.TrimSpace(os.Getenv("RENDER_GIT_COMMIT")),
+		AppleTeamID:            strings.TrimSpace(os.Getenv("APPLE_TEAM_ID")),
+		AppleKeyID:             strings.TrimSpace(os.Getenv("APPLE_KEY_ID")),
 	}
 
 	if cfg.AppEnv != AppEnvDevelopment {
@@ -176,6 +189,15 @@ func Load() (Config, error) {
 		if err := validateAndroidPackage(cfg.AppleAndroidPackage); err != nil {
 			return Config{}, fmt.Errorf("config: APPLE_ANDROID_PACKAGE %w", err)
 		}
+	}
+
+	rawAppleKey := strings.TrimSpace(os.Getenv("APPLE_PRIVATE_KEY"))
+	if cfg.AppleTeamID != "" || cfg.AppleKeyID != "" || rawAppleKey != "" {
+		key, err := validateAppleRevocation(cfg.AppleTeamID, cfg.AppleKeyID, rawAppleKey)
+		if err != nil {
+			return Config{}, fmt.Errorf("config: %w", err)
+		}
+		cfg.ApplePrivateKey = key
 	}
 
 	return cfg, nil
@@ -265,4 +287,35 @@ func validateAndroidPackage(raw string) error {
 		return fmt.Errorf("must be an Android package name such as com.example.app, got %q", raw)
 	}
 	return nil
+}
+
+var appleIDPattern = regexp.MustCompile(`^[A-Z0-9]{10}$`)
+
+// validateAppleRevocation checks the three settings that sign the Apple client secret
+// and returns the parsed key. It never puts the key, or a fragment of it, into an
+// error: the messages are fixed texts.
+func validateAppleRevocation(teamID, keyID, rawKey string) (*ecdsa.PrivateKey, error) {
+	if teamID == "" || keyID == "" || rawKey == "" {
+		return nil, errors.New("APPLE_TEAM_ID, APPLE_KEY_ID and APPLE_PRIVATE_KEY must be set together or all left empty")
+	}
+	if !appleIDPattern.MatchString(teamID) {
+		return nil, errors.New("APPLE_TEAM_ID must be 10 characters, A-Z and 0-9")
+	}
+	if !appleIDPattern.MatchString(keyID) {
+		return nil, errors.New("APPLE_KEY_ID must be 10 characters, A-Z and 0-9")
+	}
+	// A one-line value (a Dashboard field) carries the line breaks as a backslash and an n.
+	block, _ := pem.Decode([]byte(strings.ReplaceAll(rawKey, `\n`, "\n")))
+	if block == nil {
+		return nil, errors.New("APPLE_PRIVATE_KEY must be the PEM text of the .p8 file")
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, errors.New("APPLE_PRIVATE_KEY must be a PKCS#8 private key")
+	}
+	key, ok := parsed.(*ecdsa.PrivateKey)
+	if !ok || key.Curve != elliptic.P256() {
+		return nil, errors.New("APPLE_PRIVATE_KEY must be an ECDSA key on curve P-256")
+	}
+	return key, nil
 }

@@ -86,7 +86,7 @@ func TestIDTokenVerifier_Verify(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate other key: %v", err)
 	}
-	want := IDTokenClaims{Subject: "subject-123", Email: "person@example.com", EmailVerified: true, Name: "Person Name"}
+	want := IDTokenClaims{Subject: "subject-123", Email: "person@example.com", EmailVerified: true, Name: "Person Name", Audience: testIDTokenClientID}
 
 	tests := []struct {
 		name    string
@@ -176,6 +176,37 @@ func TestIDTokenVerifier_Verify(t *testing.T) {
 	}
 }
 
+// Audience is the value of the token that matched the allow-list: the client id that
+// the authorization code of the same sign-in was issued to.
+func TestIDTokenVerifier_audienceIsTheMatchedValue(t *testing.T) {
+	f := newIDTokenFixture(t)
+	tests := []struct {
+		name    string
+		aud     any
+		allowed []string
+		want    string
+	}{
+		{"single audience", testIDTokenClientID, []string{"first.id", testIDTokenClientID, "last.id"}, testIDTokenClientID},
+		{"list, the allowed one is second", []string{"other.app", "second.id"}, []string{"first.id", "second.id"}, "second.id"},
+		{"list, the allowed one is first", []string{"first.id", "other.app"}, []string{"first.id", "second.id"}, "first.id"},
+		{"two allowed values, the token order decides", []string{"second.id", "first.id"}, []string{"first.id", "second.id"}, "second.id"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := validIDTokenClaims()
+			c["aud"] = tt.aud
+
+			got, err := f.verifier(tt.allowed...).Verify(context.Background(), f.sign(t, f.key, c))
+			if err != nil {
+				t.Fatalf("Verify() error = %v", err)
+			}
+			if got.Audience != tt.want {
+				t.Errorf("Audience = %q, want %q", got.Audience, tt.want)
+			}
+		})
+	}
+}
+
 func TestIDTokenVerifier_keyServerDown(t *testing.T) {
 	f := newIDTokenFixture(t)
 	v := f.verifier(testIDTokenClientID)
@@ -244,7 +275,7 @@ func TestIDTokenVerifier_appleIssuer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify() error = %v", err)
 	}
-	if got.Subject != "subject-123" || !got.EmailVerified {
+	if got.Subject != "subject-123" || !got.EmailVerified || got.Audience != testIDTokenClientID {
 		t.Errorf("claims = %+v", got)
 	}
 	if _, err := v.Verify(context.Background(), f.sign(t, f.key, validIDTokenClaims())); !errors.Is(err, ErrInvalidIDToken) {

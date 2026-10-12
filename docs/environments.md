@@ -75,7 +75,9 @@ Stage: files not used, all from Render.
 
 Variables added to `render.yaml` with `sync: false` do not appear in Dashboard automatically — set them manually (Environment → Add).
 
-`GOOGLE_CLIENT_IDS`, `APPLE_CLIENT_IDS` and `APPLE_ANDROID_PACKAGE` are not in `render.yaml`. Add them in the Dashboard once the values exist; until the client ids are set `POST /auth/google` and `POST /auth/apple` answer `503`, and without `APPLE_ANDROID_PACKAGE` so does `POST /auth/apple/callback`.
+`GOOGLE_CLIENT_IDS`, `APPLE_CLIENT_IDS`, `APPLE_ANDROID_PACKAGE`, `APPLE_TEAM_ID`, `APPLE_KEY_ID` and `APPLE_PRIVATE_KEY` are not in `render.yaml`. Add them in the Dashboard once the values exist; until the client ids are set `POST /auth/google` and `POST /auth/apple` answer `503`, and without `APPLE_ANDROID_PACKAGE` so does `POST /auth/apple/callback`.
+
+The last three sign the Apple client secret for the revocation in `DELETE /auth/me`. Set all three or none; a partial set stops the start. `APPLE_TEAM_ID` and `APPLE_KEY_ID` are 10 characters of `A-Z` and `0-9`. `APPLE_PRIVATE_KEY` is the text of the `.p8` file (PKCS#8, curve P-256); it may be stored on one line with `\n` for the line breaks. The key goes into the Dashboard only, never into the repository or a chat, and no error text repeats any part of it. Without them an account with an Apple sign-in answers `503` on `DELETE /auth/me`; other accounts are deleted as usual.
 
 Datastore CLI: `make psql` / `make redis` (local), `make psql-stage` / `make redis-stage` (Render; `ARGS="-c 'select 1'"`).
 For `.env.stage` values: Dashboard → instance → External URL, or `render pg get` / `render kv get … --include-sensitive-connection-info`.

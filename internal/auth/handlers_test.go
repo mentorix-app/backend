@@ -49,6 +49,7 @@ type fakeAuthService struct {
 	linkUserID   uuid.UUID
 	linkCode     string
 	deleteCalls  []uuid.UUID
+	deleteProofs []AppleProof
 }
 
 func (f *fakeAuthService) LinkTelegram(_ context.Context, appUserID uuid.UUID, code string) (IssuedAuth, error) {

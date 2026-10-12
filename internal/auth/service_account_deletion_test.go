@@ -15,12 +15,37 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (f *fakeAuthStore) DeleteClientAccount(_ context.Context, userID uuid.UUID) (string, error) {
+// contextProbeKey carries a value through the contexts of a deletion, so a test can tell
+// whether the store got the request's context or one derived from it.
+type contextProbeKey struct{}
+
+// deleteContextState is the context of a DeleteClientAccount call as the store saw it.
+// It is read inside the call because a deadline context is cancelled when the caller returns.
+type deleteContextState struct {
+	err         error
+	deadline    time.Time
+	hasDeadline bool
+	probe       any
+}
+
+func (f *fakeAuthStore) DeleteClientAccount(ctx context.Context, userID uuid.UUID, revokedAppleSubject string) (string, error) {
+	state := deleteContextState{err: ctx.Err(), probe: ctx.Value(contextProbeKey{})}
+	state.deadline, state.hasDeadline = ctx.Deadline()
+	f.deleteContexts = append(f.deleteContexts, state)
 	f.deleteCalls = append(f.deleteCalls, userID)
+	f.deleteSubjects = append(f.deleteSubjects, revokedAppleSubject)
 	if f.deleteErr != nil {
 		return "", f.deleteErr
 	}
 	return f.deletedTelegramID, nil
+}
+
+func (f *fakeAuthStore) UserRoles(context.Context, uuid.UUID) ([]string, error) {
+	return f.roles, f.rolesErr
+}
+
+func (f *fakeAuthStore) UserAppleSubjects(context.Context, uuid.UUID) ([]string, error) {
+	return f.appleSubjects, f.appleSubjectsErr
 }
 
 // cleanupRecorder records how the cleanup was called and the state of its context
@@ -56,7 +81,7 @@ func TestService_DeleteAccount_deletesAClient(t *testing.T) {
 	store := &fakeAuthStore{}
 	svc, _ := deletionService(store, nil)
 
-	if err := svc.DeleteAccount(context.Background(), userID); err != nil {
+	if err := svc.DeleteAccount(context.Background(), userID, AppleProof{}); err != nil {
 		t.Fatalf("DeleteAccount() error = %v", err)
 	}
 
@@ -65,8 +90,8 @@ func TestService_DeleteAccount_deletesAClient(t *testing.T) {
 	}
 }
 
-// Part 1 has no Apple revoker, so the store's refusal of an account with an Apple
-// sign-in is told to the caller as a missing configuration.
+// Without an Apple revoker the store's refusal of an account with an Apple sign-in is
+// told to the caller as a missing configuration.
 func TestService_DeleteAccount_unrevokedAppleSignInIsNotConfigured(t *testing.T) {
 	for _, storeErr := range []error{
 		ErrAppleSignInNotRevoked,
@@ -76,7 +101,7 @@ func TestService_DeleteAccount_unrevokedAppleSignInIsNotConfigured(t *testing.T)
 		store := &fakeAuthStore{deleteErr: storeErr, deletedTelegramID: "tg-1"}
 		svc, logs := deletionService(store, cleanup)
 
-		err := svc.DeleteAccount(context.Background(), uuid.New())
+		err := svc.DeleteAccount(context.Background(), uuid.New(), AppleProof{})
 
 		if !errors.Is(err, ErrProviderNotConfigured) {
 			t.Fatalf("store error %v: error = %v, want ErrProviderNotConfigured", storeErr, err)
@@ -105,7 +130,7 @@ func TestService_DeleteAccount_otherStoreErrorsAreReturned(t *testing.T) {
 			cleanup := &cleanupRecorder{}
 			svc, logs := deletionService(store, cleanup)
 
-			err := svc.DeleteAccount(context.Background(), uuid.New())
+			err := svc.DeleteAccount(context.Background(), uuid.New(), AppleProof{})
 
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("error = %v, want %v", err, tt.want)
@@ -128,7 +153,7 @@ func TestService_DeleteAccount_cleanupGetsTheTelegramID(t *testing.T) {
 	cleanup := &cleanupRecorder{}
 	svc, _ := deletionService(store, cleanup)
 
-	if err := svc.DeleteAccount(context.Background(), uuid.New()); err != nil {
+	if err := svc.DeleteAccount(context.Background(), uuid.New(), AppleProof{}); err != nil {
 		t.Fatalf("DeleteAccount() error = %v", err)
 	}
 
@@ -146,7 +171,7 @@ func TestService_DeleteAccount_cleanupSurvivesACancelledRequest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := svc.DeleteAccount(ctx, uuid.New()); err != nil {
+	if err := svc.DeleteAccount(ctx, uuid.New(), AppleProof{}); err != nil {
 		t.Fatalf("DeleteAccount() error = %v", err)
 	}
 
@@ -172,7 +197,7 @@ func TestService_DeleteAccount_cleanupIsSkippedWithoutTelegram(t *testing.T) {
 	cleanup := &cleanupRecorder{}
 	svc, _ := deletionService(store, cleanup)
 
-	if err := svc.DeleteAccount(context.Background(), uuid.New()); err != nil {
+	if err := svc.DeleteAccount(context.Background(), uuid.New(), AppleProof{}); err != nil {
 		t.Fatalf("DeleteAccount() error = %v", err)
 	}
 
@@ -185,7 +210,7 @@ func TestService_DeleteAccount_worksWithoutACleanup(t *testing.T) {
 	store := &fakeAuthStore{deletedTelegramID: "tg-100"}
 	svc, _ := deletionService(store, nil)
 
-	if err := svc.DeleteAccount(context.Background(), uuid.New()); err != nil {
+	if err := svc.DeleteAccount(context.Background(), uuid.New(), AppleProof{}); err != nil {
 		t.Fatalf("DeleteAccount() error = %v", err)
 	}
 }
@@ -212,7 +237,7 @@ func TestService_DeleteAccount_failingCleanupDoesNotFailTheDeletion(t *testing.T
 	cleanup := &cleanupRecorder{err: errors.New("redis down")}
 	svc, logs := deletionService(store, cleanup)
 
-	if err := svc.DeleteAccount(context.Background(), userID); err != nil {
+	if err := svc.DeleteAccount(context.Background(), userID, AppleProof{}); err != nil {
 		t.Fatalf("DeleteAccount() error = %v, want the deletion to succeed", err)
 	}
 
@@ -239,7 +264,7 @@ func TestService_DeleteAccount_logsOneInfoLineWithTheUserIDOnly(t *testing.T) {
 	}
 	svc, logs := deletionService(store, &cleanupRecorder{})
 
-	if err := svc.DeleteAccount(context.Background(), userID); err != nil {
+	if err := svc.DeleteAccount(context.Background(), userID, AppleProof{}); err != nil {
 		t.Fatalf("DeleteAccount() error = %v", err)
 	}
 
