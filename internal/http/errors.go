@@ -55,7 +55,11 @@ const (
 	CodeClientNotFound          = "client_not_found"
 	CodeQuotaExceeded           = "quota_exceeded"
 
-	CodeAccountDeletionUnavailable = "account_deletion_unavailable"
+	CodeAccountDeletionUnavailable    = "account_deletion_unavailable"
+	CodeAppleAuthorizationRequired    = "apple_authorization_required"
+	CodeAppleAccountMismatch          = "apple_account_mismatch"
+	CodeInvalidAppleAuthorizationCode = "invalid_apple_authorization_code"
+	CodeAppleRevocationFailed         = "apple_revocation_failed"
 )
 
 // ErrorBody is the JSON body of every error response. Code is a stable

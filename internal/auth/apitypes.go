@@ -36,6 +36,17 @@ type AppleSignInRequest struct {
 	Name    string `json:"name"`
 }
 
+// DeleteAccountRequest is the optional JSON body for DELETE /auth/me. A client whose
+// account has a Sign in with Apple identity sends a fresh Apple ID token and the
+// authorization code of the same sign-in so that the server can revoke the
+// authorization before deleting. The redirect address goes along only when the
+// authorization request had one (Android). Other accounts leave the body out.
+type DeleteAccountRequest struct {
+	AppleIDToken           string `json:"apple_id_token"`
+	AppleAuthorizationCode string `json:"apple_authorization_code"`
+	AppleRedirectURI       string `json:"apple_redirect_uri"`
+}
+
 // TelegramLinkRequest is the JSON body for POST /auth/telegram/link. Code is the
 // one-time code the bot sent to the Telegram user.
 type TelegramLinkRequest struct {

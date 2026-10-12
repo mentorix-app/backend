@@ -34,6 +34,12 @@ type fakeAuthStore struct {
 	deletedTelegramID    string
 	deleteErr            error
 	deleteCalls          []uuid.UUID
+	deleteSubjects       []string
+	deleteContexts       []deleteContextState
+	roles                []string
+	rolesErr             error
+	appleSubjects        []string
+	appleSubjectsErr     error
 }
 
 type linkTelegramCall struct {

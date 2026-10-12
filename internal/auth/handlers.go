@@ -1,10 +1,17 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"net/mail"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -30,7 +37,7 @@ type credentialService interface {
 	LinkTelegram(ctx context.Context, appUserID uuid.UUID, code string) (IssuedAuth, error)
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateProfileName(ctx context.Context, userID uuid.UUID, name string) (UserProfile, error)
-	DeleteAccount(ctx context.Context, userID uuid.UUID) error
+	DeleteAccount(ctx context.Context, userID uuid.UUID, proof AppleProof) error
 }
 
 // SubscriptionProvider resolves the trainer subscription block for /auth/me.
@@ -88,7 +95,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	jwt := JWTMiddleware(h.jwtSecret)
 	e.GET("/auth/me", h.Me, jwt)
 	e.PATCH("/auth/me", h.UpdateMe, jwt)
-	e.DELETE("/auth/me", h.DeleteMe, jwt)
+	e.DELETE("/auth/me", h.DeleteMe, jwt, middleware.BodyLimit(strconv.Itoa(deleteAccountBodyLimit)))
 	e.POST("/auth/logout-all", h.LogoutAll, jwt)
 	e.POST("/auth/telegram/link", h.TelegramLink, jwt)
 }
@@ -430,25 +437,110 @@ func (h *Handlers) UpdateMe(c echo.Context) error {
 	return h.writeMeJSON(c, uid, profile)
 }
 
-// DeleteMe deletes the caller's own account and every row that belongs to it. It
-// reads no request body and leaves cookies alone: the app clears its own tokens.
+// DeleteMe deletes the caller's own account and every row that belongs to it. The
+// body is optional; an account with an Apple sign-in sends the Apple proof in it. It
+// leaves cookies alone: the app clears its own tokens.
 func (h *Handlers) DeleteMe(c echo.Context) error {
 	uid, ok := UserIDFromContext(c)
 	if !ok {
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
-	if err := h.svc.DeleteAccount(c.Request().Context(), uid); err != nil {
+	body, err := readDeleteAccountRequest(c)
+	if err != nil {
+		return err
+	}
+	if err := validateDeleteAccountRequest(body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	proof := AppleProof{IDToken: body.AppleIDToken, AuthorizationCode: body.AppleAuthorizationCode, RedirectURI: body.AppleRedirectURI}
+	if err := h.svc.DeleteAccount(c.Request().Context(), uid, proof); err != nil {
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			return httpx.NewError(http.StatusNotFound, httpx.CodeUserNotFound, httpx.MsgUserNotFound)
 		case errors.Is(err, ErrAccountDeletionUnavailable):
 			return httpx.NewErrorCause(http.StatusConflict, httpx.CodeAccountDeletionUnavailable, ErrAccountDeletionUnavailable.Error(), err)
+		case errors.Is(err, ErrAppleAuthorizationRequired):
+			return httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeAppleAuthorizationRequired, ErrAppleAuthorizationRequired.Error())
+		case errors.Is(err, ErrInvalidIDToken):
+			return httpx.NewErrorCause(http.StatusUnauthorized, httpx.CodeInvalidIDToken, ErrInvalidIDToken.Error(), err)
+		case errors.Is(err, ErrAppleAccountMismatch):
+			return httpx.NewErrorCause(http.StatusForbidden, httpx.CodeAppleAccountMismatch, ErrAppleAccountMismatch.Error(), err)
+		case errors.Is(err, ErrInvalidAppleAuthorizationCode):
+			return httpx.NewErrorCause(http.StatusBadRequest, httpx.CodeInvalidAppleAuthorizationCode, ErrInvalidAppleAuthorizationCode.Error(), err)
+		case errors.Is(err, ErrAppleRevocationFailed):
+			return httpx.NewErrorCause(http.StatusBadGateway, httpx.CodeAppleRevocationFailed, ErrAppleRevocationFailed.Error(), err)
 		case errors.Is(err, ErrProviderNotConfigured):
 			return httpx.NewError(http.StatusServiceUnavailable, httpx.CodeProviderNotConfigured, "apple account deletion is not configured")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "account deletion failed").SetInternal(err)
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// readDeleteAccountRequest reads the optional JSON body of DELETE /auth/me. A missing or
+// blank body is an empty request, whatever its framing and Content-Type; a body that
+// has text must carry the Content-Type application/json and be one JSON object.
+//
+// It does not use Echo's Bind. Bind refuses an empty body of unknown length (a chunked
+// request ends in io.EOF), a body of only whitespace, and a mixed-case Content-Type
+// such as Application/JSON. And the route's body limit holds exactly only when the body
+// is read to its end, as it is here; a streaming decoder can stop before the reader
+// reports the excess.
+func readDeleteAccountRequest(c echo.Context) (DeleteAccountRequest, error) {
+	raw, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		// The body limit middleware reports an oversized body as a read error.
+		var httpErr *echo.HTTPError
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusRequestEntityTooLarge {
+			return DeleteAccountRequest{}, echo.NewHTTPError(http.StatusRequestEntityTooLarge)
+		}
+		return DeleteAccountRequest{}, echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return DeleteAccountRequest{}, nil
+	}
+	// ParseMediaType lowercases the type and sets the parameters, such as charset, aside.
+	mediaType, _, err := mime.ParseMediaType(c.Request().Header.Get(echo.HeaderContentType))
+	var body DeleteAccountRequest
+	// The decoder's error can quote a piece of the body, so it stays out of the answer and the logs.
+	if err != nil || mediaType != echo.MIMEApplicationJSON || json.Unmarshal(raw, &body) != nil {
+		return DeleteAccountRequest{}, echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	return body, nil
+}
+
+// deleteAccountBodyLimit is the largest body of DELETE /auth/me, in bytes.
+const deleteAccountBodyLimit = 16000
+
+// maxAppleRedirectURILen is the longest apple_redirect_uri, in characters.
+const maxAppleRedirectURILen = 2048
+
+// validateDeleteAccountRequest checks that the Apple fields come as a pair, that the
+// redirect address needs the pair, and that the address is an absolute https URL
+// without a fragment. Which of the fields a given account needs is decided later.
+func validateDeleteAccountRequest(b DeleteAccountRequest) error {
+	if (b.AppleIDToken == "") != (b.AppleAuthorizationCode == "") {
+		return errors.New("apple_id_token and apple_authorization_code must be sent together")
+	}
+	if b.AppleRedirectURI == "" {
+		return nil
+	}
+	if b.AppleIDToken == "" {
+		return errors.New("apple_redirect_uri needs apple_id_token and apple_authorization_code")
+	}
+	if !isAbsoluteHTTPSURL(b.AppleRedirectURI) {
+		return fmt.Errorf("apple_redirect_uri must be an absolute https URL without a fragment, at most %d characters", maxAppleRedirectURILen)
+	}
+	return nil
+}
+
+func isAbsoluteHTTPSURL(raw string) bool {
+	if utf8.RuneCountInString(raw) > maxAppleRedirectURILen || strings.Contains(raw, "#") {
+		return false
+	}
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Host != ""
 }
 
 func (h *Handlers) writeMeJSON(c echo.Context, uid uuid.UUID, profile UserProfile) error {

@@ -42,4 +42,18 @@ var (
 	// ErrAppleSignInNotRevoked means the account has an Apple sign-in whose authorization
 	// was not revoked at Apple, so the store refuses to delete it.
 	ErrAppleSignInNotRevoked = errors.New("the account has an apple sign-in that was not revoked")
+	// ErrAppleAuthorizationRequired means the account has an Apple sign-in and the request
+	// carries no Apple ID token and authorization code to revoke it with.
+	ErrAppleAuthorizationRequired = errors.New("apple authorization is required")
+	// ErrAppleAccountMismatch means the Apple account in play is not the right one: the
+	// verified token belongs to an Apple account that is not one of the account's
+	// sign-ins, or the authorization code was issued to an Apple account other than the
+	// token's.
+	ErrAppleAccountMismatch = errors.New("this apple account does not belong to the account")
+	// ErrInvalidAppleAuthorizationCode means Apple refused the authorization code
+	// (invalid_grant): it is wrong, expired, already used, or issued to another client.
+	ErrInvalidAppleAuthorizationCode = errors.New("invalid or expired apple authorization code")
+	// ErrAppleRevocationFailed means Apple did not confirm the revocation: any other
+	// refusal, an answer that cannot be read, or no answer.
+	ErrAppleRevocationFailed = errors.New("apple did not confirm the revocation")
 )

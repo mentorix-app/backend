@@ -25,6 +25,9 @@ type IDTokenClaims struct {
 	Email         string
 	EmailVerified bool
 	Name          string
+	// Audience is the audience of the token that matched the allow-list, which is the
+	// client id the provider issued the sign-in for. The sign-in flow ignores it.
+	Audience string
 }
 
 // IDTokenVerifier checks a provider ID token and returns its claims.
@@ -82,7 +85,8 @@ func (v *oidcVerifier) Verify(ctx context.Context, rawToken string) (IDTokenClai
 	if err != nil {
 		return IDTokenClaims{}, fmt.Errorf("%w: %v", ErrInvalidIDToken, err)
 	}
-	if !slices.ContainsFunc(tok.Audience, func(a string) bool { return slices.Contains(v.audience, a) }) {
+	matched := slices.IndexFunc(tok.Audience, func(a string) bool { return slices.Contains(v.audience, a) })
+	if matched < 0 {
 		return IDTokenClaims{}, fmt.Errorf("%w: audience not allowed", ErrInvalidIDToken)
 	}
 	if tok.Subject == "" {
@@ -96,5 +100,11 @@ func (v *oidcVerifier) Verify(ctx context.Context, rawToken string) (IDTokenClai
 	if err := tok.Claims(&c); err != nil {
 		return IDTokenClaims{}, fmt.Errorf("%w: read claims: %v", ErrInvalidIDToken, err)
 	}
-	return IDTokenClaims{Subject: tok.Subject, Email: c.Email, EmailVerified: bool(c.EmailVerified), Name: c.Name}, nil
+	return IDTokenClaims{
+		Subject:       tok.Subject,
+		Email:         c.Email,
+		EmailVerified: bool(c.EmailVerified),
+		Name:          c.Name,
+		Audience:      tok.Audience[matched],
+	}, nil
 }

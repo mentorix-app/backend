@@ -33,8 +33,10 @@ Read in Apple's documentation on 2026-10-11.
 | Schema | No migration. The deletes are explicit statements in one transaction and the foreign keys stay restrictive | A stray delete of a user keeps failing as it does now. Stage has real users |
 | Concurrency | The transaction starts by locking the user row (`FOR UPDATE`). The role rule and the Apple rule are read under that lock, and nowhere else | A trainer who assigns a program in the same instant waits and then fails, and a repeat gets the usual answer for a client that is not linked. A role or an Apple sign-in that arrives in the same instant is seen before anything is deleted |
 | Apple proof | Fresh at delete time, nothing stored. The body carries `apple_id_token` and `apple_authorization_code` from a new Sign in with Apple, plus `apple_redirect_uri` on Android | No Apple token at rest, no migration, works for accounts that exist already. Apple documents this path |
-| Which Apple account | The token is checked by the existing verifier. Its subject must be one of the account's Apple identities, its audience is the client id for the exchange | Stops a delete that revokes somebody else's authorization and leaves the right one alive |
-| Order | Checks, then Apple, then the database | A failed revocation deletes nothing and can be retried. If the database step fails after the revocation the account is still there: the person signs in again and repeats |
+| Which Apple account | The token is checked by the existing verifier. Its subject must be one of the account's Apple identities, its audience is the client id for the exchange. The `id_token` in Apple's answer to the exchange must carry the same subject before anything is revoked | Stops a delete that revokes somebody else's authorization and leaves the right one alive. Without the second check a code of another Apple account would pass |
+| Order | Checks, then Apple, then the database | A failed revocation deletes nothing and can be retried. If the database step fails after the revocation the account is still there: the person signs in again and repeats. Once Apple confirmed, the delete runs on its own context, so a dropped connection does not cancel it |
+| Time | One 10 second budget for both Apple calls | The server's write timeout is 15 seconds; two calls of 10 seconds each would outlast it |
+| Body | Optional JSON, read from the body only, `Content-Type: application/json`, at most 16000 bytes | The query string never carries a token or a code |
 | Apple account, no proof | `422 apple_authorization_required` | The app shows the Apple sheet and repeats the call |
 | Key not set | An account with an Apple sign-in gets `503 provider_not_configured`. Other accounts are deleted as usual | Deletion never skips the revocation silently |
 | Client secret | Built per request with `golang-jwt`, five minutes of life | Already a dependency. Compared with `Timothylock/go-signin-with-apple` (a new dependency for about sixty lines) and `x/oauth2` (no revoke call, no JWT secret) |
@@ -48,11 +50,12 @@ Read in Apple's documentation on 2026-10-11.
 | Status | `code` | When | What the app does |
 |---|---|---|---|
 | `204` | | Deleted | Clears its tokens |
-| `400` | `bad_request` | Invalid JSON, one Apple field without the other, `apple_redirect_uri` not an `https` address | Developer error |
+| `400` | `bad_request` | Invalid JSON or a body that is not `application/json`, one Apple field without the other, `apple_redirect_uri` not an `https` address | Developer error |
+| `413` | `payload_too_large` | A body over 16000 bytes | Developer error |
 | `400` | `invalid_apple_authorization_code` | Apple refused the code (`invalid_grant`: expired, used, issued for another client) | New Apple sheet, repeat |
 | `401` | `invalid_id_token` | `apple_id_token` failed verification | New Apple sheet, repeat |
 | `401` | `missing_authorization`, `invalid_token` | No access token or a bad one | Refresh, repeat |
-| `403` | `apple_account_mismatch` | The Apple account in the token is not the one this account signs in with | Asks for the right Apple account |
+| `403` | `apple_account_mismatch` | The Apple account in the token, or the one the code belongs to, is not the one this account signs in with | Asks for the right Apple account |
 | `404` | `user_not_found` | The account is already gone | Treats it as done |
 | `409` | `account_deletion_unavailable` | Trainer or admin role, or the account still owns content | Points to support |
 | `422` | `apple_authorization_required` | The account has an Apple sign-in and the body has no Apple fields | Apple sheet, repeat |
@@ -104,7 +107,7 @@ No code in the repository calls an outside HTTP API with form bodies and a signe
 | `internal/auth/apple_revoke.go` and its test | CREATE | Client secret, code exchange, revocation, ten second timeout |
 | `internal/auth/idtoken.go` | UPDATE | The verified claims carry the audience that matched |
 | `internal/auth/apitypes.go`, `account_deletion.go`, `handlers.go`, `const.go`, `internal/http/errors.go` | UPDATE | Body type `DeleteAccountRequest`, the Apple step, four codes |
-| `internal/app/routes.go`, `internal/app/routes_test.go` | UPDATE | Build the revoker when the three settings exist |
+| `internal/app/routes.go` | UPDATE | Build the revoker when the three settings exist. The wiring is tested through the mounted route in `internal/db/storetest`, because nothing observable happens before the first database read |
 | `api/openapi.yaml`, `internal/apicheck/schema.go` | UPDATE | Request body, new answers, binding |
 | `docs/features/account-deletion.md`, `docs/environments.md`, `.env.example` | UPDATE | Apple step, the three settings (Dashboard only, like the client ids) |
 
@@ -139,7 +142,7 @@ No code in the repository calls an outside HTTP API with form bodies and a signe
 
 #### Task 5: Apple client
 
-- **Action**: `Revoke(ctx, clientID, code, redirectURI)`: sign the client secret, `POST /auth/token` with `grant_type=authorization_code` (and `redirect_uri` only when given), then `POST /auth/revoke` with the refresh token and `token_type_hint=refresh_token`. `invalid_grant` becomes the "invalid code" sentinel, everything else the "revocation failed" sentinel with Apple's `error` value as the cause.
+- **Action**: `Revoke(ctx, clientID, subject, code, redirectURI)`: sign the client secret, `POST /auth/token` with `grant_type=authorization_code` (and `redirect_uri` only when given), check that the `id_token` of the answer has the expected subject, Apple's issuer and our client id, then `POST /auth/revoke` with the refresh token and `token_type_hint=refresh_token`. `invalid_grant` becomes the "invalid code" sentinel, another subject the "mismatch" sentinel, everything else the "revocation failed" sentinel with Apple's `error` value as the cause.
 - **Mirror**: none in the repository; `oidcVerifier` for the timeout and the constructor shape.
 - **Validate**: tests against an `httptest` server with a generated P-256 key. The secret verifies with the public key and carries `kid`, `iss`, `sub`, `aud`, `iat`, `exp`. Form fields are exact; `redirect_uri` is absent when empty. `invalid_grant`, `invalid_client`, a `500`, a timeout and a token answer without `refresh_token` each map to the right sentinel. No error text contains the code, a token or the secret.
 

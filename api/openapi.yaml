@@ -457,21 +457,66 @@ paths:
         sessions, trainer links, program assignments, block visibility rules,
         workout completions with the trainer's comments on them, and the
         invites the client used. No program, version or exercise of the
-        trainer is touched. The call has no body and sets no cookie; the app
-        clears its own tokens. An access token issued earlier works until it
-        expires and finds nothing (`GET /auth/me` answers `404`). Signing in
-        again with the same Google or Apple account creates a new empty
-        account. An account whose roles are not exactly client, or that still
-        owns content, is refused. An account with an Apple sign-in is refused
-        until the Apple revocation is configured.
+        trainer is touched. The call sets no cookie; the app clears its own
+        tokens. An access token issued earlier works until it expires and finds
+        nothing (`GET /auth/me` answers `404`). Signing in again with the same
+        Google or Apple account creates a new empty account. An account whose
+        roles are not exactly client, or that still owns content, is refused.
+
+        An account with a Sign in with Apple identity is revoked at Apple
+        first. The app asks Apple for a fresh authorization right before the
+        call and sends `apple_id_token` and `apple_authorization_code` in the
+        body, and `apple_redirect_uri` when the authorization request had one
+        (Android; iOS sends none). The token must belong to one of the
+        account's Apple identities. Apple confirms the revocation and only then
+        is the account deleted, so a failed revocation deletes nothing and the
+        call can be repeated with a new authorization. If the database step
+        fails after Apple confirmed, the account still exists: the person signs
+        in with Apple again and repeats the call. Nothing from Apple is stored.
+        An account without an Apple identity needs no body; Apple fields sent
+        for it are checked for shape and not used. The body is optional and at
+        most 16 KB; a body that has text needs `Content-Type: application/json`.
       operationId: deleteMe
       security:
         - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteAccountRequest"
       responses:
         "204":
           description: Account deleted
+        "400":
+          description: >
+            Invalid JSON or another Content-Type, one of `apple_id_token` and
+            `apple_authorization_code` without the other, `apple_redirect_uri` without the pair or not an
+            absolute https URL (code `bad_request`), or Apple refused the
+            authorization code: wrong, expired, already used or issued to
+            another client (code `invalid_apple_authorization_code`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: >
+            Missing or invalid access token (codes `missing_authorization`,
+            `invalid_token`), or `apple_id_token` failed verification (code
+            `invalid_id_token`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: >
+            The Apple account in the token is not one the account signs in with,
+            or the authorization code was issued to another Apple account than the
+            token (code `apple_account_mismatch`); nothing was revoked or deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: The account no longer exists (code `user_not_found`)
           content:
@@ -487,8 +532,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: The body is over 16 KB
+        "422":
+          description: >
+            The account has an Apple sign-in and the body has no Apple fields,
+            or an Apple sign-in arrived while the call ran (code
+            `apple_authorization_required`); nothing was changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: >
+            Apple did not confirm the revocation: no answer, or any other
+            refusal (code `apple_revocation_failed`); nothing was deleted. A wrong
+            `apple_redirect_uri` lands here, and so does a problem with the
+            server's Apple settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
-          description: The account has an Apple sign-in and the Apple revocation is not configured (code `provider_not_configured`)
+          description: >
+            The account has an Apple sign-in and the server cannot revoke it:
+            the Apple revocation settings or the Apple client ids are missing
+            (code `provider_not_configured`); nothing was changed
           content:
             application/json:
               schema:
@@ -2624,6 +2693,25 @@ components:
         name:
           type: string
           description: Display name the app received from Apple; optional, cut to 100 characters, used only when the account is created
+
+    DeleteAccountRequest:
+      type: object
+      description: >
+        Optional body of `DELETE /auth/me`. The two Apple fields go together; the
+        redirect address needs both.
+      properties:
+        apple_id_token:
+          type: string
+          description: Apple ID token of a Sign in with Apple the app just ran; must belong to one of the account's Apple identities
+        apple_authorization_code:
+          type: string
+          description: Authorization code of the same sign-in. Single use, valid for five minutes
+        apple_redirect_uri:
+          type: string
+          description: >
+            Redirect address of the authorization request, an absolute https URL
+            without a fragment, at most 2048 characters. Android sends the
+            address it gave Apple; iOS sends none
 
     TelegramLinkRequest:
       type: object

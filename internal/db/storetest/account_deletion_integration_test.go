@@ -287,7 +287,7 @@ func TestAccountDeletion_removesTheClientAndLeavesEverythingElse(t *testing.T) {
 	completionsBefore := rowsFingerprint(t, pool, "client_workout_completions", "client_user_id", neighbour)
 	assignmentsBefore := rowsFingerprint(t, pool, "program_assignments", "client_user_id", neighbour)
 
-	telegramID, err := store.DeleteClientAccount(ctx, target)
+	telegramID, err := store.DeleteClientAccount(ctx, target, "")
 	if err != nil {
 		t.Fatalf("DeleteClientAccount() error = %v", err)
 	}
@@ -339,7 +339,7 @@ func TestAccountDeletion_clientWithoutTelegramReturnsAnEmptyID(t *testing.T) {
 	store := auth.NewStore(pool)
 	client := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-del-1", "")
 
-	telegramID, err := store.DeleteClientAccount(context.Background(), client)
+	telegramID, err := store.DeleteClientAccount(context.Background(), client, "")
 
 	if err != nil {
 		t.Fatalf("DeleteClientAccount() error = %v", err)
@@ -358,16 +358,18 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 	tests := []struct {
 		name string
 		want error
-		make func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID
+		// revoked is the Apple subject passed to the store.
+		revoked string
+		make    func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID
 	}{
-		{"trainer", auth.ErrAccountDeletionUnavailable, func(t *testing.T, _ *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
+		{"trainer", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, _ *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
 			id, err := store.RegisterTrainerEmailPassword(context.Background(), "bare-trainer@test.com", "hash", "Coach")
 			if err != nil {
 				t.Fatalf("register trainer: %v", err)
 			}
 			return id
 		}},
-		{"admin", auth.ErrAccountDeletionUnavailable, func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
+		{"admin", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
 			id, err := store.RegisterTrainerEmailPassword(context.Background(), "bare-admin@test.com", "hash", "Admin")
 			if err != nil {
 				t.Fatalf("register admin: %v", err)
@@ -375,7 +377,7 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 			promoteToAdminOnly(t, pool, id)
 			return id
 		}},
-		{"trainer and client", auth.ErrAccountDeletionUnavailable, func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
+		{"trainer and client", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
 			id, err := store.RegisterTrainerEmailPassword(context.Background(), "dual@test.com", "hash", "Dual")
 			if err != nil {
 				t.Fatalf("register trainer: %v", err)
@@ -387,7 +389,7 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 			return id
 		}},
 		// The role rule is checked before the Apple rule.
-		{"trainer with an Apple sign-in", auth.ErrAccountDeletionUnavailable, func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
+		{"trainer with an Apple sign-in", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
 			id, err := store.RegisterTrainerEmailPassword(context.Background(), "apple-trainer@test.com", "hash", "Coach")
 			if err != nil {
 				t.Fatalf("register trainer: %v", err)
@@ -395,7 +397,7 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 			addIdentity(t, pool, id, auth.ProviderApple, "a-trainer")
 			return id
 		}},
-		{"no role row", auth.ErrAccountDeletionUnavailable, func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
+		{"no role row", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
 			id := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-no-role", "")
 			seedClientData(t, pool, base, id, "no-role")
 			if _, err := pool.Exec(context.Background(), `DELETE FROM mentorix.user_roles WHERE user_id = $1`, id); err != nil {
@@ -404,13 +406,19 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 			return id
 		}},
 		// A client whose Apple authorization is not revoked: the store refuses before it deletes anything.
-		{"client with an Apple sign-in", auth.ErrAppleSignInNotRevoked, func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
-			id := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-with-apple", "")
-			addIdentity(t, pool, id, auth.ProviderApple, "a-client")
-			if _, err := store.LinkTelegram(context.Background(), id, "tg-with-apple"); err != nil {
-				t.Fatalf("link telegram: %v", err)
+		{"client with an Apple sign-in, no revoked subject", auth.ErrAppleSignInNotRevoked, "", withAppleSignIn},
+		{"client with an Apple sign-in, another subject", auth.ErrAppleSignInNotRevoked, "a-someone-else", withAppleSignIn},
+		{"client with an Apple sign-in, the subject in other case", auth.ErrAppleSignInNotRevoked, "A-CLIENT", withAppleSignIn},
+		// Only an Apple identity counts: the Google subject of the same account does not.
+		{"client with an Apple sign-in, the Google subject", auth.ErrAppleSignInNotRevoked, "g-with-apple", withAppleSignIn},
+		{"client with a Telegram and an Apple sign-in, the Telegram id", auth.ErrAppleSignInNotRevoked, "tg-with-apple", withAppleSignIn},
+		// The role rule comes before the Apple rule even when the subject matches.
+		{"trainer with an Apple sign-in and its subject", auth.ErrAccountDeletionUnavailable, "a-trainer", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
+			id, err := store.RegisterTrainerEmailPassword(context.Background(), "apple-trainer2@test.com", "hash", "Coach")
+			if err != nil {
+				t.Fatalf("register trainer: %v", err)
 			}
-			seedClientData(t, pool, base, id, "with-apple")
+			addIdentity(t, pool, id, auth.ProviderApple, "a-trainer")
 			return id
 		}},
 	}
@@ -428,7 +436,7 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 			references := userReferences(t, pool, account)
 			counts := tableCounts(t, pool)
 
-			telegramID, err := store.DeleteClientAccount(ctx, account)
+			telegramID, err := store.DeleteClientAccount(ctx, account, tt.revoked)
 
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("error = %v, want %v", err, tt.want)
@@ -455,6 +463,19 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 	}
 }
 
+// withAppleSignIn is a client with Google, Apple (subject a-client) and Telegram
+// sign-ins and a full set of data.
+func withAppleSignIn(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
+	t.Helper()
+	id := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-with-apple", "")
+	addIdentity(t, pool, id, auth.ProviderApple, "a-client")
+	if _, err := store.LinkTelegram(context.Background(), id, "tg-with-apple"); err != nil {
+		t.Fatalf("link telegram: %v", err)
+	}
+	seedClientData(t, pool, base, id, "with-apple")
+	return id
+}
+
 // A client who authored a program cannot be deleted: the database refuses the user
 // row. The refusal rolls back the completions and assignments deleted before it.
 func TestAccountDeletion_foreignKeyViolationRollsBackAndIsUnavailable(t *testing.T) {
@@ -470,7 +491,7 @@ func TestAccountDeletion_foreignKeyViolationRollsBackAndIsUnavailable(t *testing
 	before := userReferences(t, pool, client)
 	counts := tableCounts(t, pool)
 
-	_, err := store.DeleteClientAccount(ctx, client)
+	_, err := store.DeleteClientAccount(ctx, client, "")
 
 	if !errors.Is(err, auth.ErrAccountDeletionUnavailable) {
 		t.Fatalf("error = %v, want ErrAccountDeletionUnavailable", err)
@@ -489,16 +510,24 @@ func TestAccountDeletion_unknownAndRepeatedCallsAreNoRows(t *testing.T) {
 	store := auth.NewStore(pool)
 	ctx := context.Background()
 
-	if _, err := store.DeleteClientAccount(ctx, uuid.New()); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := store.DeleteClientAccount(ctx, uuid.New(), ""); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("unknown id: error = %v, want pgx.ErrNoRows", err)
 	}
 
 	client := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-del-twice", "")
-	if _, err := store.DeleteClientAccount(ctx, client); err != nil {
+	if _, err := store.DeleteClientAccount(ctx, client, ""); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
-	if _, err := store.DeleteClientAccount(ctx, client); !errors.Is(err, pgx.ErrNoRows) {
+	if _, err := store.DeleteClientAccount(ctx, client, ""); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("second call: error = %v, want pgx.ErrNoRows", err)
+	}
+}
+
+// deleteWithoutRevocation is the store deletion of client with no revoked Apple subject.
+func deleteWithoutRevocation(store *auth.Store, client uuid.UUID) func() error {
+	return func() error {
+		_, err := store.DeleteClientAccount(context.Background(), client, "")
+		return err
 	}
 }
 
@@ -518,11 +547,11 @@ WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_ba
 	t.Fatal("no session waited for a lock within 5 seconds")
 }
 
-// deleteBlockedBy runs statement in a transaction that stays open, starts
-// DeleteClientAccount for client, waits until that call waits for a lock, commits
-// the statement and returns the result of the deletion. The statement has to touch
-// the client's user row so that the deletion has something to wait for.
-func deleteBlockedBy(t *testing.T, pool *pgxpool.Pool, store *auth.Store, client uuid.UUID, statement string, args ...any) error {
+// deleteBlockedBy runs statement in a transaction that stays open, starts deletion,
+// waits until it waits for a lock, commits the statement and returns the result of the
+// deletion. The statement has to touch the client's user row so that the deletion has
+// something to wait for.
+func deleteBlockedBy(t *testing.T, pool *pgxpool.Pool, deletion func() error, statement string, args ...any) error {
 	t.Helper()
 	ctx := context.Background()
 	tx, err := pool.Begin(ctx)
@@ -535,10 +564,7 @@ func deleteBlockedBy(t *testing.T, pool *pgxpool.Pool, store *auth.Store, client
 	}
 
 	done := make(chan error, 1)
-	go func() {
-		_, err := store.DeleteClientAccount(ctx, client)
-		done <- err
-	}()
+	go func() { done <- deletion() }()
 	waitForLockWait(t, pool)
 	select {
 	case err := <-done:
@@ -573,7 +599,7 @@ func TestAccountDeletion_waitsForAnAssignmentInFlight(t *testing.T) {
 		t.Fatalf("version id: %v", err)
 	}
 
-	err := deleteBlockedBy(t, pool, store, client, `
+	err := deleteBlockedBy(t, pool, deleteWithoutRevocation(store, client), `
 INSERT INTO mentorix.program_assignments (program_id, program_version_id, trainer_id, client_user_id, created_by, modified_by)
 VALUES ($1, $2, $3, $4, $5, $5)`, base.programID, versionID, base.trainerID, client, base.trainerUser)
 
@@ -599,7 +625,7 @@ func TestAccountDeletion_readsRolesAfterTheLock(t *testing.T) {
 	completions := countRows(t, pool, `SELECT count(*) FROM mentorix.client_workout_completions WHERE client_user_id = $1`, client)
 	assignments := countRows(t, pool, `SELECT count(*) FROM mentorix.program_assignments WHERE client_user_id = $1`, client)
 
-	err := deleteBlockedBy(t, pool, store, client,
+	err := deleteBlockedBy(t, pool, deleteWithoutRevocation(store, client),
 		`INSERT INTO mentorix.user_roles (user_id, role) VALUES ($1, 'trainer')`, client)
 
 	if !errors.Is(err, auth.ErrAccountDeletionUnavailable) {
@@ -630,7 +656,7 @@ func TestAccountDeletion_readsAppleSignInAfterTheLock(t *testing.T) {
 	other := newClientWithIdentity(t, store, auth.ProviderApple, "a-race", "")
 	references := userReferences(t, pool, client)
 
-	err := deleteBlockedBy(t, pool, store, client,
+	err := deleteBlockedBy(t, pool, deleteWithoutRevocation(store, client),
 		`UPDATE mentorix.auth_identities SET user_id = $1 WHERE user_id = $2 AND provider = 'apple'`, client, other)
 
 	if !errors.Is(err, auth.ErrAppleSignInNotRevoked) {
@@ -659,7 +685,8 @@ type mountedEnv struct {
 	cookieName string
 }
 
-func newMountedEnv(t *testing.T) mountedEnv {
+// newMountedEnv mounts the API on the test database. Each option edits the config.
+func newMountedEnv(t *testing.T, options ...func(*config.Config)) mountedEnv {
 	t.Helper()
 	pool := NewPool(t)
 	mr := miniredis.RunT(t)
@@ -667,15 +694,19 @@ func newMountedEnv(t *testing.T) mountedEnv {
 	t.Cleanup(func() { _ = rdb.Close() })
 	const secret = "mount-deletion-jwt-secret-min-32-chars"
 	const cookieName = "mentorix_refresh"
+	cfg := config.Config{
+		JWTSecret:            secret,
+		AccessTTLMinutes:     15,
+		RefreshTTLDays:       30,
+		TrainerInviteTTLDays: 7,
+		RefreshCookie:        config.RefreshCookieSettings{Name: cookieName, Path: "/auth"},
+	}
+	for _, option := range options {
+		option(&cfg)
+	}
 	e := echo.New()
 	app.Mount(e, app.Deps{
-		Config: config.Config{
-			JWTSecret:            secret,
-			AccessTTLMinutes:     15,
-			RefreshTTLDays:       30,
-			TrainerInviteTTLDays: 7,
-			RefreshCookie:        config.RefreshCookieSettings{Name: cookieName, Path: "/auth"},
-		},
+		Config: cfg,
 		Pool:   pool,
 		Redis:  rdb,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
