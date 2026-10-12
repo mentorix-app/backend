@@ -449,6 +449,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags: [auth]
+      summary: Delete the signed-in client's account
+      description: >
+        Deletes the account and every row that belongs to it: sign-in methods,
+        sessions, trainer links, program assignments, block visibility rules,
+        workout completions with the trainer's comments on them, and the
+        invites the client used. No program, version or exercise of the
+        trainer is touched. The call has no body and sets no cookie; the app
+        clears its own tokens. An access token issued earlier works until it
+        expires and finds nothing (`GET /auth/me` answers `404`). Signing in
+        again with the same Google or Apple account creates a new empty
+        account. An account whose roles are not exactly client, or that still
+        owns content, is refused. An account with an Apple sign-in is refused
+        until the Apple revocation is configured.
+      operationId: deleteMe
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Account deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: The account no longer exists (code `user_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >
+            The account's roles are not exactly client, or the database still has
+            rows that reference it (code `account_deletion_unavailable`); nothing
+            was changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The account has an Apple sign-in and the Apple revocation is not configured (code `provider_not_configured`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /plans:
     get:

@@ -16,6 +16,7 @@
 | -------- | ---- |
 | [features/health.md](features/health.md) | Health probes |
 | [features/auth.md](features/auth.md) | Authentication |
+| [features/account-deletion.md](features/account-deletion.md) | Deleting a client's own account |
 | [features/exercises.md](features/exercises.md) | Exercise catalog |
 | [features/programs.md](features/programs.md) | Training programs |
 | [features/program-blocks.md](features/program-blocks.md) | Exercise blocks in a day |

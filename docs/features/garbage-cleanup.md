@@ -18,6 +18,8 @@ Auto-delete data that stops being needed after operations or by TTL.
 
 After `assign`/`reassign`/`clear`/`sync` — best-effort `CleanupProgramVersions` for affected programs: delete versions with no active assignments, except the latest version (highest `version_number`; skipped with reason `latest_version`) — new assignments and sync land on it. `DELETE /programs/{id}/versions/{version_id}` refuses the latest version too (`409`), and `can_delete` is `false` for it.
 
+Deleting a client's account ([account-deletion.md](account-deletion.md)) does not run this cleanup. A version kept alive only by that client's assignment stays until the next `assign`, `reassign`, `clear` or `sync` of the program, or `POST /programs/{id}/versions/cleanup`; the janitor does not purge versions.
+
 On `DELETE /programs/{id}` — one transaction (program row locked) deletes the program assignments and soft-deletes the program; after the commit, version cleanup runs best effort (an error there does not fail the request). The latest version stays.
 
 ## Block visibility rules (`program_block_clients`)
@@ -33,7 +35,7 @@ On `POST /trainer/invites` — inline purge expired/consumed (7d grace) trainer 
 
 ## Redis
 
-`mentorix:telegram:active_trainer:{id}` — `Delete` on stale in `resolveActiveTrainerID`.
+`mentorix:telegram:active_trainer:{id}` — `Delete` on stale in `resolveActiveTrainerID`, and after the Telegram's account is deleted ([account-deletion.md](account-deletion.md)).
 
 ## Janitor
 

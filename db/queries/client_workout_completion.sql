@@ -32,3 +32,8 @@ SELECT EXISTS(
 SELECT day_key
 FROM mentorix.client_workout_completions
 WHERE completion_cycle_id = $1;
+
+-- name: DeleteClientWorkoutCompletionsByClient :execrows
+-- The trainer's comments on the deleted completions go with them (ON DELETE CASCADE).
+DELETE FROM mentorix.client_workout_completions
+WHERE client_user_id = $1;

@@ -16,6 +16,12 @@ DELETE FROM mentorix.trainer_invites
 WHERE (consumed_at IS NULL AND expires_at < now())
    OR (consumed_at IS NOT NULL AND consumed_at < now() - interval '7 days');
 
+-- name: DeleteTrainerInvitesConsumedByUser :execrows
+-- consumed_by cannot become NULL on a consumed invite (trainer_invites_consumed_check),
+-- so the foreign key's SET NULL fails; these rows go before the user does.
+DELETE FROM mentorix.trainer_invites
+WHERE consumed_by = $1;
+
 -- name: GetTrainerInviteByTokenForUpdate :one
 SELECT *
 FROM mentorix.trainer_invites
