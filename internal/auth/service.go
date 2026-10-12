@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -24,6 +25,7 @@ type authStore interface {
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
 	LinkTelegram(ctx context.Context, appUserID uuid.UUID, telegramUserID string) (uuid.UUID, error)
+	DeleteClientAccount(ctx context.Context, userID uuid.UUID) (telegramUserID string, err error)
 }
 
 // linkCodeTaker redeems a one-time Telegram link code. Implemented by *LinkCodeStore.
@@ -40,6 +42,10 @@ type Service struct {
 	googleVerifier IDTokenVerifier
 	appleVerifier  IDTokenVerifier
 	linkCodes      linkCodeTaker
+
+	log *slog.Logger
+	// telegramCleanup runs after an account with a Telegram sign-in is deleted.
+	telegramCleanup func(ctx context.Context, telegramUserID string) error
 }
 
 type IssuedAuth struct {
@@ -68,12 +74,30 @@ func WithLinkCodes(c *LinkCodeStore) ServiceOption {
 	return func(s *Service) { s.linkCodes = c }
 }
 
+// WithTelegramCleanup sets the function DeleteAccount calls after the commit with
+// the Telegram user id of the deleted account. It removes what the bot keeps for
+// that Telegram user outside the database. A failure is logged and does not fail
+// the deletion.
+func WithTelegramCleanup(fn func(ctx context.Context, telegramUserID string) error) ServiceOption {
+	return func(s *Service) { s.telegramCleanup = fn }
+}
+
+// WithLogger sets the logger of the service; nil keeps the current one.
+func WithLogger(log *slog.Logger) ServiceOption {
+	return func(s *Service) {
+		if log != nil {
+			s.log = log
+		}
+	}
+}
+
 func NewService(pool *pgxpool.Pool, jwtSecret string, accessTTL, refreshTTL time.Duration, opts ...ServiceOption) *Service {
 	s := &Service{
 		store:      NewStore(pool),
 		jwtSecret:  []byte(jwtSecret),
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
+		log:        slog.Default(),
 	}
 	for _, opt := range opts {
 		opt(s)

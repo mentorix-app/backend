@@ -64,7 +64,8 @@ We believe that Google and Apple sign-in, plus a Telegram link in settings, will
 | 3 | Telegram link | A client links Telegram from settings; an existing Telegram client lands in the old account | complete | `.claude/plans/mobile-client-sign-in-telegram-link.plan.md` |
 | 4 | Invite in the app | A client without Telegram joins a trainer with the trainer's invite | complete | `.claude/plans/mobile-client-sign-in-invite.plan.md` |
 | 5 | Apple sign-in return for Android | A person on Android finishes Sign in with Apple in the browser and lands back in the app | in-progress | `.claude/plans/mobile-client-sign-in-apple-android-return.plan.md` |
-| 6 | The app knows whether the client has a trainer | After sign-in the app reads the client's trainers and shows the invite screen only when there are none | in-progress | `.claude/plans/mobile-client-trainers-list.plan.md` |
+| 6 | The app knows whether the client has a trainer | After sign-in the app reads the client's trainers and shows the invite screen only when there are none | complete | `.claude/plans/mobile-client-trainers-list.plan.md` |
+| 7 | Account deletion in the app | A client deletes their account from the app and no data of theirs stays; an account with an Apple sign-in also revokes Apple's authorization | in-progress | `.claude/plans/account-deletion.plan.md` |
 
 ## Open Questions
 

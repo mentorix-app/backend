@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -132,6 +133,29 @@ func TestMount_notifierOnlyWithBotToken(t *testing.T) {
 	}
 	if noToken.TrainerClient == nil {
 		t.Fatal("trainer client missing without a bot token")
+	}
+}
+
+// DELETE /auth/me must be mounted and sit behind the token: without it the
+// endpoint is either missing from the server or open to anyone.
+func TestMount_servesDeleteMeBehindTheToken(t *testing.T) {
+	e := echo.New()
+	res := app.Mount(e, app.Deps{Config: productionLikeConfig(), Pool: lazyPool(t), Logger: slog.Default()})
+	if res.Notifier != nil {
+		t.Cleanup(func() { _ = res.Notifier.Close(context.Background()) })
+	}
+
+	if !slices.Contains(routeSet(e), "DELETE /auth/me") {
+		t.Fatalf("DELETE /auth/me is not mounted; routes: %v", routeSet(e))
+	}
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, "/auth/me", nil))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401; body = %s", rec.Code, rec.Body.String())
+	}
+	if got, want := strings.TrimSpace(rec.Body.String()), `{"code":"missing_authorization","message":"missing authorization"}`; got != want {
+		t.Fatalf("body = %s, want %s", got, want)
 	}
 }
 

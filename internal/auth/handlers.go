@@ -30,6 +30,7 @@ type credentialService interface {
 	LinkTelegram(ctx context.Context, appUserID uuid.UUID, code string) (IssuedAuth, error)
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateProfileName(ctx context.Context, userID uuid.UUID, name string) (UserProfile, error)
+	DeleteAccount(ctx context.Context, userID uuid.UUID) error
 }
 
 // SubscriptionProvider resolves the trainer subscription block for /auth/me.
@@ -87,6 +88,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	jwt := JWTMiddleware(h.jwtSecret)
 	e.GET("/auth/me", h.Me, jwt)
 	e.PATCH("/auth/me", h.UpdateMe, jwt)
+	e.DELETE("/auth/me", h.DeleteMe, jwt)
 	e.POST("/auth/logout-all", h.LogoutAll, jwt)
 	e.POST("/auth/telegram/link", h.TelegramLink, jwt)
 }
@@ -426,6 +428,27 @@ func (h *Handlers) UpdateMe(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
 	return h.writeMeJSON(c, uid, profile)
+}
+
+// DeleteMe deletes the caller's own account and every row that belongs to it. It
+// reads no request body and leaves cookies alone: the app clears its own tokens.
+func (h *Handlers) DeleteMe(c echo.Context) error {
+	uid, ok := UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	if err := h.svc.DeleteAccount(c.Request().Context(), uid); err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return httpx.NewError(http.StatusNotFound, httpx.CodeUserNotFound, httpx.MsgUserNotFound)
+		case errors.Is(err, ErrAccountDeletionUnavailable):
+			return httpx.NewErrorCause(http.StatusConflict, httpx.CodeAccountDeletionUnavailable, ErrAccountDeletionUnavailable.Error(), err)
+		case errors.Is(err, ErrProviderNotConfigured):
+			return httpx.NewError(http.StatusServiceUnavailable, httpx.CodeProviderNotConfigured, "apple account deletion is not configured")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "account deletion failed").SetInternal(err)
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handlers) writeMeJSON(c echo.Context, uid uuid.UUID, profile UserProfile) error {

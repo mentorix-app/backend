@@ -52,6 +52,10 @@ WHERE trainer_id = $1
 DELETE FROM mentorix.program_assignments
 WHERE program_id = $1;
 
+-- name: DeleteProgramAssignmentsByClient :execrows
+DELETE FROM mentorix.program_assignments
+WHERE client_user_id = $1;
+
 -- name: ListProgramAssignmentsByProgramID :many
 SELECT *
 FROM mentorix.program_assignments

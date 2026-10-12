@@ -119,3 +119,18 @@ SELECT count(*)
 FROM mentorix.auth_identities
 WHERE user_id = sqlc.arg('user_id')
   AND NOT (provider = ANY (sqlc.arg('providers')::text[]));
+
+-- name: LockUserForUpdate :one
+-- FOR UPDATE is deliberate: FOR NO KEY UPDATE does not conflict with the key-share
+-- lock that a foreign key check takes on the user row, so a concurrent insert of a
+-- row that references the user would not wait.
+SELECT id
+FROM mentorix.users
+WHERE id = $1
+FOR UPDATE;
+
+-- name: ListAuthIdentitiesByUserID :many
+SELECT provider, subject
+FROM mentorix.auth_identities
+WHERE user_id = $1
+ORDER BY provider, subject;

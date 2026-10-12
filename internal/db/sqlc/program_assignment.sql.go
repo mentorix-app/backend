@@ -94,6 +94,19 @@ func (q *Queries) DeleteProgramAssignmentByTrainerClient(ctx context.Context, ar
 	return result.RowsAffected(), nil
 }
 
+const deleteProgramAssignmentsByClient = `-- name: DeleteProgramAssignmentsByClient :execrows
+DELETE FROM mentorix.program_assignments
+WHERE client_user_id = $1
+`
+
+func (q *Queries) DeleteProgramAssignmentsByClient(ctx context.Context, clientUserID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteProgramAssignmentsByClient, clientUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteProgramAssignmentsByProgramID = `-- name: DeleteProgramAssignmentsByProgramID :execrows
 DELETE FROM mentorix.program_assignments
 WHERE program_id = $1

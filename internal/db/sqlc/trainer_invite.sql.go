@@ -91,6 +91,21 @@ func (q *Queries) DeleteStaleTrainerInvitesByTrainerID(ctx context.Context, trai
 	return result.RowsAffected(), nil
 }
 
+const deleteTrainerInvitesConsumedByUser = `-- name: DeleteTrainerInvitesConsumedByUser :execrows
+DELETE FROM mentorix.trainer_invites
+WHERE consumed_by = $1
+`
+
+// consumed_by cannot become NULL on a consumed invite (trainer_invites_consumed_check),
+// so the foreign key's SET NULL fails; these rows go before the user does.
+func (q *Queries) DeleteTrainerInvitesConsumedByUser(ctx context.Context, consumedBy pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTrainerInvitesConsumedByUser, consumedBy)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAuthIdentityUserID = `-- name: GetAuthIdentityUserID :one
 SELECT user_id
 FROM mentorix.auth_identities

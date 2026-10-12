@@ -33,6 +33,20 @@ func (q *Queries) ClientWorkoutCompletionExists(ctx context.Context, arg ClientW
 	return ok, err
 }
 
+const deleteClientWorkoutCompletionsByClient = `-- name: DeleteClientWorkoutCompletionsByClient :execrows
+DELETE FROM mentorix.client_workout_completions
+WHERE client_user_id = $1
+`
+
+// The trainer's comments on the deleted completions go with them (ON DELETE CASCADE).
+func (q *Queries) DeleteClientWorkoutCompletionsByClient(ctx context.Context, clientUserID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteClientWorkoutCompletionsByClient, clientUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertClientWorkoutCompletion = `-- name: InsertClientWorkoutCompletion :one
 INSERT INTO mentorix.client_workout_completions (
   client_user_id,

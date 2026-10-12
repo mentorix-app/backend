@@ -54,6 +54,8 @@ const (
 	CodeProgramNotPublished     = "program_not_published"
 	CodeClientNotFound          = "client_not_found"
 	CodeQuotaExceeded           = "quota_exceeded"
+
+	CodeAccountDeletionUnavailable = "account_deletion_unavailable"
 )
 
 // ErrorBody is the JSON body of every error response. Code is a stable

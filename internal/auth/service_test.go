@@ -31,6 +31,9 @@ type fakeAuthStore struct {
 	linkRemaining        uuid.UUID
 	linkErr              error
 	linkCalls            []linkTelegramCall
+	deletedTelegramID    string
+	deleteErr            error
+	deleteCalls          []uuid.UUID
 }
 
 type linkTelegramCall struct {

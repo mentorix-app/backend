@@ -80,7 +80,14 @@ func Mount(e *echo.Echo, d Deps) Result {
 	subscription.NewHandlers(auth.JWTMiddleware(cfg.JWTSecret)).Mount(e)
 
 	res.LinkCodes = auth.NewLinkCodeStore(d.Redis)
-	authOpts := []auth.ServiceOption{auth.WithLinkCodes(res.LinkCodes)}
+	// One store for the bot and for account deletion: without Redis it is in memory,
+	// and two instances would not see each other's keys.
+	activeTrainers := trainerclient.NewActiveTrainerStore(d.Redis)
+	authOpts := []auth.ServiceOption{
+		auth.WithLinkCodes(res.LinkCodes),
+		auth.WithTelegramCleanup(activeTrainers.Delete),
+		auth.WithLogger(d.Logger),
+	}
 	if len(cfg.GoogleClientIDs) > 0 {
 		authOpts = append(authOpts, auth.WithGoogleVerifier(auth.NewGoogleIDTokenVerifier(cfg.GoogleClientIDs)))
 	}
@@ -120,7 +127,7 @@ func Mount(e *echo.Echo, d Deps) Result {
 	res.TrainerClient = trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
 		TelegramBotUsername: cfg.TelegramBotUsername,
 		InviteTTL:           cfg.TrainerInviteTTL(),
-	}, trainerclient.NewActiveTrainerStore(d.Redis), trainerNotifier,
+	}, activeTrainers, trainerNotifier,
 		trainerclient.WithAvatarSupport(cfg.JWTSecret, cfg.BotToken, photoClient),
 	)
 	trainerclient.NewHandlers(res.TrainerClient, pool, cfg.JWTSecret).Mount(e)

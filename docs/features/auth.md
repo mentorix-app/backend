@@ -34,11 +34,12 @@ Key details:
 - Rate limiting on login/register/refresh by IP when `REDIS_URL` is set. Refresh uses the login limit values (`AUTH_LOGIN_RATE_MAX`, `AUTH_LOGIN_RATE_WINDOW_SEC`) with its own counter key. If Redis is unavailable, requests are allowed and a warning is logged; sign-in does not depend on Redis.
 - Limits: display name 100 characters (register, `PATCH /auth/me`), email 254 characters; counted in runes, over the limit answers `400`.
 - Unknown paths answer `404`, except under `/programs`, `/exercises`, `/trainer` and `/admin`: those groups carry the JWT middleware on their prefix, so an unknown path there answers `401` without a token. In `/auth`, only `/auth/me`, `/auth/logout-all` and `/auth/telegram/link` require a token.
-- **Error codes.** Every error body is `{code, message}`; `code` is stable, `message` may change. Besides the ones above: `email_taken` (register `409`), `invalid_credentials` (login `401`, also for a malformed email), `missing_refresh_token` and `invalid_refresh_token` (refresh `401`), `user_not_found` (`GET` and `PATCH /auth/me` `404`), `missing_authorization` (no `Authorization` header, or not a Bearer token) and `invalid_token` (the JWT middleware, on every protected route), `rate_limited` (every `429` of register, login, Google, Apple, refresh and Telegram link). Any other error, invalid JSON for one, has the code of its status (`bad_request`).
+- **Error codes.** Every error body is `{code, message}`; `code` is stable, `message` may change. Besides the ones above: `email_taken` (register `409`), `invalid_credentials` (login `401`, also for a malformed email), `missing_refresh_token` and `invalid_refresh_token` (refresh `401`), `user_not_found` (`GET`, `PATCH` and `DELETE /auth/me` `404`), `account_deletion_unavailable` (`DELETE /auth/me` `409`), `missing_authorization` (no `Authorization` header, or not a Bearer token) and `invalid_token` (the JWT middleware, on every protected route), `rate_limited` (every `429` of register, login, Google, Apple, refresh and Telegram link). Any other error, invalid JSON for one, has the code of its status (`bad_request`).
 - Passwords: argon2id; JWT signed with HS256.
-- `POST /auth/logout-all`, `GET /auth/me` and `PATCH /auth/me` (changes the display name) require Bearer JWT.
+- `POST /auth/logout-all`, `GET /auth/me`, `PATCH /auth/me` (changes the display name) and `DELETE /auth/me` (deletes the account, see [account-deletion.md](account-deletion.md)) require Bearer JWT.
 
 ## See also
 
+- [account-deletion.md](account-deletion.md): `DELETE /auth/me`
 - [product.md](../product.md) — unified account
 - [environments.md](../environments.md) — environment and cookie settings

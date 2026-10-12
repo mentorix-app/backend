@@ -38,6 +38,7 @@ type fakeAuthService struct {
 	appleErr       error
 	linkIssued     IssuedAuth
 	linkErr        error
+	deleteErr      error
 
 	// Arguments of the last calls, for body-mode assertions.
 	googleToken  string
@@ -47,6 +48,7 @@ type fakeAuthService struct {
 	logoutToken  string
 	linkUserID   uuid.UUID
 	linkCode     string
+	deleteCalls  []uuid.UUID
 }
 
 func (f *fakeAuthService) LinkTelegram(_ context.Context, appUserID uuid.UUID, code string) (IssuedAuth, error) {

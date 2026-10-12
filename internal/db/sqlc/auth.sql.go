@@ -271,6 +271,38 @@ func (q *Queries) InsertUserRole(ctx context.Context, arg InsertUserRoleParams) 
 	return err
 }
 
+const listAuthIdentitiesByUserID = `-- name: ListAuthIdentitiesByUserID :many
+SELECT provider, subject
+FROM mentorix.auth_identities
+WHERE user_id = $1
+ORDER BY provider, subject
+`
+
+type ListAuthIdentitiesByUserIDRow struct {
+	Provider string `json:"provider"`
+	Subject  string `json:"subject"`
+}
+
+func (q *Queries) ListAuthIdentitiesByUserID(ctx context.Context, userID pgtype.UUID) ([]ListAuthIdentitiesByUserIDRow, error) {
+	rows, err := q.db.Query(ctx, listAuthIdentitiesByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAuthIdentitiesByUserIDRow{}
+	for rows.Next() {
+		var i ListAuthIdentitiesByUserIDRow
+		if err := rows.Scan(&i.Provider, &i.Subject); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserRoles = `-- name: ListUserRoles :many
 SELECT role
 FROM mentorix.user_roles
@@ -296,6 +328,22 @@ func (q *Queries) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]stri
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockUserForUpdate = `-- name: LockUserForUpdate :one
+SELECT id
+FROM mentorix.users
+WHERE id = $1
+FOR UPDATE
+`
+
+// FOR UPDATE is deliberate: FOR NO KEY UPDATE does not conflict with the key-share
+// lock that a foreign key check takes on the user row, so a concurrent insert of a
+// row that references the user would not wait.
+func (q *Queries) LockUserForUpdate(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockUserForUpdate, id)
+	err := row.Scan(&id)
+	return id, err
 }
 
 const moveSignInIdentitiesToUser = `-- name: MoveSignInIdentitiesToUser :execrows
