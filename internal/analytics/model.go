@@ -46,8 +46,9 @@ type ClientSelfAnalytics struct {
 	CurrentAssignment *AssignmentAnalytics `json:"current_assignment"`
 	Activity          ActivityStats        `json:"activity"`
 	RecentCompletions []CompletionItem     `json:"recent_completions"`
-	// ExpiresAt is when the signed link stops working; set by the handler.
-	ExpiresAt time.Time `json:"expires_at"`
+	// ExpiresAt is when the signed link stops working. The signed-link handler sets it;
+	// on the token route there is no link, so it stays nil and is written as null.
+	ExpiresAt *time.Time `json:"expires_at"`
 }
 
 type ClientSelfInfo struct {

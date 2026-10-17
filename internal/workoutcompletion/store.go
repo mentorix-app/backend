@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,6 +71,50 @@ func (s *Store) Insert(ctx context.Context, c Completion) (Completion, error) {
 			return Completion{}, ErrAlreadyCompleted
 		}
 		return Completion{}, fmt.Errorf("insert completion: %w", err)
+	}
+	return completionFromRow(row), nil
+}
+
+// InsertForAssignment writes c only while c's assignment still has the cycle, version,
+// client and trainer c names and the trainer's link is active (one statement, no lock on
+// the assignment row). Nothing written is ErrAssignmentChanged. So is a foreign key
+// that no longer holds (23503): a reassignment can commit after the statement read the
+// assignment and delete the old version before its foreign key is checked. The
+// program of the row comes from the assignment, not from c.
+func (s *Store) InsertForAssignment(ctx context.Context, c Completion) (Completion, error) {
+	if c.ProgramAssignmentID == nil || c.ProgramVersionID == nil {
+		return Completion{}, fmt.Errorf("%w: assignment and version required", ErrValidation)
+	}
+	row, err := s.q.InsertClientWorkoutCompletionForAssignment(ctx, sqlc.InsertClientWorkoutCompletionForAssignmentParams{
+		CompletedAt:         c.CompletedAt,
+		DayKey:              pgconv.ToPGUUID(c.DayKey),
+		WeekNumber:          int32(c.WeekNumber),
+		DayNumber:           int32(c.DayNumber),
+		ProgramName:         c.ProgramName,
+		ProgramNameRu:       c.ProgramNameRu,
+		DaySnapshot:         c.DaySnapshot,
+		ResultText:          c.ResultText,
+		Source:              c.Source,
+		ProgramAssignmentID: pgconv.ToPGUUID(*c.ProgramAssignmentID),
+		ClientUserID:        pgconv.ToPGUUID(c.ClientUserID),
+		TrainerID:           pgconv.ToPGUUID(c.TrainerID),
+		ProgramVersionID:    pgconv.ToPGUUID(*c.ProgramVersionID),
+		CompletionCycleID:   pgconv.ToPGUUID(c.CompletionCycleID),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Completion{}, ErrAssignmentChanged
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23505":
+				return Completion{}, ErrAlreadyCompleted
+			case "23503":
+				return Completion{}, ErrAssignmentChanged
+			}
+		}
+		return Completion{}, fmt.Errorf("insert completion for assignment: %w", err)
 	}
 	return completionFromRow(row), nil
 }

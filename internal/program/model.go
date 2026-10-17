@@ -118,7 +118,7 @@ type Week struct {
 
 type Day struct {
 	ID        uuid.UUID  `json:"id"`
-	DayKey    uuid.UUID  `json:"-"`
+	DayKey    uuid.UUID  `json:"day_key"`
 	DayNumber int        `json:"day_number"`
 	SortOrder int        `json:"sort_order"`
 	Blocks    []DayBlock `json:"blocks"`

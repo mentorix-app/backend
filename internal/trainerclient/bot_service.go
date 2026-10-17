@@ -113,29 +113,40 @@ func (s *Service) clientProgramView(ctx context.Context, telegramUserID string, 
 		return uuid.Nil, "", nil, program.Detail{}, err
 	}
 
-	name, err := s.store.TrainerLinkedToClient(ctx, resolvedTrainerID, clientUserID)
-	if err != nil {
-		return uuid.Nil, "", nil, program.Detail{}, err
-	}
-
-	reader, ok := s.programs.(ClientProgramReader)
-	if !ok {
-		return uuid.Nil, "", nil, program.Detail{}, errors.New("program reader not configured")
-	}
-
-	assignment, err := reader.GetAssignmentByTrainerID(ctx, resolvedTrainerID, clientUserID)
-	if err != nil {
-		return uuid.Nil, "", nil, program.Detail{}, err
-	}
-	if assignment == nil {
-		return resolvedTrainerID, name, nil, program.Detail{}, nil
-	}
-
-	detail, err := reader.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, clientUserID)
+	name, assignment, detail, err := s.programViewFor(ctx, clientUserID, resolvedTrainerID)
 	if err != nil {
 		return uuid.Nil, "", nil, program.Detail{}, err
 	}
 	return resolvedTrainerID, name, assignment, detail, nil
+}
+
+// programViewFor is the part of the program view that both the bot and the app
+// share: the link check, the current assignment and the blocks the client may see.
+// A nil assignment means the trainer has not assigned a program; detail is then empty.
+func (s *Service) programViewFor(ctx context.Context, clientUserID, trainerID uuid.UUID) (string, *program.Assignment, program.Detail, error) {
+	name, err := s.store.TrainerLinkedToClient(ctx, trainerID, clientUserID)
+	if err != nil {
+		return "", nil, program.Detail{}, err
+	}
+
+	reader, ok := s.programs.(ClientProgramReader)
+	if !ok {
+		return "", nil, program.Detail{}, errors.New("program reader not configured")
+	}
+
+	assignment, err := reader.GetAssignmentByTrainerID(ctx, trainerID, clientUserID)
+	if err != nil {
+		return "", nil, program.Detail{}, err
+	}
+	if assignment == nil {
+		return name, nil, program.Detail{}, nil
+	}
+
+	detail, err := reader.GetVersionDetailForClient(ctx, assignment.ProgramVersionID, clientUserID)
+	if err != nil {
+		return "", nil, program.Detail{}, err
+	}
+	return name, assignment, detail, nil
 }
 
 func (s *Service) resolveTrainerForView(ctx context.Context, telegramUserID string, trainerID *uuid.UUID) (uuid.UUID, error) {

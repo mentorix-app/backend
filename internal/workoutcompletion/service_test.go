@@ -23,6 +23,10 @@ type recordingStore struct {
 	keysErr    error
 	insertErr  error
 	lastInsert Completion
+
+	assignmentErr     error
+	assignmentCalls   int
+	lastForAssignment Completion
 }
 
 func (f *recordingStore) Exists(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
@@ -35,6 +39,17 @@ func (f *recordingStore) Insert(_ context.Context, c Completion) (Completion, er
 	f.lastInsert = c
 	if f.insertErr != nil {
 		return Completion{}, f.insertErr
+	}
+	c.ID = uuid.New()
+	c.CreatedAt = time.Now().UTC()
+	return c, nil
+}
+
+func (f *recordingStore) InsertForAssignment(_ context.Context, c Completion) (Completion, error) {
+	f.assignmentCalls++
+	f.lastForAssignment = c
+	if f.assignmentErr != nil {
+		return Completion{}, f.assignmentErr
 	}
 	c.ID = uuid.New()
 	c.CreatedAt = time.Now().UTC()
@@ -216,5 +231,103 @@ func TestCompletionFromRow(t *testing.T) {
 	got = completionFromRow(row)
 	if got.ProgramID != nil || got.ProgramVersionID != nil || got.ProgramAssignmentID != nil {
 		t.Fatalf("want nil FKs, got %+v", got)
+	}
+}
+
+func TestService_Complete_acceptsTheAppSource(t *testing.T) {
+	st := &recordingStore{}
+	svc := New(st)
+
+	got, err := svc.Complete(context.Background(), CompleteInput{
+		CompletionCycleID: uuid.New(),
+		DayKey:            uuid.New(),
+		ResultText:        "done in the app",
+		Source:            SourceApp,
+	})
+
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if SourceApp != "app" {
+		t.Fatalf("SourceApp = %q, want the value the database check allows", SourceApp)
+	}
+	if st.lastInsert.Source != "app" || got.Source != "app" {
+		t.Fatalf("stored source %q, returned %q, want app", st.lastInsert.Source, got.Source)
+	}
+}
+
+func TestService_CompleteForAssignment_writesThroughTheConditionalInsert(t *testing.T) {
+	st := &recordingStore{}
+	svc := New(st)
+	in := CompleteInput{
+		ClientUserID: uuid.New(), TrainerID: uuid.New(), ProgramID: uuid.New(), ProgramVersionID: uuid.New(),
+		ProgramAssignmentID: uuid.New(), CompletionCycleID: uuid.New(), DayKey: uuid.New(),
+		WeekNumber: 1, DayNumber: 2, ProgramName: "Force", ResultText: "  done  ", Source: SourceApp,
+		Day: program.Day{Blocks: []program.DayBlock{{
+			BlockType: program.BlockTypeSingle,
+			Exercises: []program.DayExercise{{ExerciseName: "Squat"}},
+		}}},
+	}
+
+	got, err := svc.CompleteForAssignment(context.Background(), in)
+
+	if err != nil {
+		t.Fatalf("CompleteForAssignment: %v", err)
+	}
+	if st.assignmentCalls != 1 || st.lastInsert.ID != uuid.Nil {
+		t.Fatalf("conditional insert called %d times, plain insert saw %+v; want only the conditional one", st.assignmentCalls, st.lastInsert)
+	}
+	c := st.lastForAssignment
+	if c.Source != SourceApp || c.ResultText != "done" || c.CompletionCycleID != in.CompletionCycleID || *c.ProgramAssignmentID != in.ProgramAssignmentID ||
+		*c.ProgramVersionID != in.ProgramVersionID || c.ClientUserID != in.ClientUserID || len(c.DaySnapshot) == 0 {
+		t.Fatalf("stored = %+v", c)
+	}
+	if got.ID == uuid.Nil || got.Source != SourceApp {
+		t.Fatalf("returned = %+v", got)
+	}
+}
+
+func TestService_CompleteForAssignment_validatesLikeComplete(t *testing.T) {
+	cycle, day := uuid.New(), uuid.New()
+	for name, in := range map[string]CompleteInput{
+		"empty":      {CompletionCycleID: cycle, DayKey: day, ResultText: " \t"},
+		"too long":   {CompletionCycleID: cycle, DayKey: day, ResultText: strings.Repeat("я", MaxResultTextLen+1)},
+		"bad source": {CompletionCycleID: cycle, DayKey: day, ResultText: "ok", Source: "web"},
+		"nil cycle":  {DayKey: day, ResultText: "ok"},
+		"nil day":    {CompletionCycleID: cycle, ResultText: "ok"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			st := &recordingStore{}
+			if _, err := New(st).CompleteForAssignment(context.Background(), in); !errors.Is(err, ErrValidation) || st.assignmentCalls != 0 {
+				t.Fatalf("err = %v with %d writes, want ErrValidation and none", err, st.assignmentCalls)
+			}
+		})
+	}
+}
+
+func TestService_CompleteForAssignment_passesTheStoreErrors(t *testing.T) {
+	for _, want := range []error{ErrAssignmentChanged, ErrAlreadyCompleted} {
+		svc := New(&recordingStore{assignmentErr: want})
+		_, err := svc.CompleteForAssignment(context.Background(), CompleteInput{
+			CompletionCycleID: uuid.New(), DayKey: uuid.New(), ResultText: "ok", Source: SourceApp,
+		})
+		if !errors.Is(err, want) {
+			t.Errorf("err = %v, want %v", err, want)
+		}
+	}
+}
+
+// plainStore has only what Complete needs, like the stores written before the conditional insert.
+type plainStore struct{ completionStore }
+
+func TestService_CompleteForAssignment_needsAStoreWithTheConditionalInsert(t *testing.T) {
+	svc := New(plainStore{&recordingStore{}})
+
+	_, err := svc.CompleteForAssignment(context.Background(), CompleteInput{
+		CompletionCycleID: uuid.New(), DayKey: uuid.New(), ResultText: "ok", Source: SourceApp,
+	})
+
+	if err == nil || errors.Is(err, ErrAssignmentChanged) {
+		t.Fatalf("err = %v, want a plain error and no write", err)
 	}
 }

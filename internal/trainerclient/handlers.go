@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 
 	"mentorix-backend/internal/auth"
 	httpx "mentorix-backend/internal/http"
@@ -26,10 +27,18 @@ type clientTrainerLister interface {
 	ListClientTrainers(ctx context.Context, clientUserID uuid.UUID) ([]ClientTrainer, error)
 }
 
+// clientProgramApp is the part of Service that the program and completion routes of
+// the app use.
+type clientProgramApp interface {
+	GetClientProgram(ctx context.Context, clientUserID, trainerID uuid.UUID) (ClientProgramResponse, error)
+	CompleteClientDay(ctx context.Context, clientUserID, trainerID uuid.UUID, req ClientCompletionRequest) (ClientCompletionResponse, error)
+}
+
 type Handlers struct {
 	svc        *Service
 	invites    clientInviteAcceptor
 	trainers   clientTrainerLister
+	clientApp  clientProgramApp
 	pool       *pgxpool.Pool
 	jwtSecret  string
 	httpClient *http.Client
@@ -40,6 +49,7 @@ func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
 		svc:        svc,
 		invites:    svc,
 		trainers:   svc,
+		clientApp:  svc,
 		pool:       pool,
 		jwtSecret:  jwtSecret,
 		httpClient: telegram.HTTPClient,
@@ -65,6 +75,10 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	// GET /client/analytics and answer 401 for unknown paths.
 	e.POST("/client/invites/accept", h.ClientAcceptInvite, auth.JWTMiddleware(h.jwtSecret))
 	e.GET("/client/trainers", h.ClientListTrainers, auth.JWTMiddleware(h.jwtSecret))
+	e.GET("/client/trainers/:trainer_id/program", h.ClientGetProgram, auth.JWTMiddleware(h.jwtSecret))
+	// The body is a small JSON object. The limit comes after the token check, so a bad
+	// token is answered first.
+	e.POST("/client/trainers/:trainer_id/completions", h.ClientCompleteDay, auth.JWTMiddleware(h.jwtSecret), middleware.BodyLimit("16K"))
 }
 
 func (h *Handlers) ClientAcceptInvite(c echo.Context) error {

@@ -495,7 +495,7 @@ func TestAnalyticsService_ClientSelfAnalytics(t *testing.T) {
 			t.Fatalf("comments must be [] not null: %+v", item)
 		}
 	}
-	if !got.ExpiresAt.IsZero() {
+	if got.ExpiresAt != nil {
 		t.Fatalf("expires_at is set by the handler, got %v", got.ExpiresAt)
 	}
 
@@ -550,7 +550,7 @@ func TestAnalyticsHandlers_GetClientSelfAnalytics(t *testing.T) {
 		t.Fatalf("ids = %+v / %+v", body.Client, body.Trainer)
 	}
 	wantExp := now.Add(30 * time.Minute).Unix()
-	if body.ExpiresAt.Unix() != wantExp {
+	if body.ExpiresAt == nil || body.ExpiresAt.Unix() != wantExp {
 		t.Fatalf("expires_at = %v, want unix %d", body.ExpiresAt, wantExp)
 	}
 	if len(body.RecentCompletions) == 0 || len(body.RecentCompletions) > 30 {

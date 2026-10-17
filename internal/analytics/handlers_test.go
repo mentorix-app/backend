@@ -51,6 +51,7 @@ func TestHandlers_Mount_registersRoutes(t *testing.T) {
 		"GET /trainer/programs/:program_id/analytics",
 		"GET /trainer/programs/:program_id/weeks/:week_number/results",
 		"GET /client/analytics",
+		"GET /client/trainers/:trainer_id/analytics",
 	}
 	for _, rt := range want {
 		if !found[rt] {

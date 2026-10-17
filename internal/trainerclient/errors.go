@@ -9,6 +9,7 @@ import (
 	httpx "mentorix-backend/internal/http"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/subscription"
+	"mentorix-backend/internal/workoutcompletion"
 )
 
 func HTTPErrorFrom(err error) *echo.HTTPError {
@@ -51,6 +52,14 @@ func HTTPErrorFrom(err error) *echo.HTTPError {
 		return httpx.NewError(http.StatusNotFound, httpx.CodeClientNotFound, err.Error())
 	case errors.Is(err, program.ErrNotFound):
 		return echo.NewHTTPError(http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrProgramChanged):
+		return httpx.NewError(http.StatusConflict, httpx.CodeProgramChanged, err.Error())
+	case errors.Is(err, ErrDayNotFound):
+		return httpx.NewError(http.StatusNotFound, httpx.CodeDayNotFound, err.Error())
+	case errors.Is(err, workoutcompletion.ErrAlreadyCompleted):
+		return httpx.NewError(http.StatusConflict, httpx.CodeWorkoutAlreadyCompleted, err.Error())
+	case errors.Is(err, workoutcompletion.ErrValidation):
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	default:
 		return echo.NewHTTPError(http.StatusInternalServerError, "internal")
 	}

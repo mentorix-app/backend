@@ -1361,6 +1361,175 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /client/trainers/{trainer_id}/program:
+    parameters:
+      - $ref: "#/components/parameters/ClientTrainerId"
+    get:
+      tags: [trainer]
+      summary: Read the signed-in client's program from one trainer
+      description: >
+        The same view the Telegram bot shows: the trainer, the client's current
+        assignment, the version of the program it points to with only the blocks
+        this client may see, and the days already marked done in this assignment.
+        `program` is the content for the app (name, description, weeks, days, blocks),
+        not the trainer's editor view: it has no owner ids, counters or draft state.
+        The trainer is named in the path (ids come from `GET /client/trainers`); the
+        caller needs an active link with that trainer. `assignment` and `program`
+        are `null` while the trainer has not assigned a program. Every day carries
+        `day_key`, the stable id that `completed_days` and
+        `POST /client/trainers/{trainer_id}/completions` use. `completed_days`
+        is always an array of objects with a `day_key`, ordered by that key, and may
+        name days that a newer version of the program no longer has. In a block, `client_user_ids` is `[]`
+        for a block shared with everyone and holds only the caller's id for a block
+        limited to chosen clients; other clients are never named.
+      operationId: clientGetTrainerProgram
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The program view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientProgramResponse"
+        "400":
+          description: The trainer id is not a UUID (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller has no active link with this trainer (code `client_not_linked`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: The trainer blocked the caller (code `client_blocked`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /client/trainers/{trainer_id}/completions:
+    parameters:
+      - $ref: "#/components/parameters/ClientTrainerId"
+    post:
+      tags: [trainer]
+      summary: Mark a workout day done
+      description: >
+        Marks one day of the caller's current program done with a text result, as in
+        the Telegram bot. The request names the assignment and version the app was
+        looking at; if the trainer changed them in the meantime the call is refused
+        with `program_changed` and nothing is written, so the app reloads the program.
+        The request names the assignment, the version and the completion cycle of the
+        program answer. A reassignment starts a new cycle, also when the trainer assigns
+        the program the client had before, so a request from an older cycle is refused;
+        the check is part of the write itself, so one that lands between a reload and the
+        insert is refused too. A day can be marked once per cycle. Only days that hold at
+        least one exercise the caller may see can be marked. `result_text` is required,
+        at most 1000 characters after trimming, and may not contain control characters
+        other than line breaks and tabs. The body is limited to 16000 bytes.
+      operationId: clientCompleteTrainerDay
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientCompletionRequest"
+      responses:
+        "201":
+          description: The day is marked done
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientCompletionResponse"
+        "400":
+          description: >
+            Invalid JSON, a missing or zero id, or an empty, too long or control-character
+            `result_text` (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The caller has no active link with this trainer (code `client_not_linked`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: >
+            The day key is not a workout day of the program the caller sees
+            (code `day_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >
+            The caller has no assignment from this trainer, or the assignment, version or
+            cycle in the request is no longer the current one (code `program_changed`),
+            or the day is already marked in this cycle (code `workout_already_completed`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: The body is over 16000 bytes (code `payload_too_large`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: The trainer blocked the caller (code `client_blocked`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /client/trainers/{trainer_id}/analytics:
+    parameters:
+      - $ref: "#/components/parameters/ClientTrainerId"
+    get:
+      tags: [analytics]
+      summary: Client self analytics by token
+      description: >
+        The same body as the signed-link page `GET /client/analytics`, for the
+        signed-in caller and the trainer in the path: progress, activity and the
+        latest 30 completions with the trainer's replies. `expires_at` belongs to the
+        signed link; here it is `null`.
+      operationId: clientGetTrainerAnalytics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Client self analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientSelfAnalytics"
+        "400":
+          description: The trainer id is not a UUID (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: The caller is not linked to the trainer, or the trainer blocked the caller (code `client_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /trainer/clients:
     get:
       tags: [trainer]
@@ -2491,6 +2660,15 @@ components:
         type: string
         format: uuid
 
+    ClientTrainerId:
+      name: trainer_id
+      in: path
+      required: true
+      description: trainers.id, as listed by `GET /client/trainers`.
+      schema:
+        type: string
+        format: uuid
+
     CompletionId:
       name: completion_id
       in: path
@@ -3333,11 +3511,17 @@ components:
 
     ProgramDay:
       type: object
-      required: [id, day_number, sort_order, blocks, created_at]
+      required: [id, day_key, day_number, sort_order, blocks, created_at]
       properties:
         id:
           type: string
           format: uuid
+        day_key:
+          type: string
+          format: uuid
+          description: >
+            Stable id of the day. It survives publishing and syncing, while `id` is
+            regenerated. Workout marks and the `completed_days` of the client app use it.
         day_number:
           type: integer
         sort_order:
@@ -3859,6 +4043,144 @@ components:
           items:
             $ref: "#/components/schemas/ClientTrainer"
 
+    ClientProgramAssignment:
+      type: object
+      required: [assignment_id, program_id, program_version_id, completion_cycle_id, assigned_at]
+      properties:
+        assignment_id:
+          type: string
+          format: uuid
+          description: Send it back as `program_assignment_id` when marking a day.
+        program_id:
+          type: string
+          format: uuid
+        program_version_id:
+          type: string
+          format: uuid
+          description: The version the `program` below shows. Send it back when marking a day.
+        completion_cycle_id:
+          type: string
+          format: uuid
+          description: >
+            The cycle the checkmarks belong to. A new one starts with every reassignment.
+            Send it back when marking a day.
+        assigned_at:
+          type: string
+          format: date-time
+
+    ClientProgram:
+      type: object
+      required: [program_id, name, name_ru, description, description_ru, category, difficulty, preview_image_url, weeks]
+      description: >
+        The program as the app shows it. The weeks, days and blocks are the ones of
+        `ProgramDetail`, cut to the blocks the caller may see, with `day_key` on every day.
+        In a block `client_user_ids` is `[]` for a shared block and only the caller for a
+        block limited to chosen clients.
+      properties:
+        program_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        name_ru:
+          type: string
+        description:
+          type: string
+        description_ru:
+          type: string
+        category:
+          $ref: "#/components/schemas/ProgramCategory"
+          nullable: true
+        difficulty:
+          $ref: "#/components/schemas/Difficulty"
+          nullable: true
+        preview_image_url:
+          type: string
+        weeks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProgramWeek"
+
+    ClientCompletedDay:
+      type: object
+      required: [day_key]
+      properties:
+        day_key:
+          type: string
+          format: uuid
+
+    ClientProgramResponse:
+      type: object
+      required: [trainer_id, trainer_display_name, assignment, program, completed_days]
+      properties:
+        trainer_id:
+          type: string
+          format: uuid
+          description: trainers.id
+        trainer_display_name:
+          type: string
+          description: May be an empty string when the trainer has not set a name.
+        assignment:
+          $ref: "#/components/schemas/ClientProgramAssignment"
+          nullable: true
+        program:
+          allOf:
+            - $ref: "#/components/schemas/ClientProgram"
+          nullable: true
+          description: The version of the assignment, with only the blocks the caller may see.
+        completed_days:
+          type: array
+          description: Days marked done in the current cycle. Empty without an assignment.
+          items:
+            $ref: "#/components/schemas/ClientCompletedDay"
+
+    ClientCompletionRequest:
+      type: object
+      required: [program_assignment_id, program_version_id, completion_cycle_id, day_key, result_text]
+      properties:
+        program_assignment_id:
+          type: string
+          format: uuid
+          description: "`assignment.assignment_id` of the program answer the app was showing."
+        program_version_id:
+          type: string
+          format: uuid
+          description: "`assignment.program_version_id` of the program answer the app was showing."
+        completion_cycle_id:
+          type: string
+          format: uuid
+          description: "`assignment.completion_cycle_id` of the program answer the app was showing."
+        day_key:
+          type: string
+          format: uuid
+        result_text:
+          type: string
+          maxLength: 1000
+          description: >
+            Free text, required, trimmed, at most 1000 characters. Control characters other
+            than line breaks and tabs are refused.
+
+    ClientCompletionResponse:
+      type: object
+      required: [id, day_key, week_number, day_number, completed_at, result_text]
+      properties:
+        id:
+          type: string
+          format: uuid
+        day_key:
+          type: string
+          format: uuid
+        week_number:
+          type: integer
+        day_number:
+          type: integer
+        completed_at:
+          type: string
+          format: date-time
+        result_text:
+          type: string
+          description: The stored text, trimmed.
+
     TrainerClientProgramSummary:
       type: object
       required:
@@ -3986,7 +4308,10 @@ components:
         expires_at:
           type: string
           format: date-time
-          description: When the signed link stops working
+          nullable: true
+          description: >
+            When the signed link stops working. `null` on `GET /client/trainers/{trainer_id}/analytics`,
+            which has no link.
 
     ClientSelfInfo:
       type: object

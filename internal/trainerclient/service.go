@@ -15,6 +15,7 @@ import (
 	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/subscription"
+	"mentorix-backend/internal/workoutcompletion"
 )
 
 type ClientProgramService interface {
@@ -39,6 +40,7 @@ type Service struct {
 	activeTrainer ActiveTrainerStore
 	notifier      ProgramNotifier
 	quota         *subscription.Checker
+	completions   completionLog
 	jwtSecret     string
 	botToken      string
 	photos        ProfilePhotoFetcher
@@ -67,6 +69,7 @@ func NewService(pool *pgxpool.Pool, programs ClientProgramService, invites Invit
 		activeTrainer: activeTrainer,
 		notifier:      notifier,
 		quota:         subscription.NewChecker(pool),
+		completions:   workoutcompletion.NewService(pool),
 	}
 	for _, opt := range opts {
 		opt(s)
