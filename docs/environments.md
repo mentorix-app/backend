@@ -53,6 +53,7 @@ If `mentorix-api` / `mentorix-db` / `mentorix-redis` already appear in Dashboard
 | Problem | Action |
 | --- | --- |
 | migrate dirty | Check Render logs → fix / careful `migrate force` → redeploy |
+| `migrate down` of 000033 fails | It cannot run while `client_workout_completions` has rows with `source = 'app'`. It rolls back and leaves the database dirty at 32 with the schema still at 33; recovery is `migrate force 33`. Do not run the down on stage once the app has marks |
 | bad stage | fix-forward to `develop` or Rollback in Dashboard |
 | smoke without auth | set `SMOKE_*` in Environment `staging` |
 

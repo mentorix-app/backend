@@ -24,6 +24,7 @@
 | [features/trainer-clients.md](features/trainer-clients.md) | Program assignment to client |
 | [features/trainer-invites.md](features/trainer-invites.md) | Trainer-to-client invites (Telegram) |
 | [features/telegram-bot.md](features/telegram-bot.md) | Telegram bot for clients |
+| [features/client-app.md](features/client-app.md) | Client app: program, workout marks, stats |
 | [features/workout-completions.md](features/workout-completions.md) | Marking program days and history |
 | [features/workout-comments.md](features/workout-comments.md) | Trainer responses to workout results |
 | [features/trainer-analytics.md](features/trainer-analytics.md) | Trainer analytics: clients and programs |

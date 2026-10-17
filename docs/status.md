@@ -23,6 +23,7 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Mark program days (day_key, cycle, completion log) | [features/workout-completions.md](features/workout-completions.md) |
 | Trainer analytics (client: progress/activity/feed; programs: aggregates, drop-off, week matrix) | [features/trainer-analytics.md](features/trainer-analytics.md) |
 | Client stats page signed from Telegram (`GET /client/analytics`, button «📊 Статистика») | [features/client-analytics.md](features/client-analytics.md) |
+| Client app: program from one trainer, mark a day done, stats by token (`GET /client/trainers/{trainer_id}/program`, `.../completions`, `.../analytics`; source `app`) | [features/client-app.md](features/client-app.md) |
 | Trainer responses to workout results (comment + push to Telegram) | [features/workout-comments.md](features/workout-comments.md) |
 | OpenAPI contract + apicheck | [architecture.md](architecture.md), `api/openapi.yaml` |
 | Error body with a stable `code` next to `message` on every error except the `503` of `GET /health/ready` (status-based default, specific codes for sign-in, Telegram link, invites, program assignment, analytics, quota) | [features/auth.md](features/auth.md), [features/trainer-invites.md](features/trainer-invites.md), [features/subscriptions.md](features/subscriptions.md), [api-endpoints.md](../.claude/rules/api-endpoints.md) |
@@ -31,5 +32,5 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |
 | Garbage cleanup (one-row assignments, auto version purge, orphaned block visibility rules, invites, stale Redis, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Migrations: version 32 (`./scripts/migrate-check.sh`)._
+_Migrations: version 33 (`./scripts/migrate-check.sh`)._
 

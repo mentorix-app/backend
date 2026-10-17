@@ -227,3 +227,37 @@ func TestMount_installsTheErrorHandler(t *testing.T) {
 		})
 	}
 }
+
+// The three app endpoints for a client's program, workout marks and stats must be
+// served and sit behind the token, one trainer per path.
+func TestMount_servesTheClientAppRoutesBehindTheToken(t *testing.T) {
+	e := echo.New()
+	res := app.Mount(e, app.Deps{Config: productionLikeConfig(), Pool: lazyPool(t), Logger: slog.Default()})
+	if res.Notifier != nil {
+		t.Cleanup(func() { _ = res.Notifier.Close(context.Background()) })
+	}
+	trainerID := "11111111-1111-1111-1111-111111111111"
+
+	for _, rt := range []struct{ method, path, route string }{
+		{http.MethodGet, "/client/trainers/" + trainerID + "/program", "GET /client/trainers/:trainer_id/program"},
+		{http.MethodPost, "/client/trainers/" + trainerID + "/completions", "POST /client/trainers/:trainer_id/completions"},
+		{http.MethodGet, "/client/trainers/" + trainerID + "/analytics", "GET /client/trainers/:trainer_id/analytics"},
+	} {
+		if !slices.Contains(routeSet(e), rt.route) {
+			t.Errorf("%s is not mounted; routes: %v", rt.route, routeSet(e))
+			continue
+		}
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, httptest.NewRequest(rt.method, rt.path, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s without a token: status = %d, want 401; body = %s", rt.route, rec.Code, rec.Body.String())
+		}
+	}
+
+	// The signed-link page keeps its own route and needs no token.
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/client/analytics", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("GET /client/analytics: status = %d, want 400 from the missing link parameters; body = %s", rec.Code, rec.Body.String())
+	}
+}

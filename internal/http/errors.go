@@ -54,6 +54,9 @@ const (
 	CodeProgramNotPublished     = "program_not_published"
 	CodeClientNotFound          = "client_not_found"
 	CodeQuotaExceeded           = "quota_exceeded"
+	CodeProgramChanged          = "program_changed"
+	CodeDayNotFound             = "day_not_found"
+	CodeWorkoutAlreadyCompleted = "workout_already_completed"
 
 	CodeAccountDeletionUnavailable    = "account_deletion_unavailable"
 	CodeAppleAuthorizationRequired    = "apple_authorization_required"

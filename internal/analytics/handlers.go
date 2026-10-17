@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -14,14 +15,20 @@ import (
 	httpx "mentorix-backend/internal/http"
 )
 
+// clientSelfReader is the part of Service that the client self routes use.
+type clientSelfReader interface {
+	ClientSelfAnalytics(ctx context.Context, clientUserID, trainerID uuid.UUID) (ClientSelfAnalytics, error)
+}
+
 type Handlers struct {
-	svc       *Service
-	pool      *pgxpool.Pool
-	jwtSecret string
+	svc        *Service
+	selfReader clientSelfReader
+	pool       *pgxpool.Pool
+	jwtSecret  string
 }
 
 func NewHandlers(svc *Service, pool *pgxpool.Pool, jwtSecret string) *Handlers {
-	return &Handlers{svc: svc, pool: pool, jwtSecret: jwtSecret}
+	return &Handlers{svc: svc, selfReader: svc, pool: pool, jwtSecret: jwtSecret}
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
@@ -37,6 +44,10 @@ func (h *Handlers) Mount(e *echo.Echo) {
 
 	// Client self page: access is proven by the signed link, not by a JWT.
 	e.GET("/client/analytics", h.GetClientSelfAnalytics)
+
+	// Client self stats for the app: access is the Bearer token. Per-route
+	// middleware, because the signed-link route above must stay open.
+	e.GET("/client/trainers/:trainer_id/analytics", h.GetClientTrainerAnalytics, auth.JWTMiddleware(h.jwtSecret))
 }
 
 func (h *Handlers) GetClientAnalytics(c echo.Context) error {
@@ -79,11 +90,36 @@ func (h *Handlers) GetClientSelfAnalytics(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "link expired or invalid")
 	}
 
-	result, err := h.svc.ClientSelfAnalytics(c.Request().Context(), clientUserID, trainerID)
+	result, err := h.selfReader.ClientSelfAnalytics(c.Request().Context(), clientUserID, trainerID)
 	if err != nil {
 		return HTTPErrorFrom(err)
 	}
-	result.ExpiresAt = time.Unix(exp, 0).UTC()
+	expiresAt := time.Unix(exp, 0).UTC()
+	result.ExpiresAt = &expiresAt
+	return c.JSON(http.StatusOK, result)
+}
+
+// GetClientTrainerAnalytics serves the same body as the signed-link page, by access
+// token. The client comes only from the token and the trainer only from the path.
+// expires_at belongs to the signed link, so here it is null.
+func (h *Handlers) GetClientTrainerAnalytics(c echo.Context) error {
+	clientUserID, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	trainerID, err := uuid.Parse(c.Param("trainer_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	result, err := h.selfReader.ClientSelfAnalytics(c.Request().Context(), clientUserID, trainerID)
+	if err != nil {
+		he := HTTPErrorFrom(err)
+		if he.Code == http.StatusInternalServerError {
+			// The request log prints the internal error; the body never carries it.
+			return he.SetInternal(err)
+		}
+		return he
+	}
 	return c.JSON(http.StatusOK, result)
 }
 

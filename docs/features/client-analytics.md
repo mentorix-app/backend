@@ -18,7 +18,11 @@ A client opens their analytics for the active trainer from the Telegram bot in a
 
 Contract: `api/openapi.yaml` defines `GET /client/analytics`. No JWT required. Returns `400` if parameters are missing or unparseable, `401` if signature or expiry fails, `404` with code `client_not_found` if client is not linked to the trainer or is blocked.
 
-Response includes `client` (id, name), `trainer` (`trainers.id`, name), `current_assignment` and `activity` (same schemas as trainer analytics; see [trainer-analytics.md](trainer-analytics.md)), `recent_completions` (last 30 workouts with trainer replies), and `expires_at` (link expiry time).
+Response includes `client` (id, name), `trainer` (`trainers.id`, name), `current_assignment` and `activity` (same schemas as trainer analytics; see [trainer-analytics.md](trainer-analytics.md)), `recent_completions` (last 30 workouts with trainer replies), and `expires_at` (link expiry time; `null` on the token route of the app).
+
+## App
+
+The app reads the same body with its token: `GET /client/trainers/{trainer_id}/analytics` ([client-app.md](client-app.md)). The client is the token's user, the trainer comes from the path, and a missing or blocked link answers `404` with code `client_not_found`, as here. `expires_at` is `null` there because there is no link to expire; on this page it is the link's expiry.
 
 ## Bot
 

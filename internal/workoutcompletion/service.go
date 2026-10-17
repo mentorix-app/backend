@@ -2,6 +2,7 @@ package workoutcompletion
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -17,16 +18,26 @@ type completionStore interface {
 	Insert(ctx context.Context, c Completion) (Completion, error)
 }
 
+// assignmentInserter is the conditional insert that CompleteForAssignment needs. It is
+// separate from completionStore so a store written for Complete alone stays valid.
+type assignmentInserter interface {
+	InsertForAssignment(ctx context.Context, c Completion) (Completion, error)
+}
+
 type Service struct {
-	store completionStore
+	store       completionStore
+	assignments assignmentInserter
 }
 
 func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{store: NewStore(pool)}
+	return New(NewStore(pool))
 }
 
+// New wraps store. CompleteForAssignment works when store also has InsertForAssignment.
 func New(store completionStore) *Service {
-	return &Service{store: store}
+	s := &Service{store: store}
+	s.assignments, _ = store.(assignmentInserter)
+	return s
 }
 
 func (s *Service) IsCompleted(ctx context.Context, completionCycleID, dayKey uuid.UUID) (bool, error) {
@@ -38,6 +49,28 @@ func (s *Service) CompletedDayKeys(ctx context.Context, completionCycleID uuid.U
 }
 
 func (s *Service) Complete(ctx context.Context, in CompleteInput) (Completion, error) {
+	c, err := buildCompletion(in)
+	if err != nil {
+		return Completion{}, err
+	}
+	return s.store.Insert(ctx, c)
+}
+
+// CompleteForAssignment is Complete for a caller that read the assignment earlier: the
+// row is written only while the assignment still has in's cycle, version and client,
+// otherwise ErrAssignmentChanged. The program of the row is the assignment's.
+func (s *Service) CompleteForAssignment(ctx context.Context, in CompleteInput) (Completion, error) {
+	c, err := buildCompletion(in)
+	if err != nil {
+		return Completion{}, err
+	}
+	if s.assignments == nil {
+		return Completion{}, errors.New("completion store has no conditional insert")
+	}
+	return s.assignments.InsertForAssignment(ctx, c)
+}
+
+func buildCompletion(in CompleteInput) (Completion, error) {
 	text := strings.TrimSpace(in.ResultText)
 	if text == "" {
 		return Completion{}, fmt.Errorf("%w: result_text required", ErrValidation)
@@ -49,7 +82,7 @@ func (s *Service) Complete(ctx context.Context, in CompleteInput) (Completion, e
 	if source == "" {
 		source = SourceTelegram
 	}
-	if source != SourceTelegram {
+	if source != SourceTelegram && source != SourceApp {
 		return Completion{}, fmt.Errorf("%w: invalid source", ErrValidation)
 	}
 	if in.CompletionCycleID == uuid.Nil || in.DayKey == uuid.Nil {
@@ -82,5 +115,5 @@ func (s *Service) Complete(ctx context.Context, in CompleteInput) (Completion, e
 		ResultText:          text,
 		Source:              source,
 	}
-	return s.store.Insert(ctx, c)
+	return c, nil
 }
