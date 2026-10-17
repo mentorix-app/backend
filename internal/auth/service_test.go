@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +29,9 @@ type fakeAuthStore struct {
 	clientUserID         uuid.UUID
 	clientErr            error
 	clientCalls          []ClientIdentity
+	clientCreated        bool
+	fillCalls            []fillDisplayNameCall
+	fillErr              error
 	linkRemaining        uuid.UUID
 	linkErr              error
 	linkCalls            []linkTelegramCall
@@ -40,6 +44,11 @@ type fakeAuthStore struct {
 	rolesErr             error
 	appleSubjects        []string
 	appleSubjectsErr     error
+}
+
+type fillDisplayNameCall struct {
+	userID uuid.UUID
+	name   string
 }
 
 type linkTelegramCall struct {
@@ -65,15 +74,28 @@ func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _, _ 
 	return f.registerUserID, nil
 }
 
-func (f *fakeAuthStore) FindOrCreateClientByIdentity(_ context.Context, id ClientIdentity) (uuid.UUID, error) {
+func (f *fakeAuthStore) FindOrCreateClientByIdentity(_ context.Context, id ClientIdentity) (uuid.UUID, bool, error) {
 	f.clientCalls = append(f.clientCalls, id)
 	if f.clientErr != nil {
-		return uuid.Nil, f.clientErr
+		return uuid.Nil, false, f.clientErr
 	}
 	if f.clientUserID == uuid.Nil {
 		f.clientUserID = uuid.New()
 	}
-	return f.clientUserID, nil
+	return f.clientUserID, f.clientCreated, nil
+}
+
+// FillUserDisplayNameIfEmpty mirrors the SQL guard: only a blank stored name is replaced.
+func (f *fakeAuthStore) FillUserDisplayNameIfEmpty(_ context.Context, userID uuid.UUID, name string) (bool, error) {
+	f.fillCalls = append(f.fillCalls, fillDisplayNameCall{userID, name})
+	if f.fillErr != nil {
+		return false, f.fillErr
+	}
+	if strings.TrimSpace(f.profile.Name) != "" {
+		return false, nil
+	}
+	f.profile.Name = name
+	return true, nil
 }
 
 func (f *fakeAuthStore) getEmailPasswordIdentity(_ context.Context, _ string) (emailIdentityRow, error) {

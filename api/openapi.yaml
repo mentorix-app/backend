@@ -140,7 +140,9 @@ paths:
       summary: Sign in with a Google ID token (mobile app)
       description: >
         Verifies the token, creates a client account on the first sign-in and
-        returns the refresh token in the JSON body. No cookie is set.
+        returns the refresh token in the JSON body. No cookie is set. The name
+        from the token is saved when the account is created, and fills the name
+        of an existing account only while that name is empty.
       operationId: googleSignIn
       requestBody:
         required: true
@@ -179,7 +181,8 @@ paths:
       description: >
         Verifies the token, creates a client account on the first sign-in and
         returns the refresh token in the JSON body. No cookie is set. The
-        optional name is used only when the account is created.
+        optional name is used when the account is created, and fills the name
+        of an existing account only while that name is empty.
       operationId: appleSignIn
       requestBody:
         required: true
@@ -2692,7 +2695,7 @@ components:
           description: Apple ID token from the app
         name:
           type: string
-          description: Display name the app received from Apple; optional, cut to 100 characters, used only when the account is created
+          description: Display name the app received from Apple; optional, cut to 100 characters, used when the account is created or fills an empty name of an existing account
 
     DeleteAccountRequest:
       type: object

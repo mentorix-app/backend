@@ -110,6 +110,12 @@ WHERE u.id = sqlc.arg('user_id')
   AND src.primary_email IS NOT NULL
   AND src.primary_email <> '';
 
+-- name: FillUserDisplayNameIfEmpty :execrows
+UPDATE mentorix.users
+SET display_name = sqlc.arg('display_name')
+WHERE id = sqlc.arg('user_id')
+  AND btrim(display_name) = '';
+
 -- name: DeleteUserByID :execrows
 DELETE FROM mentorix.users
 WHERE id = $1;
