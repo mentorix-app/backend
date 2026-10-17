@@ -17,7 +17,8 @@ import (
 type authStore interface {
 	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error)
 	getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error)
-	FindOrCreateClientByIdentity(ctx context.Context, id ClientIdentity) (uuid.UUID, error)
+	FindOrCreateClientByIdentity(ctx context.Context, id ClientIdentity) (userID uuid.UUID, created bool, err error)
+	FillUserDisplayNameIfEmpty(ctx context.Context, userID uuid.UUID, displayName string) (bool, error)
 	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
 	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, string, error)
 	RevokeRefreshSession(ctx context.Context, tokenHash []byte) error
@@ -211,13 +212,14 @@ func (s *Service) SignInWithGoogle(ctx context.Context, rawIDToken string) (Issu
 
 // SignInWithApple verifies an Apple ID token and signs in the matching client,
 // creating the account on the first sign-in. Apple puts no name in the token,
-// so name from the request is used when the account is created.
+// so name from the request is used when the account is created or its name is empty.
 func (s *Service) SignInWithApple(ctx context.Context, rawIDToken, name string) (IssuedAuth, error) {
 	return s.signInWithProvider(ctx, ProviderApple, s.appleVerifier, rawIDToken, name)
 }
 
 // signInWithProvider uses fallbackName only when the token carries no name. The
-// store applies the name on creation only, so an existing account keeps its own.
+// name goes into a new account; an existing account gets it only while its own
+// name is empty, so a name that is set is never overwritten.
 func (s *Service) signInWithProvider(ctx context.Context, provider string, verifier IDTokenVerifier, rawIDToken, fallbackName string) (IssuedAuth, error) {
 	var out IssuedAuth
 	if verifier == nil {
@@ -231,17 +233,23 @@ func (s *Service) signInWithProvider(ctx context.Context, provider string, verif
 	if name == "" {
 		name = cleanProviderName(fallbackName)
 	}
+	name = truncateRunes(name, maxDisplayNameLen)
 	id := ClientIdentity{
 		Provider:    provider,
 		Subject:     claims.Subject,
-		DisplayName: truncateRunes(name, maxDisplayNameLen),
+		DisplayName: name,
 	}
 	if claims.EmailVerified {
 		id.Email = NormalizeEmail(claims.Email)
 	}
-	userID, err := s.store.FindOrCreateClientByIdentity(ctx, id)
+	userID, created, err := s.store.FindOrCreateClientByIdentity(ctx, id)
 	if err != nil {
 		return out, fmt.Errorf("find or create client: %w", err)
+	}
+	if !created && name != "" {
+		if _, err := s.store.FillUserDisplayNameIfEmpty(ctx, userID, name); err != nil {
+			return out, fmt.Errorf("fill display name: %w", err)
+		}
 	}
 	profile, err := s.store.UserProfile(ctx, userID)
 	if err != nil {

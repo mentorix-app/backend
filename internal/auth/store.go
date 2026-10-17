@@ -95,31 +95,32 @@ type ClientIdentity struct {
 }
 
 // FindOrCreateClientByIdentity returns the user behind (Provider, Subject) and
-// creates a client user with that identity when none exists. Concurrent first
-// sign-ins end with one user.
-func (s *Store) FindOrCreateClientByIdentity(ctx context.Context, id ClientIdentity) (uuid.UUID, error) {
+// creates a client user with that identity when none exists. created is true
+// only for the call that made the account. Concurrent first sign-ins end with
+// one user and one created=true.
+func (s *Store) FindOrCreateClientByIdentity(ctx context.Context, id ClientIdentity) (userID uuid.UUID, created bool, err error) {
 	lookup := sqlc.GetAuthIdentityUserIDParams{Provider: id.Provider, Subject: id.Subject}
 	existing, err := s.q.GetAuthIdentityUserID(ctx, lookup)
 	if err == nil {
-		return pgconv.FromPGUUID(existing), nil
+		return pgconv.FromPGUUID(existing), false, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, fmt.Errorf("load identity: %w", err)
+		return uuid.Nil, false, fmt.Errorf("load identity: %w", err)
 	}
 
-	created, userID, err := s.createClientWithIdentity(ctx, id)
+	created, userID, err = s.createClientWithIdentity(ctx, id)
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, false, err
 	}
 	if created {
-		return userID, nil
+		return userID, true, nil
 	}
 	// A concurrent first sign-in won; its identity is committed now.
 	existing, err = s.q.GetAuthIdentityUserID(ctx, lookup)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("load identity after conflict: %w", err)
+		return uuid.Nil, false, fmt.Errorf("load identity after conflict: %w", err)
 	}
-	return pgconv.FromPGUUID(existing), nil
+	return pgconv.FromPGUUID(existing), false, nil
 }
 
 // createClientWithIdentity reports false, with the transaction rolled back,
@@ -369,6 +370,19 @@ func (s *Store) UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, dis
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// FillUserDisplayNameIfEmpty sets the name only when the stored one is empty
+// after trimming, and reports whether it did.
+func (s *Store) FillUserDisplayNameIfEmpty(ctx context.Context, userID uuid.UUID, displayName string) (bool, error) {
+	rows, err := s.q.FillUserDisplayNameIfEmpty(ctx, sqlc.FillUserDisplayNameIfEmptyParams{
+		UserID:      pgconv.ToPGUUID(userID),
+		DisplayName: displayName,
+	})
+	if err != nil {
+		return false, fmt.Errorf("fill display name: %w", err)
+	}
+	return rows > 0, nil
 }
 
 func (s *Store) UserRoles(ctx context.Context, userID uuid.UUID) ([]string, error) {

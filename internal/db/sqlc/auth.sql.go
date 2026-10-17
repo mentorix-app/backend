@@ -55,6 +55,26 @@ func (q *Queries) DeleteUserWithoutIdentity(ctx context.Context, id pgtype.UUID)
 	return err
 }
 
+const fillUserDisplayNameIfEmpty = `-- name: FillUserDisplayNameIfEmpty :execrows
+UPDATE mentorix.users
+SET display_name = $1
+WHERE id = $2
+  AND btrim(display_name) = ''
+`
+
+type FillUserDisplayNameIfEmptyParams struct {
+	DisplayName string      `json:"display_name"`
+	UserID      pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) FillUserDisplayNameIfEmpty(ctx context.Context, arg FillUserDisplayNameIfEmptyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, fillUserDisplayNameIfEmpty, arg.DisplayName, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const fillUserPrimaryEmailIfEmpty = `-- name: FillUserPrimaryEmailIfEmpty :exec
 UPDATE mentorix.users u
 SET primary_email = src.primary_email

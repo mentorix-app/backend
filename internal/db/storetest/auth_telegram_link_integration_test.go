@@ -19,7 +19,7 @@ import (
 
 func newClientWithIdentity(t *testing.T, store *auth.Store, provider, subject, email string) uuid.UUID {
 	t.Helper()
-	id, err := store.FindOrCreateClientByIdentity(context.Background(), auth.ClientIdentity{
+	id, _, err := store.FindOrCreateClientByIdentity(context.Background(), auth.ClientIdentity{
 		Provider: provider, Subject: subject, Email: email, DisplayName: subject,
 	})
 	if err != nil {
