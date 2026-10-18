@@ -47,7 +47,7 @@ services:
           name: mentorix-redis-stage
           property: connectionString
       - key: TRUSTED_PROXY_CIDRS
-        value: private
+        value: private,cloudflare
       - key: REFRESH_COOKIE_SAMESITE
         value: none
       - key: REFRESH_COOKIE_SECURE

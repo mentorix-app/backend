@@ -69,6 +69,7 @@ func ConfigureIPExtractor(e *echo.Echo, trustedCIDRs []string) {
 	}
 
 	opts := make([]echo.TrustOption, 0, len(trustedCIDRs))
+	behindCloudflare := false
 	for _, raw := range trustedCIDRs {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
@@ -82,6 +83,10 @@ func ConfigureIPExtractor(e *echo.Echo, trustedCIDRs []string) {
 			opts = append(opts, echo.TrustLoopback(true))
 			continue
 		}
+		if strings.EqualFold(raw, "cloudflare") {
+			behindCloudflare = true
+			continue
+		}
 		if _, network, err := net.ParseCIDR(raw); err == nil {
 			opts = append(opts, echo.TrustIPRange(network))
 			continue
@@ -92,9 +97,12 @@ func ConfigureIPExtractor(e *echo.Echo, trustedCIDRs []string) {
 		}
 	}
 
-	if len(opts) == 0 {
-		e.IPExtractor = echo.ExtractIPDirect()
-		return
+	base := echo.ExtractIPDirect()
+	if len(opts) > 0 {
+		base = echo.ExtractIPFromXFFHeader(opts...)
 	}
-	e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
+	if behindCloudflare {
+		base = cloudflareClientIP(base)
+	}
+	e.IPExtractor = base
 }
