@@ -80,6 +80,10 @@ Variables added to `render.yaml` with `sync: false` do not appear in Dashboard a
 
 The last three sign the Apple client secret for the revocation in `DELETE /auth/me`. Set all three or none; a partial set stops the start. `APPLE_TEAM_ID` and `APPLE_KEY_ID` are 10 characters of `A-Z` and `0-9`. `APPLE_PRIVATE_KEY` is the text of the `.p8` file (PKCS#8, curve P-256); it may be stored on one line with `\n` for the line breaks. The key goes into the Dashboard only, never into the repository or a chat, and no error text repeats any part of it. Without them an account with an Apple sign-in answers `503` on `DELETE /auth/me`; other accounts are deleted as usual.
 
+`TRUSTED_PROXY_CIDRS` decides which address counts as the client's: rate limit keys and `remote_ip` in the request log use it. It is a comma-separated list of CIDRs, single IPs and the keywords `private`, `loopback` and `cloudflare`; empty means the TCP peer. With CIDRs or `private`, the server walks `X-Forwarded-For` from the right and takes the first untrusted hop. `cloudflare` adds one step: when that hop is a Cloudflare edge address (ranges copied into `internal/http/cloudflare.go`, with the date), the client is the `CF-Connecting-IP` header, which Cloudflare sets itself. A missing or invalid header, or a hop outside the list, keeps the hop. Stage sits behind Cloudflare and Render's proxy, so it uses `private,cloudflare`. Cloudflare ranges are not added to the walk because a Cloudflare Worker reaches the origin from them with an `X-Forwarded-For` of its own choosing.
+
+Stage sets `AUTH_LOGIN_RATE_MAX=100` in the Dashboard (the default is 20). The dashboard's server calls the API from one address, so all its users share one login counter and one refresh counter.
+
 Datastore CLI: `make psql` / `make redis` (local), `make psql-stage` / `make redis-stage` (Render; `ARGS="-c 'select 1'"`).
 For `.env.stage` values: Dashboard → instance → External URL, or `render pg get` / `render kv get … --include-sensitive-connection-info`.
 
