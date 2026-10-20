@@ -37,7 +37,7 @@ func TestService_RefreshExpiresMatchesStoredExpiry(t *testing.T) {
 		}},
 		{"google", func(t *testing.T) (IssuedAuth, time.Time) {
 			store := &fakeAuthStore{profile: UserProfile{Email: "a@b.com"}}
-			issued, err := testGoogleService(store, verifier).SignInWithGoogle(context.Background(), "raw")
+			issued, err := testGoogleService(store, verifier).SignInWithGoogle(context.Background(), "raw", "")
 			if err != nil {
 				t.Fatalf("SignInWithGoogle() error = %v", err)
 			}
@@ -45,7 +45,7 @@ func TestService_RefreshExpiresMatchesStoredExpiry(t *testing.T) {
 		}},
 		{"apple", func(t *testing.T) (IssuedAuth, time.Time) {
 			store := &fakeAuthStore{profile: UserProfile{Email: "a@b.com"}}
-			issued, err := testAppleService(store, verifier).SignInWithApple(context.Background(), "raw", "")
+			issued, err := testAppleService(store, verifier).SignInWithApple(context.Background(), "raw", "", "")
 			if err != nil {
 				t.Fatalf("SignInWithApple() error = %v", err)
 			}

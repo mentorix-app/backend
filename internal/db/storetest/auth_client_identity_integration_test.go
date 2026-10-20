@@ -247,9 +247,9 @@ func signInName(t *testing.T, pool *pgxpool.Pool, provider string, claims auth.I
 		err    error
 	)
 	if provider == auth.ProviderApple {
-		issued, err = svc.SignInWithApple(ctx, "raw", requestName)
+		issued, err = svc.SignInWithApple(ctx, "raw", requestName, "")
 	} else {
-		issued, err = svc.SignInWithGoogle(ctx, "raw")
+		issued, err = svc.SignInWithGoogle(ctx, "raw", "")
 	}
 	if err != nil {
 		t.Fatalf("sign-in with %s: %v", provider, err)

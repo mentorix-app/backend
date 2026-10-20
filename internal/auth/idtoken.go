@@ -28,6 +28,8 @@ type IDTokenClaims struct {
 	// Audience is the audience of the token that matched the allow-list, which is the
 	// client id the provider issued the sign-in for. The sign-in flow ignores it.
 	Audience string
+	// Nonce is the raw nonce claim. The sign-in flow compares it; go-oidc does not check it.
+	Nonce string
 }
 
 // IDTokenVerifier checks a provider ID token and returns its claims.
@@ -106,5 +108,6 @@ func (v *oidcVerifier) Verify(ctx context.Context, rawToken string) (IDTokenClai
 		EmailVerified: bool(c.EmailVerified),
 		Name:          c.Name,
 		Audience:      tok.Audience[matched],
+		Nonce:         tok.Nonce,
 	}, nil
 }

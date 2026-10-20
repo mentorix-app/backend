@@ -207,6 +207,35 @@ func TestIDTokenVerifier_audienceIsTheMatchedValue(t *testing.T) {
 	}
 }
 
+func TestIDTokenVerifier_nonceClaim(t *testing.T) {
+	f := newIDTokenFixture(t)
+	tests := []struct {
+		name  string
+		claim any
+		want  string
+	}{
+		{"claim present", "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b", "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"},
+		{"claim absent", nil, ""},
+		{"claim empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := validIDTokenClaims()
+			if tt.claim != nil {
+				c["nonce"] = tt.claim
+			}
+
+			got, err := f.verifier(testIDTokenClientID).Verify(context.Background(), f.sign(t, f.key, c))
+			if err != nil {
+				t.Fatalf("Verify() error = %v", err)
+			}
+			if got.Nonce != tt.want {
+				t.Errorf("Nonce = %q, want %q", got.Nonce, tt.want)
+			}
+		})
+	}
+}
+
 func TestIDTokenVerifier_keyServerDown(t *testing.T) {
 	f := newIDTokenFixture(t)
 	v := f.verifier(testIDTokenClientID)

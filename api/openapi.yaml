@@ -2869,6 +2869,15 @@ components:
         id_token:
           type: string
           description: Google ID token from the app
+        nonce:
+          type: string
+          maxLength: 256
+          description: >
+            Optional raw nonce, at most 256 characters. The app passes its SHA-256 as
+            lowercase hex to Google and sends the raw value here; the token's
+            `nonce` claim must then equal that hash, otherwise `401
+            invalid_id_token`. Empty or absent skips the check. Longer than 256
+            characters answers `400`.
 
     AppleSignInRequest:
       type: object
@@ -2880,6 +2889,15 @@ components:
         name:
           type: string
           description: Display name the app received from Apple; optional, cut to 100 characters, used when the account is created or fills an empty name of an existing account
+        nonce:
+          type: string
+          maxLength: 256
+          description: >
+            Optional raw nonce, at most 256 characters. The app passes its SHA-256 as
+            lowercase hex to Apple and sends the raw value here; the token's
+            `nonce` claim must then equal that hash, otherwise `401
+            invalid_id_token`. Empty or absent skips the check. Longer than 256
+            characters answers `400`.
 
     DeleteAccountRequest:
       type: object

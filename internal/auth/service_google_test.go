@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"testing"
@@ -34,7 +36,7 @@ func TestService_SignInWithGoogle_success(t *testing.T) {
 		Subject: "sub-1", Email: "  Person@Example.com ", EmailVerified: true, Name: "  Person Name ",
 	}})
 
-	issued, err := svc.SignInWithGoogle(context.Background(), "raw")
+	issued, err := svc.SignInWithGoogle(context.Background(), "raw", "")
 	if err != nil {
 		t.Fatalf("SignInWithGoogle() error = %v", err)
 	}
@@ -89,7 +91,7 @@ func TestService_SignInWithGoogle_profileFields(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &fakeAuthStore{}
 			svc := testGoogleService(store, fakeIDTokenVerifier{claims: tt.claims})
-			if _, err := svc.SignInWithGoogle(context.Background(), "raw"); err != nil {
+			if _, err := svc.SignInWithGoogle(context.Background(), "raw", ""); err != nil {
 				t.Fatalf("SignInWithGoogle() error = %v", err)
 			}
 			got := store.clientCalls[0]
@@ -103,7 +105,7 @@ func TestService_SignInWithGoogle_profileFields(t *testing.T) {
 func TestService_SignInWithGoogle_notConfigured(t *testing.T) {
 	store := &fakeAuthStore{}
 	svc := testAuthService(store)
-	_, err := svc.SignInWithGoogle(context.Background(), "raw")
+	_, err := svc.SignInWithGoogle(context.Background(), "raw", "")
 	if !errors.Is(err, ErrProviderNotConfigured) {
 		t.Fatalf("error = %v, want ErrProviderNotConfigured", err)
 	}
@@ -115,7 +117,7 @@ func TestService_SignInWithGoogle_notConfigured(t *testing.T) {
 func TestService_SignInWithGoogle_invalidToken(t *testing.T) {
 	store := &fakeAuthStore{}
 	svc := testGoogleService(store, fakeIDTokenVerifier{err: ErrInvalidIDToken})
-	_, err := svc.SignInWithGoogle(context.Background(), "raw")
+	_, err := svc.SignInWithGoogle(context.Background(), "raw", "")
 	if !errors.Is(err, ErrInvalidIDToken) {
 		t.Fatalf("error = %v, want ErrInvalidIDToken", err)
 	}
@@ -137,7 +139,7 @@ func TestService_SignInWithGoogle_storeErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := testGoogleService(tt.store, fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s"}})
-			issued, err := svc.SignInWithGoogle(context.Background(), "raw")
+			issued, err := svc.SignInWithGoogle(context.Background(), "raw", "")
 			if !errors.Is(err, boom) {
 				t.Fatalf("error = %v, want boom", err)
 			}
@@ -175,7 +177,7 @@ func TestService_SignInWithApple_usesRequestName(t *testing.T) {
 			svc := testAppleService(store, fakeIDTokenVerifier{claims: IDTokenClaims{
 				Subject: "apple-sub", Email: "A@B.com", EmailVerified: true, Name: tt.tokenName,
 			}})
-			issued, err := svc.SignInWithApple(context.Background(), "raw", tt.reqName)
+			issued, err := svc.SignInWithApple(context.Background(), "raw", tt.reqName, "")
 			if err != nil {
 				t.Fatalf("SignInWithApple() error = %v", err)
 			}
@@ -194,7 +196,7 @@ func TestService_SignInWithApple_notConfigured(t *testing.T) {
 	store := &fakeAuthStore{}
 	// A Google verifier alone must not enable Apple.
 	svc := testGoogleService(store, fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s"}})
-	_, err := svc.SignInWithApple(context.Background(), "raw", "")
+	_, err := svc.SignInWithApple(context.Background(), "raw", "", "")
 	if !errors.Is(err, ErrProviderNotConfigured) {
 		t.Fatalf("error = %v, want ErrProviderNotConfigured", err)
 	}
@@ -206,10 +208,102 @@ func TestService_SignInWithApple_notConfigured(t *testing.T) {
 func TestService_SignInWithApple_invalidToken(t *testing.T) {
 	store := &fakeAuthStore{}
 	svc := testAppleService(store, fakeIDTokenVerifier{err: ErrInvalidIDToken})
-	if _, err := svc.SignInWithApple(context.Background(), "raw", "Name"); !errors.Is(err, ErrInvalidIDToken) {
+	if _, err := svc.SignInWithApple(context.Background(), "raw", "Name", ""); !errors.Is(err, ErrInvalidIDToken) {
 		t.Fatalf("error = %v, want ErrInvalidIDToken", err)
 	}
 	if len(store.clientCalls) != 0 {
 		t.Error("store must not be called")
+	}
+}
+
+func hashedNonce(nonce string) string {
+	sum := sha256.Sum256([]byte(nonce))
+	return hex.EncodeToString(sum[:])
+}
+
+func TestService_SignIn_nonce(t *testing.T) {
+	const nonce = "raw-nonce-secret"
+	providers := []struct {
+		name    string
+		service func(*fakeAuthStore, IDTokenVerifier) *Service
+		signIn  func(*Service, string) error
+	}{
+		{
+			name:    "google",
+			service: func(s *fakeAuthStore, v IDTokenVerifier) *Service { return testGoogleService(s, v) },
+			signIn: func(svc *Service, nonce string) error {
+				_, err := svc.SignInWithGoogle(context.Background(), "raw", nonce)
+				return err
+			},
+		},
+		{
+			name:    "apple",
+			service: func(s *fakeAuthStore, v IDTokenVerifier) *Service { return testAppleService(s, v) },
+			signIn: func(svc *Service, nonce string) error {
+				_, err := svc.SignInWithApple(context.Background(), "raw", "Name", nonce)
+				return err
+			},
+		},
+	}
+	tests := []struct {
+		name    string
+		nonce   string
+		claim   string
+		wantErr bool
+	}{
+		{"no nonce, no claim", "", "", false},
+		{"no nonce, any claim", "", "whatever-the-token-carries", false},
+		{"no nonce, hashed claim", "", hashedNonce(nonce), false},
+		{"hashed claim matches", nonce, hashedNonce(nonce), false},
+		{"raw nonce in the claim is refused", nonce, nonce, true},
+		{"missing claim", nonce, "", true},
+		{"uppercase hex of the right hash", nonce, strings.ToUpper(hashedNonce(nonce)), true},
+		{"hash of another nonce", nonce, hashedNonce("another-nonce"), true},
+		{"hash with a trailing space", nonce, hashedNonce(nonce) + " ", true},
+		{"hash cut short", nonce, hashedNonce(nonce)[:63], true},
+	}
+	for _, p := range providers {
+		for _, tt := range tests {
+			t.Run(p.name+"/"+tt.name, func(t *testing.T) {
+				store := &fakeAuthStore{profile: UserProfile{Email: "a@b.com"}}
+				svc := p.service(store, fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub", Nonce: tt.claim}})
+
+				err := p.signIn(svc, tt.nonce)
+
+				if !tt.wantErr {
+					if err != nil {
+						t.Fatalf("sign-in error = %v", err)
+					}
+					if len(store.clientCalls) != 1 {
+						t.Errorf("store calls = %d, want 1", len(store.clientCalls))
+					}
+					return
+				}
+				if !errors.Is(err, ErrInvalidIDToken) {
+					t.Fatalf("error = %v, want ErrInvalidIDToken", err)
+				}
+				if len(store.clientCalls) != 0 {
+					t.Errorf("store must not be called, got %+v", store.clientCalls)
+				}
+				// The cause reaches the request log, so it must not echo either value.
+				if strings.Contains(err.Error(), tt.nonce) {
+					t.Errorf("error text carries the nonce: %q", err.Error())
+				}
+				if tt.claim != "" && strings.Contains(err.Error(), tt.claim) {
+					t.Errorf("error text carries the claim: %q", err.Error())
+				}
+			})
+		}
+	}
+}
+
+func TestService_SignIn_nonceNotConfiguredStillWins(t *testing.T) {
+	store := &fakeAuthStore{}
+	svc := testAuthService(store)
+	if _, err := svc.SignInWithGoogle(context.Background(), "raw", "n"); !errors.Is(err, ErrProviderNotConfigured) {
+		t.Fatalf("google error = %v, want ErrProviderNotConfigured", err)
+	}
+	if _, err := svc.SignInWithApple(context.Background(), "raw", "", "n"); !errors.Is(err, ErrProviderNotConfigured) {
+		t.Fatalf("apple error = %v, want ErrProviderNotConfigured", err)
 	}
 }

@@ -355,3 +355,51 @@ func TestLogout_malformedJSONBodyClearsCookie(t *testing.T) {
 		t.Errorf("cookies = %v, want a clearing cookie", cookies)
 	}
 }
+
+func TestGoogle_nonce(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantCalled bool
+		wantNonce  string
+	}{
+		{"no nonce reaches the service as empty", `{"id_token":"raw-token"}`, http.StatusOK, true, ""},
+		{"empty nonce reaches the service as empty", `{"id_token":"raw-token","nonce":""}`, http.StatusOK, true, ""},
+		{"nonce reaches the service", `{"id_token":"raw-token","nonce":"abc-123"}`, http.StatusOK, true, "abc-123"},
+		{"256 ASCII characters accepted", `{"id_token":"raw-token","nonce":"` + strings.Repeat("a", 256) + `"}`, http.StatusOK, true, strings.Repeat("a", 256)},
+		{"257 ASCII characters refused", `{"id_token":"raw-token","nonce":"` + strings.Repeat("a", 257) + `"}`, http.StatusBadRequest, false, ""},
+		{"256 two-byte runes accepted", `{"id_token":"raw-token","nonce":"` + strings.Repeat("я", 256) + `"}`, http.StatusOK, true, strings.Repeat("я", 256)},
+		{"257 two-byte runes refused", `{"id_token":"raw-token","nonce":"` + strings.Repeat("я", 257) + `"}`, http.StatusBadRequest, false, ""},
+		{"nonce of the wrong type", `{"id_token":"raw-token","nonce":123}`, http.StatusBadRequest, false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &fakeAuthService{}
+			e := echo.New()
+			e.POST("/auth/google", testAuthHandlers(svc).Google)
+			rec := postJSON(e, "/auth/google", tt.body)
+
+			assertHTTPStatus(t, rec, tt.wantStatus)
+			if called := svc.googleToken != ""; called != tt.wantCalled {
+				t.Fatalf("service called = %v, want %v", called, tt.wantCalled)
+			}
+			if svc.googleNonce != tt.wantNonce {
+				t.Errorf("service nonce = %q, want %q", svc.googleNonce, tt.wantNonce)
+			}
+		})
+	}
+}
+
+func TestGoogle_nonceTooLongMessage(t *testing.T) {
+	e := echo.New()
+	e.HTTPErrorHandler = httpx.ErrorHandler
+	e.POST("/auth/google", testAuthHandlers(&fakeAuthService{}).Google)
+
+	rec := postJSON(e, "/auth/google", `{"id_token":"x","nonce":"`+strings.Repeat("a", 257)+`"}`)
+
+	assertHTTPStatus(t, rec, http.StatusBadRequest)
+	if !strings.Contains(rec.Body.String(), "nonce must be at most 256 characters") {
+		t.Errorf("body = %s", rec.Body.String())
+	}
+}

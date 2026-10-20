@@ -29,8 +29,8 @@ import (
 type credentialService interface {
 	RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error)
 	Login(ctx context.Context, email, password string) (IssuedAuth, error)
-	SignInWithGoogle(ctx context.Context, rawIDToken string) (IssuedAuth, error)
-	SignInWithApple(ctx context.Context, rawIDToken, name string) (IssuedAuth, error)
+	SignInWithGoogle(ctx context.Context, rawIDToken, nonce string) (IssuedAuth, error)
+	SignInWithApple(ctx context.Context, rawIDToken, name, nonce string) (IssuedAuth, error)
 	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
 	Logout(ctx context.Context, refreshPlain string) error
 	LogoutAll(ctx context.Context, userID uuid.UUID) error
@@ -234,7 +234,10 @@ func (h *Handlers) Google(c echo.Context) error {
 	if body.IDToken == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "id_token is required")
 	}
-	issued, err := h.svc.SignInWithGoogle(c.Request().Context(), body.IDToken)
+	if err := validateNonce(body.Nonce); err != nil {
+		return err
+	}
+	issued, err := h.svc.SignInWithGoogle(c.Request().Context(), body.IDToken, body.Nonce)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrProviderNotConfigured):
@@ -258,7 +261,10 @@ func (h *Handlers) Apple(c echo.Context) error {
 	if body.IDToken == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "id_token is required")
 	}
-	issued, err := h.svc.SignInWithApple(c.Request().Context(), body.IDToken, body.Name)
+	if err := validateNonce(body.Nonce); err != nil {
+		return err
+	}
+	issued, err := h.svc.SignInWithApple(c.Request().Context(), body.IDToken, body.Name, body.Nonce)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrProviderNotConfigured):
@@ -533,6 +539,18 @@ const deleteAccountBodyLimit = 16000
 
 // maxAppleRedirectURILen is the longest apple_redirect_uri, in characters.
 const maxAppleRedirectURILen = 2048
+
+// maxNonceLen is the longest nonce of POST /auth/google and POST /auth/apple,
+// counted in characters (Unicode code points), as OpenAPI maxLength does.
+const maxNonceLen = 256
+
+// validateNonce refuses a nonce longer than maxNonceLen characters.
+func validateNonce(nonce string) error {
+	if utf8.RuneCountInString(nonce) > maxNonceLen {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("nonce must be at most %d characters", maxNonceLen))
+	}
+	return nil
+}
 
 // validateDeleteAccountRequest checks that the Apple fields come as a pair, that the
 // redirect address needs the pair, and that the address is an absolute https URL
