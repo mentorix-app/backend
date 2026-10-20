@@ -19,7 +19,7 @@ func TestService_SignIn_fillsEmptyNameOfExistingAccount(t *testing.T) {
 		{
 			name: "google token name",
 			signIn: func(svc *Service) (IssuedAuth, error) {
-				return svc.SignInWithGoogle(context.Background(), "raw")
+				return svc.SignInWithGoogle(context.Background(), "raw", "")
 			},
 			verifier: fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s", Name: "  Google Person "}},
 			want:     "Google Person",
@@ -27,7 +27,7 @@ func TestService_SignIn_fillsEmptyNameOfExistingAccount(t *testing.T) {
 		{
 			name: "apple request name",
 			signIn: func(svc *Service) (IssuedAuth, error) {
-				return svc.SignInWithApple(context.Background(), "raw", "  Apple Person ")
+				return svc.SignInWithApple(context.Background(), "raw", "  Apple Person ", "")
 			},
 			verifier: fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s"}},
 			want:     "Apple Person",
@@ -35,7 +35,7 @@ func TestService_SignIn_fillsEmptyNameOfExistingAccount(t *testing.T) {
 		{
 			name: "apple token name wins over request name",
 			signIn: func(svc *Service) (IssuedAuth, error) {
-				return svc.SignInWithApple(context.Background(), "raw", "Request Name")
+				return svc.SignInWithApple(context.Background(), "raw", "Request Name", "")
 			},
 			verifier: fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s", Name: "Token Name"}},
 			want:     "Token Name",
@@ -43,7 +43,7 @@ func TestService_SignIn_fillsEmptyNameOfExistingAccount(t *testing.T) {
 		{
 			name: "name is cleaned and cut to 100 runes",
 			signIn: func(svc *Service) (IssuedAuth, error) {
-				return svc.SignInWithApple(context.Background(), "raw", "\x00"+strings.Repeat("я", 150))
+				return svc.SignInWithApple(context.Background(), "raw", "\x00"+strings.Repeat("я", 150), "")
 			},
 			verifier: fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "s"}},
 			want:     strings.Repeat("я", 100),
@@ -81,10 +81,10 @@ func TestService_SignIn_keepsNameOfExistingAccount(t *testing.T) {
 		signIn func(svc *Service) (IssuedAuth, error)
 	}{
 		{"google", func(svc *Service) (IssuedAuth, error) {
-			return svc.SignInWithGoogle(context.Background(), "raw")
+			return svc.SignInWithGoogle(context.Background(), "raw", "")
 		}},
 		{"apple", func(svc *Service) (IssuedAuth, error) {
-			return svc.SignInWithApple(context.Background(), "raw", "Request Name")
+			return svc.SignInWithApple(context.Background(), "raw", "Request Name", "")
 		}},
 	}
 	for _, tt := range tests {
@@ -115,10 +115,10 @@ func TestService_SignIn_newAccountDoesNotFill(t *testing.T) {
 	svc.googleVerifier = v
 	svc.appleVerifier = v
 
-	if _, err := svc.SignInWithGoogle(context.Background(), "raw"); err != nil {
+	if _, err := svc.SignInWithGoogle(context.Background(), "raw", ""); err != nil {
 		t.Fatalf("SignInWithGoogle() error = %v", err)
 	}
-	if _, err := svc.SignInWithApple(context.Background(), "raw", "Request Name"); err != nil {
+	if _, err := svc.SignInWithApple(context.Background(), "raw", "Request Name", ""); err != nil {
 		t.Fatalf("SignInWithApple() error = %v", err)
 	}
 	if len(store.fillCalls) != 0 {
@@ -145,7 +145,7 @@ func TestService_SignIn_emptyNameDoesNotFill(t *testing.T) {
 			svc := testAuthService(store)
 			svc.appleVerifier = fakeIDTokenVerifier{claims: tt.claims}
 
-			if _, err := svc.SignInWithApple(context.Background(), "raw", tt.req); err != nil {
+			if _, err := svc.SignInWithApple(context.Background(), "raw", tt.req, ""); err != nil {
 				t.Fatalf("SignInWithApple() error = %v", err)
 			}
 			if len(store.fillCalls) != 0 {
@@ -162,10 +162,10 @@ func TestService_SignIn_fillErrorFailsSignIn(t *testing.T) {
 		signIn func(svc *Service) (IssuedAuth, error)
 	}{
 		{"google", func(svc *Service) (IssuedAuth, error) {
-			return svc.SignInWithGoogle(context.Background(), "raw")
+			return svc.SignInWithGoogle(context.Background(), "raw", "")
 		}},
 		{"apple", func(svc *Service) (IssuedAuth, error) {
-			return svc.SignInWithApple(context.Background(), "raw", "")
+			return svc.SignInWithApple(context.Background(), "raw", "", "")
 		}},
 	}
 	for _, tt := range tests {

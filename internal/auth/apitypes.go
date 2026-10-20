@@ -27,6 +27,9 @@ type MePatchRequest struct {
 // IDTokenRequest is the JSON body for POST /auth/google.
 type IDTokenRequest struct {
 	IDToken string `json:"id_token"`
+	// Nonce is optional: the raw value, at most 256 characters. When set, the ID
+	// token's nonce claim must be its SHA-256 as lowercase hex.
+	Nonce string `json:"nonce"`
 }
 
 // AppleSignInRequest is the JSON body for POST /auth/apple. Apple puts no name
@@ -34,6 +37,9 @@ type IDTokenRequest struct {
 type AppleSignInRequest struct {
 	IDToken string `json:"id_token"`
 	Name    string `json:"name"`
+	// Nonce is optional: the raw value, at most 256 characters. When set, the ID
+	// token's nonce claim must be its SHA-256 as lowercase hex.
+	Nonce string `json:"nonce"`
 }
 
 // DeleteAccountRequest is the optional JSON body for DELETE /auth/me. A client whose

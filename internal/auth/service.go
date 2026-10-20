@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -208,22 +211,25 @@ func (s *Service) Login(ctx context.Context, email, password string) (IssuedAuth
 }
 
 // SignInWithGoogle verifies a Google ID token and signs in the matching client,
-// creating the account on the first sign-in.
-func (s *Service) SignInWithGoogle(ctx context.Context, rawIDToken string) (IssuedAuth, error) {
-	return s.signInWithProvider(ctx, ProviderGoogle, s.googleVerifier, rawIDToken, "")
+// creating the account on the first sign-in. A non-empty nonce must match the
+// token's nonce claim, which carries its SHA-256 as lowercase hex.
+func (s *Service) SignInWithGoogle(ctx context.Context, rawIDToken, nonce string) (IssuedAuth, error) {
+	return s.signInWithProvider(ctx, ProviderGoogle, s.googleVerifier, rawIDToken, "", nonce)
 }
 
 // SignInWithApple verifies an Apple ID token and signs in the matching client,
 // creating the account on the first sign-in. Apple puts no name in the token,
 // so name from the request is used when the account is created or its name is empty.
-func (s *Service) SignInWithApple(ctx context.Context, rawIDToken, name string) (IssuedAuth, error) {
-	return s.signInWithProvider(ctx, ProviderApple, s.appleVerifier, rawIDToken, name)
+// A non-empty nonce must match the token's nonce claim, which carries its SHA-256
+// as lowercase hex.
+func (s *Service) SignInWithApple(ctx context.Context, rawIDToken, name, nonce string) (IssuedAuth, error) {
+	return s.signInWithProvider(ctx, ProviderApple, s.appleVerifier, rawIDToken, name, nonce)
 }
 
 // signInWithProvider uses fallbackName only when the token carries no name. The
 // name goes into a new account; an existing account gets it only while its own
 // name is empty, so a name that is set is never overwritten.
-func (s *Service) signInWithProvider(ctx context.Context, provider string, verifier IDTokenVerifier, rawIDToken, fallbackName string) (IssuedAuth, error) {
+func (s *Service) signInWithProvider(ctx context.Context, provider string, verifier IDTokenVerifier, rawIDToken, fallbackName, nonce string) (IssuedAuth, error) {
 	var out IssuedAuth
 	if verifier == nil {
 		return out, ErrProviderNotConfigured
@@ -231,6 +237,14 @@ func (s *Service) signInWithProvider(ctx context.Context, provider string, verif
 	claims, err := verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return out, err
+	}
+	if nonce != "" {
+		sum := sha256.Sum256([]byte(nonce))
+		want := hex.EncodeToString(sum[:])
+		// The error names neither value: the cause reaches the request log.
+		if subtle.ConstantTimeCompare([]byte(want), []byte(claims.Nonce)) != 1 {
+			return out, fmt.Errorf("%w: nonce mismatch", ErrInvalidIDToken)
+		}
 	}
 	name := cleanProviderName(claims.Name)
 	if name == "" {

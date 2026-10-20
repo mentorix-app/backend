@@ -42,8 +42,10 @@ type fakeAuthService struct {
 
 	// Arguments of the last calls, for body-mode assertions.
 	googleToken  string
+	googleNonce  string
 	appleToken   string
 	appleName    string
+	appleNonce   string
 	refreshToken string
 	logoutToken  string
 	linkUserID   uuid.UUID
@@ -128,8 +130,8 @@ func (f *fakeAuthService) Login(_ context.Context, email, _ string) (IssuedAuth,
 	return out, nil
 }
 
-func (f *fakeAuthService) SignInWithGoogle(_ context.Context, rawIDToken string) (IssuedAuth, error) {
-	f.googleToken = rawIDToken
+func (f *fakeAuthService) SignInWithGoogle(_ context.Context, rawIDToken, nonce string) (IssuedAuth, error) {
+	f.googleToken, f.googleNonce = rawIDToken, nonce
 	if f.googleErr != nil {
 		return IssuedAuth{}, f.googleErr
 	}
@@ -152,8 +154,8 @@ func (f *fakeAuthService) SignInWithGoogle(_ context.Context, rawIDToken string)
 	return out, nil
 }
 
-func (f *fakeAuthService) SignInWithApple(_ context.Context, rawIDToken, name string) (IssuedAuth, error) {
-	f.appleToken, f.appleName = rawIDToken, name
+func (f *fakeAuthService) SignInWithApple(_ context.Context, rawIDToken, name, nonce string) (IssuedAuth, error) {
+	f.appleToken, f.appleName, f.appleNonce = rawIDToken, name, nonce
 	if f.appleErr != nil {
 		return IssuedAuth{}, f.appleErr
 	}
