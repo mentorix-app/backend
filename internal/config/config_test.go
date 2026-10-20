@@ -436,3 +436,46 @@ func TestLoad_clientAnalyticsPageURL_invalid(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_bffSharedSecret(t *testing.T) {
+	const short = "bff-secret-of-exactly-31-bytes!"
+	const valid = "bff-secret-of-exactly-32-bytes!!"
+
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+		want    string
+	}{
+		{name: "empty disables the feature", value: "", want: ""},
+		{name: "31 bytes is rejected", value: short, wantErr: true},
+		{name: "32 bytes loads", value: valid, want: valid},
+		{name: "surrounding spaces are trimmed", value: "  " + valid + "\n", want: valid},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			t.Setenv("BFF_SHARED_SECRET", tt.value)
+			cfg, err := Load()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if !strings.Contains(err.Error(), "BFF_SHARED_SECRET") {
+					t.Errorf("error %q does not name BFF_SHARED_SECRET", err)
+				}
+				if strings.Contains(err.Error(), tt.value) {
+					t.Errorf("error leaks the secret: %q", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.BFFSharedSecret != tt.want {
+				t.Errorf("BFFSharedSecret does not match the expected value (len %d, want len %d)", len(cfg.BFFSharedSecret), len(tt.want))
+			}
+		})
+	}
+}
