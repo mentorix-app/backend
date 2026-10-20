@@ -49,24 +49,31 @@ func TestDeletionError(t *testing.T) {
 	})
 }
 
-func TestOnlyClientRole(t *testing.T) {
+func TestDeletableRoles(t *testing.T) {
 	tests := []struct {
 		name  string
 		roles []string
 		want  bool
 	}{
 		{"client", []string{RoleClient}, true},
+		{"trainer", []string{RoleTrainer}, true},
+		{"client and trainer", []string{RoleClient, RoleTrainer}, true},
+		{"trainer and client", []string{RoleTrainer, RoleClient}, true},
 		{"no role rows", nil, false},
 		{"empty list", []string{}, false},
-		{"trainer", []string{RoleTrainer}, false},
 		{"admin", []string{RoleAdmin}, false},
-		{"client and trainer", []string{RoleClient, RoleTrainer}, false},
+		{"admin and client", []string{RoleAdmin, RoleClient}, false},
+		{"admin and trainer", []string{RoleTrainer, RoleAdmin}, false},
+		{"admin, client and trainer", []string{RoleClient, RoleTrainer, RoleAdmin}, false},
+		{"client and an unknown role", []string{RoleClient, "owner"}, false},
 		{"unknown role", []string{"owner"}, false},
+		{"client twice", []string{RoleClient, RoleClient}, false},
+		{"trainer twice", []string{RoleTrainer, RoleTrainer}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := onlyClientRole(tt.roles); got != tt.want {
-				t.Errorf("onlyClientRole(%v) = %v, want %v", tt.roles, got, tt.want)
+			if got := deletableRoles(tt.roles); got != tt.want {
+				t.Errorf("deletableRoles(%v) = %v, want %v", tt.roles, got, tt.want)
 			}
 		})
 	}

@@ -12,6 +12,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acceptTrainerTerms = `-- name: AcceptTrainerTerms :exec
+UPDATE mentorix.trainers
+SET terms_version = $1::text,
+    terms_accepted_at = now()
+WHERE user_id = $2
+  AND terms_version IS DISTINCT FROM $1::text
+`
+
+type AcceptTrainerTermsParams struct {
+	TermsVersion string      `json:"terms_version"`
+	UserID       pgtype.UUID `json:"user_id"`
+}
+
+// A repeat of the same version changes nothing, so the first acceptance keeps its time.
+func (q *Queries) AcceptTrainerTerms(ctx context.Context, arg AcceptTrainerTermsParams) error {
+	_, err := q.db.Exec(ctx, acceptTrainerTerms, arg.TermsVersion, arg.UserID)
+	return err
+}
+
 const countUserIdentitiesOutsideProviders = `-- name: CountUserIdentitiesOutsideProviders :one
 SELECT count(*)
 FROM mentorix.auth_identities
@@ -258,6 +277,17 @@ func (q *Queries) InsertTrainer(ctx context.Context, userID pgtype.UUID) error {
 	return err
 }
 
+const insertTrainerIfAbsent = `-- name: InsertTrainerIfAbsent :exec
+INSERT INTO mentorix.trainers (user_id)
+VALUES ($1)
+ON CONFLICT (user_id) DO NOTHING
+`
+
+func (q *Queries) InsertTrainerIfAbsent(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, insertTrainerIfAbsent, userID)
+	return err
+}
+
 const insertUser = `-- name: InsertUser :one
 INSERT INTO mentorix.users (primary_email, display_name)
 VALUES ($1, $2)
@@ -350,6 +380,54 @@ func (q *Queries) ListUserRoles(ctx context.Context, userID pgtype.UUID) ([]stri
 	return items, nil
 }
 
+const lockTrainerByUserID = `-- name: LockTrainerByUserID :one
+SELECT id
+FROM mentorix.trainers
+WHERE user_id = $1
+FOR UPDATE
+`
+
+// Quota writers lock the trainers row and then touch the user row through a foreign key,
+// so a transaction that locks both takes the trainers row first.
+func (q *Queries) LockTrainerByUserID(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockTrainerByUserID, userID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const lockTrainerInvitesByUserID = `-- name: LockTrainerInvitesByUserID :many
+SELECT i.id
+FROM mentorix.trainer_invites i
+WHERE i.trainer_id = (SELECT t.id FROM mentorix.trainers t WHERE t.user_id = $1)
+ORDER BY i.id
+FOR UPDATE
+`
+
+// Accepting an invite locks the invite row (GetTrainerInviteByTokenForUpdate) and, for a new
+// link, then the trainers row (subscription.LockTrainer). The account deletion locks the
+// invites first, in this order, so it does not wait for an accept the other way round.
+// The lock covers the rows that exist when the query runs, not invites created later.
+func (q *Queries) LockTrainerInvitesByUserID(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, lockTrainerInvitesByUserID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockUserForUpdate = `-- name: LockUserForUpdate :one
 SELECT id
 FROM mentorix.users
@@ -421,6 +499,51 @@ WHERE token_hash = $1 AND revoked_at IS NULL
 func (q *Queries) RevokeRefreshSessionByHash(ctx context.Context, tokenHash []byte) error {
 	_, err := q.db.Exec(ctx, revokeRefreshSessionByHash, tokenHash)
 	return err
+}
+
+const trainerHasBusinessData = `-- name: TrainerHasBusinessData :one
+WITH trainer AS (
+  SELECT t.id FROM mentorix.trainers t WHERE t.user_id = $1
+)
+SELECT (
+  EXISTS (SELECT 1 FROM mentorix.trainer_clients tc WHERE tc.trainer_id IN (SELECT id FROM trainer))
+  OR EXISTS (SELECT 1 FROM mentorix.programs p WHERE p.created_by = $1 OR p.modified_by = $1)
+  OR EXISTS (
+    SELECT 1 FROM mentorix.exercises e
+    WHERE e.created_by = $1 OR e.modified_by = $1
+      OR e.owner_trainer_id IN (SELECT id FROM trainer)
+  )
+  OR EXISTS (SELECT 1 FROM mentorix.program_weeks pw WHERE pw.modified_by = $1)
+  OR EXISTS (SELECT 1 FROM mentorix.program_week_days pwd WHERE pwd.modified_by = $1)
+  OR EXISTS (SELECT 1 FROM mentorix.program_week_day_block_exercises pwdbe WHERE pwdbe.modified_by = $1)
+  OR EXISTS (SELECT 1 FROM mentorix.program_versions pv WHERE pv.published_by = $1)
+  OR EXISTS (
+    SELECT 1 FROM mentorix.program_assignments pa
+    WHERE pa.created_by = $1 OR pa.modified_by = $1
+      OR pa.trainer_id IN (SELECT id FROM trainer)
+  )
+  OR EXISTS (SELECT 1 FROM mentorix.client_workout_completions cwc WHERE cwc.trainer_id IN (SELECT id FROM trainer))
+  OR EXISTS (SELECT 1 FROM mentorix.client_workout_completion_comments cwcc WHERE cwcc.trainer_id IN (SELECT id FROM trainer))
+  OR EXISTS (SELECT 1 FROM mentorix.program_block_clients pbc WHERE pbc.created_by = $1)
+  OR EXISTS (
+    SELECT 1 FROM mentorix.trainer_plan_entitlements tpe
+    WHERE tpe.source IN ('app_store', 'google_play') AND tpe.trainer_id IN (SELECT id FROM trainer)
+  )
+)::boolean AS has_business_data
+`
+
+// True when the user's trainer side holds anything that account deletion must not destroy:
+// clients, authored or last edited programs, program trees, versions and exercises,
+// assignments, workout completions and comments on them, block visibility rules, and
+// entitlements paid through a store. Soft-deleted programs and exercises count. The edited
+// columns are the ones the database cannot detach from the user (RESTRICT, or SET NULL on a
+// NOT NULL column). Invites and admin-granted entitlements do not: they go
+// with the trainers row.
+func (q *Queries) TrainerHasBusinessData(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, trainerHasBusinessData, userID)
+	var has_business_data bool
+	err := row.Scan(&has_business_data)
+	return has_business_data, err
 }
 
 const updateUserAvatarFilePath = `-- name: UpdateUserAvatarFilePath :exec

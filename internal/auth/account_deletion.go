@@ -19,23 +19,39 @@ const telegramCleanupTimeout = 5 * time.Second
 // deleteAfterRevocationTimeout bounds the delete that follows a revocation at Apple.
 const deleteAfterRevocationTimeout = 10 * time.Second
 
-// DeleteClientAccount deletes a client and every row that belongs to them in one
-// transaction, including the invites they consumed, and returns their Telegram
-// user id, empty when there is none.
+// DeleteClientAccount deletes a client or a trainer without business data, and every row
+// that belongs to them, in one transaction. It removes the invites the account consumed and,
+// with the user row, the trainers row with the trainer's own invites and admin-granted
+// entitlements. It returns the Telegram user id of the account, empty when there is none.
 //
 // revokedAppleSubject is the subject of the Apple sign-in whose authorization was
 // revoked at Apple just before, empty when none was. An account that has Apple
 // sign-ins is deleted only when that subject is one of them, so one revoked sign-in
 // is enough for an account with two (a known limit).
 //
-// The user row is locked first, so an assignment committed at the same moment is
-// either seen and deleted too or fails on a user that is gone. Both refusals are
-// decided under that lock, and nothing is changed when one applies:
-// ErrAccountDeletionUnavailable when the roles are not exactly client, then
-// ErrAppleSignInNotRevoked when the account has an Apple sign-in and
-// revokedAppleSubject is not one of them. ErrAccountDeletionUnavailable is also
-// returned when the database refuses a delete because other rows still reference
-// the user. pgx.ErrNoRows means the user does not exist.
+// Locks are taken in the order the other writers use: the trainer's invite rows (accepting
+// an invite locks its row first), then the trainers row (quota writers lock it before they
+// touch the user row), then the user row. An assignment committed at the same moment is
+// therefore either seen and deleted too or fails on a user that is gone, and an invite
+// accepted at the same moment normally commits first, so the new client makes the deletion
+// refuse, or finds the invite gone. Every refusal is decided under those locks, and nothing
+// is changed when one applies, in this order: ErrAccountDeletionUnavailable when the roles are
+// not exactly client, exactly trainer, or both, then ErrAccountDeletionUnavailable when the
+// account holds business data (see TrainerHasBusinessData, checked for every account), then
+// ErrAppleSignInNotRevoked when the account has an Apple sign-in and revokedAppleSubject is
+// not one of them. ErrAccountDeletionUnavailable is also returned when the database refuses
+// a delete because other rows still reference the user. pgx.ErrNoRows means the user does
+// not exist.
+//
+// Known windows, each ending in a database error for one of the two sides, with nothing
+// changed and a repeat that works:
+//   - "become a trainer" commits after the trainers row was looked up (there was none) and
+//     before the user row is locked: the deletion holds the user lock without the new trainers
+//     row, and a quota writer on that row can deadlock with it.
+//   - The invite lock is a READ COMMITTED snapshot, so an invite created after it and accepted
+//     before the delete cascade reaches the invite rows can deadlock with the deletion.
+//   - The janitor's PurgeStaleTrainerInvites deletes invite rows in scan order and can
+//     deadlock with the deletion the same way the old cascade could.
 func (s *Store) DeleteClientAccount(ctx context.Context, userID uuid.UUID, revokedAppleSubject string) (string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -46,6 +62,12 @@ func (s *Store) DeleteClientAccount(ctx context.Context, userID uuid.UUID, revok
 	qtx := s.q.WithTx(tx)
 	userPG := pgconv.ToPGUUID(userID)
 
+	if _, err := qtx.LockTrainerInvitesByUserID(ctx, userPG); err != nil {
+		return "", fmt.Errorf("lock trainer invites: %w", err)
+	}
+	if _, err := qtx.LockTrainerByUserID(ctx, userPG); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("lock trainer: %w", err)
+	}
 	if _, err := qtx.LockUserForUpdate(ctx, userPG); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", pgx.ErrNoRows
@@ -57,7 +79,14 @@ func (s *Store) DeleteClientAccount(ctx context.Context, userID uuid.UUID, revok
 	if err != nil {
 		return "", fmt.Errorf("load user roles: %w", err)
 	}
-	if !onlyClientRole(roles) {
+	if !deletableRoles(roles) {
+		return "", ErrAccountDeletionUnavailable
+	}
+	hasData, err := qtx.TrainerHasBusinessData(ctx, userPG)
+	if err != nil {
+		return "", fmt.Errorf("check trainer data: %w", err)
+	}
+	if hasData {
 		return "", ErrAccountDeletionUnavailable
 	}
 
@@ -108,9 +137,12 @@ func (s *Service) canRevokeApple() bool {
 // sign-in and returns the subject that was revoked. It returns "" without calling
 // Apple when the account has none.
 //
-// The role rule also runs here, ahead of the store, which still decides it under its
-// lock: a revocation cannot be undone, so nothing is sent to Apple for an account that
-// the store is about to refuse. The other refusals stay in the store.
+// The role rule and the trainer data rule also run here, ahead of the store, so that Apple is
+// not asked to revoke for an account that is already refused. This check takes no lock, so it
+// is not a guarantee: a role or trainer data that arrives between it and the store's locks
+// (a client accepting an invite while the Apple call runs, say) is seen only by the store.
+// Apple has then revoked, the store answers ErrAccountDeletionUnavailable, the account stays,
+// and the person signs in with Apple again. The other refusals stay in the store.
 func (s *Service) revokeAppleSignIn(ctx context.Context, userID uuid.UUID, proof AppleProof) (string, error) {
 	subjects, err := s.store.UserAppleSubjects(ctx, userID)
 	if err != nil {
@@ -123,7 +155,14 @@ func (s *Service) revokeAppleSignIn(ctx context.Context, userID uuid.UUID, proof
 	if err != nil {
 		return "", fmt.Errorf("load user roles: %w", err)
 	}
-	if !onlyClientRole(roles) {
+	if !deletableRoles(roles) {
+		return "", ErrAccountDeletionUnavailable
+	}
+	hasData, err := s.store.TrainerHasBusinessData(ctx, userID)
+	if err != nil {
+		return "", fmt.Errorf("check trainer data: %w", err)
+	}
+	if hasData {
 		return "", ErrAccountDeletionUnavailable
 	}
 	if !s.canRevokeApple() {
@@ -144,6 +183,22 @@ func (s *Service) revokeAppleSignIn(ctx context.Context, userID uuid.UUID, proof
 		return "", fmt.Errorf("revoke apple authorization: %w", err)
 	}
 	return claims.Subject, nil
+}
+
+// TrainerHasBusinessData reports whether the account holds data that deleting it must not
+// destroy, without taking any lock: a client of the trainer (any status, blocked included), a
+// program or exercise they authored or last edited (soft-deleted ones count), a program week,
+// day or block exercise they last edited, a program version they published, a program
+// assignment made or last edited by them or made for the trainer, a workout completion or a
+// comment on one, a block visibility rule they created, or an entitlement paid through a store
+// (any status). Invites and admin-granted entitlements are not data: they are removed with the
+// account. A user without a trainers row has only what they authored, edited or published.
+func (s *Store) TrainerHasBusinessData(ctx context.Context, userID uuid.UUID) (bool, error) {
+	has, err := s.q.TrainerHasBusinessData(ctx, pgconv.ToPGUUID(userID))
+	if err != nil {
+		return false, fmt.Errorf("check trainer data: %w", err)
+	}
+	return has, nil
 }
 
 // UserAppleSubjects lists the subjects of the account's Apple sign-ins.
@@ -179,16 +234,30 @@ func deletionError(what string, err error) error {
 	return fmt.Errorf("%s: %w", what, err)
 }
 
-// onlyClientRole reports whether the roles are exactly client. An account with no
-// role row is not deletable here either.
-func onlyClientRole(roles []string) bool {
-	return len(roles) == 1 && roles[0] == RoleClient
+// deletableRoles reports whether the app may delete an account with these roles: exactly
+// client, trainer, or both. An admin, alone or with other roles, a repeated role and an
+// account with no role row are refused.
+func deletableRoles(roles []string) bool {
+	var hasClient, hasTrainer bool
+	for _, role := range roles {
+		switch {
+		case role == RoleClient && !hasClient:
+			hasClient = true
+		case role == RoleTrainer && !hasTrainer:
+			hasTrainer = true
+		default:
+			return false
+		}
+	}
+	return hasClient || hasTrainer
 }
 
-// DeleteAccount deletes the client's account and everything that belongs to it.
+// DeleteAccount deletes the account of a client, or of a trainer without business data, and
+// everything that belongs to it.
 //
 // An account with an Apple sign-in is first revoked at Apple. Nothing is sent to Apple
-// until five checks have passed, in this order: the roles are exactly client
+// until six checks have passed, in this order: the roles are client, trainer or both
+// (ErrAccountDeletionUnavailable), the trainer side holds no business data
 // (ErrAccountDeletionUnavailable), the revocation is configured
 // (ErrProviderNotConfigured), proof carries a token and a code
 // (ErrAppleAuthorizationRequired), the token verifies (ErrInvalidIDToken), the token
@@ -201,7 +270,12 @@ func onlyClientRole(roles []string) bool {
 // on a context that a dropped connection cannot cancel. proof is ignored for an
 // account without an Apple sign-in.
 //
-// The store decides who may be deleted, under a lock. An Apple sign-in that arrived
+// The checks before Apple take no lock, so they are not a guarantee: a role or trainer data
+// that arrives while the Apple call runs makes the store refuse after Apple has revoked.
+// The account stays and the person signs in with Apple again, the same window as a database
+// failure after a revocation.
+//
+// The store decides who may be deleted, under its locks. An Apple sign-in that arrived
 // after the checks above is answered with ErrAppleAuthorizationRequired, or with
 // ErrProviderNotConfigured when the revocation is not configured. pgx.ErrNoRows
 // means the account does not exist.

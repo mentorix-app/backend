@@ -92,6 +92,7 @@ const (
 	loginBody    = `{"email":"user@example.com","password":"password123"}`
 	idTokenBody  = `{"id_token":"x"}`
 	linkBody     = `{"code":"ABCD2345"}`
+	activateBody = `{"terms_version":"2026-10-01"}`
 )
 
 func TestErrorCodes_handlerAnswers(t *testing.T) {
@@ -191,6 +192,22 @@ func TestErrorCodes_handlerAnswers(t *testing.T) {
 		{"update me account gone", &fakeAuthService{profileErr: pgx.ErrNoRows},
 			codedRequest{method: "PATCH", path: "/auth/me", body: `{"name":"Anna"}`, authorization: "user"},
 			404, "user_not_found", httpx.MsgUserNotFound},
+
+		{"activate trainer admin", &fakeAuthService{activateErr: ErrAdminCannotActivate},
+			codedRequest{method: "POST", path: "/auth/me/trainer", body: activateBody, authorization: "user"},
+			403, "admin_cannot_activate", "an admin cannot become a trainer"},
+		{"activate trainer account gone", &fakeAuthService{activateErr: pgx.ErrNoRows},
+			codedRequest{method: "POST", path: "/auth/me/trainer", body: activateBody, authorization: "user"},
+			404, "user_not_found", httpx.MsgUserNotFound},
+		{"activate trainer invalid json keeps the default", &fakeAuthService{},
+			codedRequest{method: "POST", path: "/auth/me/trainer", body: "not-json", authorization: "user"},
+			400, "bad_request", httpx.MsgInvalidJSON},
+		{"activate trainer bad version keeps the default", &fakeAuthService{},
+			codedRequest{method: "POST", path: "/auth/me/trainer", body: `{"terms_version":"2026-13-01"}`, authorization: "user"},
+			400, "bad_request", "terms_version must be a date in YYYY-MM-DD form"},
+		{"activate trainer failure keeps the default", &fakeAuthService{activateErr: errors.New("db down")},
+			codedRequest{method: "POST", path: "/auth/me/trainer", body: activateBody, authorization: "user"},
+			500, "internal_error", "trainer activation failed"},
 
 		{"no authorization header", &fakeAuthService{},
 			codedRequest{method: "GET", path: "/auth/me"},

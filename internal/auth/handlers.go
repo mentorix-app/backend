@@ -37,6 +37,7 @@ type credentialService interface {
 	LinkTelegram(ctx context.Context, appUserID uuid.UUID, code string) (IssuedAuth, error)
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateProfileName(ctx context.Context, userID uuid.UUID, name string) (UserProfile, error)
+	ActivateTrainer(ctx context.Context, userID uuid.UUID, termsVersion string) (UserProfile, error)
 	DeleteAccount(ctx context.Context, userID uuid.UUID, proof AppleProof) error
 }
 
@@ -95,6 +96,7 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	jwt := JWTMiddleware(h.jwtSecret)
 	e.GET("/auth/me", h.Me, jwt)
 	e.PATCH("/auth/me", h.UpdateMe, jwt)
+	e.POST("/auth/me/trainer", h.ActivateTrainer, jwt, middleware.BodyLimit(strconv.Itoa(activateTrainerBodyLimit)))
 	e.DELETE("/auth/me", h.DeleteMe, jwt, middleware.BodyLimit(strconv.Itoa(deleteAccountBodyLimit)))
 	e.POST("/auth/logout-all", h.LogoutAll, jwt)
 	e.POST("/auth/telegram/link", h.TelegramLink, jwt)
@@ -461,6 +463,40 @@ func (h *Handlers) UpdateMe(c echo.Context) error {
 	return h.writeMeJSON(c, uid, profile)
 }
 
+// ActivateTrainer makes the caller a trainer next to the roles they hold and records the
+// version of the trainer terms they accepted. It is idempotent and answers with the profile,
+// as GET /auth/me does.
+func (h *Handlers) ActivateTrainer(c echo.Context) error {
+	uid, ok := UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
+	}
+	var body TrainerActivationRequest
+	if err := c.Bind(&body); err != nil {
+		// A streamed body over the limit is reported by the limit middleware as a read error.
+		var httpErr *echo.HTTPError
+		if errors.As(err, &httpErr) && httpErr.Code == http.StatusRequestEntityTooLarge {
+			return echo.NewHTTPError(http.StatusRequestEntityTooLarge)
+		}
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	termsVersion, ok := normalizeTermsVersion(body.TermsVersion)
+	if !ok {
+		return echo.NewHTTPError(http.StatusBadRequest, "terms_version must be a date in YYYY-MM-DD form")
+	}
+	profile, err := h.svc.ActivateTrainer(c.Request().Context(), uid, termsVersion)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return httpx.NewError(http.StatusNotFound, httpx.CodeUserNotFound, httpx.MsgUserNotFound)
+		case errors.Is(err, ErrAdminCannotActivate):
+			return httpx.NewErrorCause(http.StatusForbidden, httpx.CodeAdminCannotActivate, ErrAdminCannotActivate.Error(), err)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "trainer activation failed").SetInternal(err)
+	}
+	return h.writeMeJSON(c, uid, profile)
+}
+
 // DeleteMe deletes the caller's own account and every row that belongs to it. The
 // body is optional; an account with an Apple sign-in sends the Apple proof in it. It
 // leaves cookies alone: the app clears its own tokens.
@@ -536,6 +572,9 @@ func readDeleteAccountRequest(c echo.Context) (DeleteAccountRequest, error) {
 
 // deleteAccountBodyLimit is the largest body of DELETE /auth/me, in bytes.
 const deleteAccountBodyLimit = 16000
+
+// activateTrainerBodyLimit is the largest body of POST /auth/me/trainer, in bytes.
+const activateTrainerBodyLimit = 16000
 
 // maxAppleRedirectURILen is the longest apple_redirect_uri, in characters.
 const maxAppleRedirectURILen = 2048

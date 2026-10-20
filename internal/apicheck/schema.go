@@ -33,6 +33,7 @@ func schemaBindings() []schemaBinding {
 		{name: "IDTokenRequest", typ: reflect.TypeOf(auth.IDTokenRequest{})},
 		{name: "AppleSignInRequest", typ: reflect.TypeOf(auth.AppleSignInRequest{})},
 		{name: "DeleteAccountRequest", typ: reflect.TypeOf(auth.DeleteAccountRequest{})},
+		{name: "TrainerActivationRequest", typ: reflect.TypeOf(auth.TrainerActivationRequest{})},
 		{name: "TelegramLinkRequest", typ: reflect.TypeOf(auth.TelegramLinkRequest{})},
 		{name: "RefreshRequest", typ: reflect.TypeOf(auth.RefreshRequest{})},
 		{name: "MePatchRequest", typ: reflect.TypeOf(auth.MePatchRequest{})},
