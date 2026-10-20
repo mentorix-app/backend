@@ -28,8 +28,10 @@ type authStore interface {
 	RevokeAllUserRefreshSessions(ctx context.Context, userID uuid.UUID) error
 	UserProfile(ctx context.Context, userID uuid.UUID) (UserProfile, error)
 	UpdateUserDisplayName(ctx context.Context, userID uuid.UUID, displayName string) error
+	ActivateTrainer(ctx context.Context, userID uuid.UUID, termsVersion string) error
 	LinkTelegram(ctx context.Context, appUserID uuid.UUID, telegramUserID string) (uuid.UUID, error)
 	DeleteClientAccount(ctx context.Context, userID uuid.UUID, revokedAppleSubject string) (telegramUserID string, err error)
+	TrainerHasBusinessData(ctx context.Context, userID uuid.UUID) (bool, error)
 	UserRoles(ctx context.Context, userID uuid.UUID) ([]string, error)
 	UserAppleSubjects(ctx context.Context, userID uuid.UUID) ([]string, error)
 }

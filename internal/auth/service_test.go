@@ -44,6 +44,10 @@ type fakeAuthStore struct {
 	rolesErr             error
 	appleSubjects        []string
 	appleSubjectsErr     error
+	activation           storeActivation
+	businessData         bool
+	businessDataErr      error
+	businessDataCalls    int
 	insertedExpiry       time.Time
 	rotatedExpiry        time.Time
 }

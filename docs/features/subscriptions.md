@@ -30,7 +30,7 @@ Plans `free`, `advance`, and `elite` for trainers with limits on their own exerc
 
 Contract: `api/openapi.yaml`.
 
-- `GET /auth/me` includes `subscription` field with `plan`, `source`, `valid_until`, `limits`, `usage`, and `permissions`; returns `null` if the user has no trainer profile.
+- `GET /auth/me` includes `subscription` field with `plan`, `source`, `valid_until`, `limits`, `usage`, and `permissions`; returns `null` if the user has no trainer profile. A trainer made by `POST /auth/me/trainer` (see [auth.md](auth.md)) has the plan `free` and `source` null without an entitlement row.
 - `GET /plans` returns the plan catalog (any JWT).
 - `PUT /admin/trainers/{user_id}/plan` `{plan}` or `DELETE …/plan` grants a permanent admin plan (`source=admin`); setting `plan=free` in a PUT is equivalent to revoke.
 

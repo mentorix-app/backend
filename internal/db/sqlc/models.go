@@ -221,9 +221,11 @@ type MentorixProgramWeekDayBlockExercise struct {
 }
 
 type MentorixTrainer struct {
-	UserID    pgtype.UUID `json:"user_id"`
-	CreatedAt time.Time   `json:"created_at"`
-	ID        pgtype.UUID `json:"id"`
+	UserID          pgtype.UUID        `json:"user_id"`
+	CreatedAt       time.Time          `json:"created_at"`
+	ID              pgtype.UUID        `json:"id"`
+	TermsVersion    *string            `json:"terms_version"`
+	TermsAcceptedAt pgtype.Timestamptz `json:"terms_accepted_at"`
 }
 
 type MentorixTrainerClient struct {

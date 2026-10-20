@@ -11,8 +11,9 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Infrastructure (health, config, slog, CORS, proxy) | [features/health.md](features/health.md), [architecture.md](architecture.md) |
 | Auth (register, login, refresh, logout, me, rate limit) | [features/auth.md](features/auth.md) |
 | Google and Apple sign-in for the mobile app (client account, refresh token in the body, Apple return address for Android) | [features/auth.md](features/auth.md) |
+| Become a trainer (`POST /auth/me/trainer`: trainer role next to `client`, accepted terms version and time) | [features/auth.md](features/auth.md) |
 | Telegram link for app clients (`/start link` code in the bot, `POST /auth/telegram/link`, `telegram_linked` in `/auth/me`) | [features/auth.md](features/auth.md) |
-| Account deletion for app clients (`DELETE /auth/me`; trainers and admins refused, an Apple sign-in is revoked at Apple before the delete) | [features/account-deletion.md](features/account-deletion.md) |
+| Account deletion in the app (`DELETE /auth/me`; a client, or a trainer without business data; admins and trainers with data refused; an Apple sign-in is revoked at Apple before the delete) | [features/account-deletion.md](features/account-deletion.md) |
 | Admin (separate role from trainer; global exercises, plans, view-only) | [features/admin.md](features/admin.md) |
 | Trainer plans (free/advance/elite, quotas, read-only, admin grant, `/plans`, subscription in `/auth/me`) | [features/subscriptions.md](features/subscriptions.md) |
 | Exercises (global + trainer, scope, quota, soft delete) | [features/exercises.md](features/exercises.md) |
@@ -32,5 +33,5 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |
 | Garbage cleanup (one-row assignments, auto version purge, orphaned block visibility rules, invites, stale Redis, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Migrations: version 33 (`./scripts/migrate-check.sh`)._
+_Migrations: version 34 (`./scripts/migrate-check.sh`)._
 

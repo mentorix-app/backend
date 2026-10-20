@@ -39,6 +39,8 @@ type fakeAuthService struct {
 	linkIssued     IssuedAuth
 	linkErr        error
 	deleteErr      error
+	activateErr    error
+	activate       activationRecorder
 
 	// Arguments of the last calls, for body-mode assertions.
 	googleToken  string

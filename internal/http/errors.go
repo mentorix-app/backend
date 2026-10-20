@@ -50,6 +50,7 @@ const (
 	CodeInviteNotConfigured     = "invite_not_configured"
 	CodeClientNotLinked         = "client_not_linked"
 	CodeAdminCannotAccept       = "admin_cannot_accept"
+	CodeAdminCannotActivate     = "admin_cannot_activate"
 	CodeClientBlocked           = "client_blocked"
 	CodeProgramNotPublished     = "program_not_published"
 	CodeClientNotFound          = "client_not_found"

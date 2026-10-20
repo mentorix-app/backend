@@ -25,6 +25,38 @@ VALUES ($1, $2);
 INSERT INTO mentorix.trainers (user_id)
 VALUES ($1);
 
+-- name: InsertTrainerIfAbsent :exec
+INSERT INTO mentorix.trainers (user_id)
+VALUES ($1)
+ON CONFLICT (user_id) DO NOTHING;
+
+-- name: AcceptTrainerTerms :exec
+-- A repeat of the same version changes nothing, so the first acceptance keeps its time.
+UPDATE mentorix.trainers
+SET terms_version = sqlc.arg('terms_version')::text,
+    terms_accepted_at = now()
+WHERE user_id = sqlc.arg('user_id')
+  AND terms_version IS DISTINCT FROM sqlc.arg('terms_version')::text;
+
+-- name: LockTrainerByUserID :one
+-- Quota writers lock the trainers row and then touch the user row through a foreign key,
+-- so a transaction that locks both takes the trainers row first.
+SELECT id
+FROM mentorix.trainers
+WHERE user_id = $1
+FOR UPDATE;
+
+-- name: LockTrainerInvitesByUserID :many
+-- Accepting an invite locks the invite row (GetTrainerInviteByTokenForUpdate) and, for a new
+-- link, then the trainers row (subscription.LockTrainer). The account deletion locks the
+-- invites first, in this order, so it does not wait for an accept the other way round.
+-- The lock covers the rows that exist when the query runs, not invites created later.
+SELECT i.id
+FROM mentorix.trainer_invites i
+WHERE i.trainer_id = (SELECT t.id FROM mentorix.trainers t WHERE t.user_id = sqlc.arg('user_id'))
+ORDER BY i.id
+FOR UPDATE;
+
 -- name: GetUserByID :one
 SELECT
   COALESCE(primary_email, '') AS primary_email,
@@ -140,3 +172,40 @@ SELECT provider, subject
 FROM mentorix.auth_identities
 WHERE user_id = $1
 ORDER BY provider, subject;
+
+-- name: TrainerHasBusinessData :one
+-- True when the user's trainer side holds anything that account deletion must not destroy:
+-- clients, authored or last edited programs, program trees, versions and exercises,
+-- assignments, workout completions and comments on them, block visibility rules, and
+-- entitlements paid through a store. Soft-deleted programs and exercises count. The edited
+-- columns are the ones the database cannot detach from the user (RESTRICT, or SET NULL on a
+-- NOT NULL column). Invites and admin-granted entitlements do not: they go
+-- with the trainers row.
+WITH trainer AS (
+  SELECT t.id FROM mentorix.trainers t WHERE t.user_id = sqlc.arg('user_id')
+)
+SELECT (
+  EXISTS (SELECT 1 FROM mentorix.trainer_clients tc WHERE tc.trainer_id IN (SELECT id FROM trainer))
+  OR EXISTS (SELECT 1 FROM mentorix.programs p WHERE p.created_by = sqlc.arg('user_id') OR p.modified_by = sqlc.arg('user_id'))
+  OR EXISTS (
+    SELECT 1 FROM mentorix.exercises e
+    WHERE e.created_by = sqlc.arg('user_id') OR e.modified_by = sqlc.arg('user_id')
+      OR e.owner_trainer_id IN (SELECT id FROM trainer)
+  )
+  OR EXISTS (SELECT 1 FROM mentorix.program_weeks pw WHERE pw.modified_by = sqlc.arg('user_id'))
+  OR EXISTS (SELECT 1 FROM mentorix.program_week_days pwd WHERE pwd.modified_by = sqlc.arg('user_id'))
+  OR EXISTS (SELECT 1 FROM mentorix.program_week_day_block_exercises pwdbe WHERE pwdbe.modified_by = sqlc.arg('user_id'))
+  OR EXISTS (SELECT 1 FROM mentorix.program_versions pv WHERE pv.published_by = sqlc.arg('user_id'))
+  OR EXISTS (
+    SELECT 1 FROM mentorix.program_assignments pa
+    WHERE pa.created_by = sqlc.arg('user_id') OR pa.modified_by = sqlc.arg('user_id')
+      OR pa.trainer_id IN (SELECT id FROM trainer)
+  )
+  OR EXISTS (SELECT 1 FROM mentorix.client_workout_completions cwc WHERE cwc.trainer_id IN (SELECT id FROM trainer))
+  OR EXISTS (SELECT 1 FROM mentorix.client_workout_completion_comments cwcc WHERE cwcc.trainer_id IN (SELECT id FROM trainer))
+  OR EXISTS (SELECT 1 FROM mentorix.program_block_clients pbc WHERE pbc.created_by = sqlc.arg('user_id'))
+  OR EXISTS (
+    SELECT 1 FROM mentorix.trainer_plan_entitlements tpe
+    WHERE tpe.source IN ('app_store', 'google_play') AND tpe.trainer_id IN (SELECT id FROM trainer)
+  )
+)::boolean AS has_business_data;

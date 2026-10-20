@@ -36,8 +36,12 @@ var (
 	ErrTelegramLinkConflict = errors.New("telegram is linked to an account that cannot be merged")
 	// ErrTelegramAlreadyLinked means the account already has a different Telegram.
 	ErrTelegramAlreadyLinked = errors.New("account already has another telegram")
-	// ErrAccountDeletionUnavailable means the app cannot delete this account: its roles are
-	// not exactly client (no role at all included), or other rows still reference it.
+	// ErrAdminCannotActivate means the account is an admin, and an admin cannot hold the
+	// trainer role.
+	ErrAdminCannotActivate = errors.New("an admin cannot become a trainer")
+	// ErrAccountDeletionUnavailable means the app cannot delete this account: it has a role
+	// besides client and trainer or none at all, its trainer side holds business data, or
+	// other rows still reference it.
 	ErrAccountDeletionUnavailable = errors.New("this account cannot be deleted in the app")
 	// ErrAppleSignInNotRevoked means the account has an Apple sign-in whose authorization
 	// was not revoked at Apple, so the store refuses to delete it.

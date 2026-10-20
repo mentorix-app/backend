@@ -362,39 +362,12 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 		revoked string
 		make    func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID
 	}{
-		{"trainer", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, _ *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
-			id, err := store.RegisterTrainerEmailPassword(context.Background(), "bare-trainer@test.com", "hash", "Coach")
-			if err != nil {
-				t.Fatalf("register trainer: %v", err)
-			}
-			return id
-		}},
 		{"admin", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
 			id, err := store.RegisterTrainerEmailPassword(context.Background(), "bare-admin@test.com", "hash", "Admin")
 			if err != nil {
 				t.Fatalf("register admin: %v", err)
 			}
 			promoteToAdminOnly(t, pool, id)
-			return id
-		}},
-		{"trainer and client", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
-			id, err := store.RegisterTrainerEmailPassword(context.Background(), "dual@test.com", "hash", "Dual")
-			if err != nil {
-				t.Fatalf("register trainer: %v", err)
-			}
-			if err := store.GrantRole(context.Background(), id, auth.RoleClient); err != nil {
-				t.Fatalf("grant client: %v", err)
-			}
-			seedClientData(t, pool, base, id, "dual")
-			return id
-		}},
-		// The role rule is checked before the Apple rule.
-		{"trainer with an Apple sign-in", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
-			id, err := store.RegisterTrainerEmailPassword(context.Background(), "apple-trainer@test.com", "hash", "Coach")
-			if err != nil {
-				t.Fatalf("register trainer: %v", err)
-			}
-			addIdentity(t, pool, id, auth.ProviderApple, "a-trainer")
 			return id
 		}},
 		{"no role row", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
@@ -412,14 +385,28 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 		// Only an Apple identity counts: the Google subject of the same account does not.
 		{"client with an Apple sign-in, the Google subject", auth.ErrAppleSignInNotRevoked, "g-with-apple", withAppleSignIn},
 		{"client with a Telegram and an Apple sign-in, the Telegram id", auth.ErrAppleSignInNotRevoked, "tg-with-apple", withAppleSignIn},
-		// The role rule comes before the Apple rule even when the subject matches.
-		{"trainer with an Apple sign-in and its subject", auth.ErrAccountDeletionUnavailable, "a-trainer", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
-			id, err := store.RegisterTrainerEmailPassword(context.Background(), "apple-trainer2@test.com", "hash", "Coach")
+		// A trainer without data is deletable, so the Apple rule applies to it like to a client.
+		{"trainer with an Apple sign-in, no revoked subject", auth.ErrAppleSignInNotRevoked, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
+			id, err := store.RegisterTrainerEmailPassword(context.Background(), "apple-trainer@test.com", "hash", "Coach")
 			if err != nil {
 				t.Fatalf("register trainer: %v", err)
 			}
 			addIdentity(t, pool, id, auth.ProviderApple, "a-trainer")
 			return id
+		}},
+		// The role and data rules come before the Apple rule even when the subject matches.
+		{"admin with an Apple sign-in and its subject", auth.ErrAccountDeletionUnavailable, "a-admin", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
+			id, err := store.RegisterTrainerEmailPassword(context.Background(), "apple-admin@test.com", "hash", "Admin")
+			if err != nil {
+				t.Fatalf("register admin: %v", err)
+			}
+			promoteToAdminOnly(t, pool, id)
+			addIdentity(t, pool, id, auth.ProviderApple, "a-admin")
+			return id
+		}},
+		{"trainer with data, an Apple sign-in and its subject", auth.ErrAccountDeletionUnavailable, "a-trainer-data", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID {
+			addIdentity(t, pool, base.trainerUser, auth.ProviderApple, "a-trainer-data")
+			return base.trainerUser
 		}},
 	}
 	for _, tt := range tests {
@@ -614,25 +601,33 @@ VALUES ($1, $2, $3, $4, $5, $5)`, base.programID, versionID, base.trainerID, cli
 	}
 }
 
-// A trainer role granted while the deletion waits for the lock must be seen: the
-// roles are read after the lock, so the account is refused and nothing is deleted.
+// A trainer side that appears while the deletion waits for the lock must be seen: the roles
+// are read after the lock, so a client who became a trainer and got a client of their own
+// is refused and nothing is deleted. The held statement does what the app does for a client
+// who becomes a trainer, then adds the first client.
 func TestAccountDeletion_readsRolesAfterTheLock(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	base := seedDeletionBase(t, pool, "del-trainer")
 	client := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-del-role-race", "")
 	seedClientData(t, pool, base, client, "role-race")
+	invitee := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-del-role-race-invitee", "")
 	completions := countRows(t, pool, `SELECT count(*) FROM mentorix.client_workout_completions WHERE client_user_id = $1`, client)
 	assignments := countRows(t, pool, `SELECT count(*) FROM mentorix.program_assignments WHERE client_user_id = $1`, client)
 
-	err := deleteBlockedBy(t, pool, deleteWithoutRevocation(store, client),
-		`INSERT INTO mentorix.user_roles (user_id, role) VALUES ($1, 'trainer')`, client)
+	err := deleteBlockedBy(t, pool, deleteWithoutRevocation(store, client), `
+WITH role AS (INSERT INTO mentorix.user_roles (user_id, role) VALUES ($1, 'trainer')),
+     trainer AS (INSERT INTO mentorix.trainers (user_id) VALUES ($1) RETURNING id)
+INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id) SELECT id, $2 FROM trainer`, client, invitee)
 
 	if !errors.Is(err, auth.ErrAccountDeletionUnavailable) {
 		t.Fatalf("error = %v, want ErrAccountDeletionUnavailable", err)
 	}
 	if !userExists(t, pool, client) {
 		t.Fatal("the user row was removed")
+	}
+	if n := countRows(t, pool, `SELECT count(*) FROM mentorix.trainer_clients WHERE client_user_id = $1`, invitee); n != 1 {
+		t.Errorf("the trainer's new client link = %d rows, want 1", n)
 	}
 	if got := countRows(t, pool, `SELECT count(*) FROM mentorix.client_workout_completions WHERE client_user_id = $1`, client); got != completions {
 		t.Errorf("completions = %d, want %d", got, completions)

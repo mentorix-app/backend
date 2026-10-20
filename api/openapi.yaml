@@ -454,17 +454,27 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
       tags: [auth]
-      summary: Delete the signed-in client's account
+      summary: Delete the signed-in account
       description: >
         Deletes the account and every row that belongs to it: sign-in methods,
         sessions, trainer links, program assignments, block visibility rules,
         workout completions with the trainer's comments on them, and the
-        invites the client used. No program, version or exercise of the
-        trainer is touched. The call sets no cookie; the app clears its own
-        tokens. An access token issued earlier works until it expires and finds
-        nothing (`GET /auth/me` answers `404`). Signing in again with the same
-        Google or Apple account creates a new empty account. An account whose
-        roles are not exactly client, or that still owns content, is refused.
+        invites the client used. For a trainer it also removes the trainer
+        profile, the trainer's own invites and admin-granted plans. No program,
+        version or exercise of another trainer is touched. The call sets no
+        cookie; the app clears its own tokens. An access token issued earlier
+        works until it expires and finds nothing (`GET /auth/me` answers
+        `404`). Signing in again with the same Google or Apple account creates
+        a new empty account.
+
+        Only an account whose roles are exactly `client`, `trainer` or both can
+        be deleted, and a trainer only while the trainer side holds no business
+        data: no client (blocked ones count), program or exercise they
+        authored or last edited (deleted ones count), program version they
+        published, assignment, workout completion or comment on one, block
+        visibility rule, or plan paid through a store.
+        An admin, an account with no role, and a trainer with business data are
+        refused, and nothing is changed.
 
         An account with a Sign in with Apple identity is revoked at Apple
         first. The app asks Apple for a fresh authorization right before the
@@ -528,9 +538,9 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: >
-            The account's roles are not exactly client, or the database still has
-            rows that reference it (code `account_deletion_unavailable`); nothing
-            was changed
+            The account's roles are not client, trainer or both, its trainer side
+            holds business data, or the database still has rows that reference it
+            (code `account_deletion_unavailable`); nothing was changed
           content:
             application/json:
               schema:
@@ -561,6 +571,69 @@ paths:
             The account has an Apple sign-in and the server cannot revoke it:
             the Apple revocation settings or the Apple client ids are missing
             (code `provider_not_configured`); nothing was changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me/trainer:
+    post:
+      tags: [auth]
+      summary: Become a trainer
+      description: >
+        Gives the signed-in account the `trainer` role next to the roles it
+        already has (a client keeps `client`), creates its trainer profile and
+        records the version of the trainer terms the person accepted, with the
+        time of the acceptance. The plan is `free` until an entitlement says
+        otherwise. The call is idempotent and answers with the profile, as
+        `GET /auth/me` does. Repeating it with the same `terms_version` changes
+        nothing and keeps the time of the first acceptance; another version
+        replaces the version and the time. An admin cannot become a trainer.
+        The body is at most 16 KB.
+      operationId: activateTrainer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrainerActivationRequest"
+      responses:
+        "200":
+          description: Profile after the activation, also for a repeated call
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "400":
+          description: >
+            Invalid JSON, or `terms_version` missing or not a calendar date in
+            the form `YYYY-MM-DD` (code `bad_request`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: >
+            The account is an admin (code `admin_cannot_activate`); nothing was
+            changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The account no longer exists (code `user_not_found`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: The body is over 16 KB
+        "500":
+          description: Any other failure; the cause is in the log only
           content:
             application/json:
               schema:
@@ -2917,6 +2990,18 @@ components:
             Redirect address of the authorization request, an absolute https URL
             without a fragment, at most 2048 characters. Android sends the
             address it gave Apple; iOS sends none
+
+    TrainerActivationRequest:
+      type: object
+      required: [terms_version]
+      properties:
+        terms_version:
+          type: string
+          format: date
+          example: "2026-10-01"
+          description: >
+            Version of the trainer terms the person accepted: a calendar date in
+            the form `YYYY-MM-DD`. Surrounding white space is ignored
 
     TelegramLinkRequest:
       type: object

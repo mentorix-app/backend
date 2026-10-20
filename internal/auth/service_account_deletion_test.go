@@ -44,6 +44,11 @@ func (f *fakeAuthStore) UserRoles(context.Context, uuid.UUID) ([]string, error) 
 	return f.roles, f.rolesErr
 }
 
+func (f *fakeAuthStore) TrainerHasBusinessData(context.Context, uuid.UUID) (bool, error) {
+	f.businessDataCalls++
+	return f.businessData, f.businessDataErr
+}
+
 func (f *fakeAuthStore) UserAppleSubjects(context.Context, uuid.UUID) ([]string, error) {
 	return f.appleSubjects, f.appleSubjectsErr
 }

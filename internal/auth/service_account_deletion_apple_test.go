@@ -192,9 +192,8 @@ func TestService_DeleteAccount_appleAccountWithOtherRolesIsRefusedBeforeApple(t 
 		name  string
 		roles []string
 	}{
-		{"trainer", []string{RoleTrainer}},
 		{"admin", []string{RoleAdmin}},
-		{"client and trainer", []string{RoleClient, RoleTrainer}},
+		{"trainer and admin", []string{RoleTrainer, RoleAdmin}},
 		{"client and admin", []string{RoleClient, RoleAdmin}},
 		{"no role", nil},
 		{"two client rows", []string{RoleClient, RoleClient}},
@@ -216,7 +215,7 @@ func TestService_DeleteAccount_appleAccountWithOtherRolesIsRefusedBeforeApple(t 
 
 func TestService_DeleteAccount_theRoleRuleComesBeforeTheConfigurationCheck(t *testing.T) {
 	d := newAppleDeletion(t)
-	d.store.roles = []string{RoleTrainer}
+	d.store.roles = []string{RoleAdmin}
 	d.svc.appleRevoker = nil
 
 	err := d.run()
@@ -365,6 +364,7 @@ func TestService_DeleteAccount_failedReadsStopBeforeApple(t *testing.T) {
 	}{
 		{"apple sign-ins", func(d *appleDeletion) { d.store.appleSubjectsErr = boom }},
 		{"roles", func(d *appleDeletion) { d.store.rolesErr = boom }},
+		{"trainer data", func(d *appleDeletion) { d.store.businessDataErr = boom }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -621,4 +621,104 @@ func TestService_DeleteAccount_aMismatchFromTheRevokerReachesTheHandlerAs403(t *
 
 	assertCodedError(t, rec, http.StatusForbidden, "apple_account_mismatch", "this apple account does not belong to the account")
 	d.assertUntouched(t, 1, 1)
+}
+
+// A trainer without business data is deleted like a client: Apple first, then the store.
+func TestService_DeleteAccount_appleTrainerWithoutDataIsRevokedAndDeleted(t *testing.T) {
+	tests := []struct {
+		name  string
+		roles []string
+	}{
+		{"trainer", []string{RoleTrainer}},
+		{"client and trainer", []string{RoleClient, RoleTrainer}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newAppleDeletion(t)
+			d.store.roles = tt.roles
+
+			if err := d.run(); err != nil {
+				t.Fatalf("DeleteAccount() error = %v", err)
+			}
+
+			if len(d.revoker.calls) != 1 || len(d.store.deleteCalls) != 1 {
+				t.Fatalf("revoker calls = %d, store delete calls = %d, want 1 and 1", len(d.revoker.calls), len(d.store.deleteCalls))
+			}
+			if d.revoker.deletesBefore != 0 {
+				t.Errorf("the store had seen %d deletes when Apple was called, want 0", d.revoker.deletesBefore)
+			}
+			if d.store.businessDataCalls != 1 {
+				t.Errorf("trainer data checks = %d, want 1", d.store.businessDataCalls)
+			}
+		})
+	}
+}
+
+// Apple is never asked to revoke for a trainer the store would refuse for business data.
+func TestService_DeleteAccount_appleTrainerWithDataIsRefusedBeforeApple(t *testing.T) {
+	tests := []struct {
+		name  string
+		roles []string
+	}{
+		{"trainer", []string{RoleTrainer}},
+		{"client and trainer", []string{RoleClient, RoleTrainer}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newAppleDeletion(t)
+			d.store.roles = tt.roles
+			d.store.businessData = true
+
+			err := d.run()
+
+			if !errors.Is(err, ErrAccountDeletionUnavailable) {
+				t.Fatalf("error = %v, want ErrAccountDeletionUnavailable", err)
+			}
+			d.assertUntouched(t, 0, 0)
+		})
+	}
+}
+
+// The trainer data rule comes before the configuration check, like the role rule, and an
+// account the roles refuse is not looked up for data at all.
+func TestService_DeleteAccount_theTrainerDataRuleComesBeforeTheConfigurationCheck(t *testing.T) {
+	d := newAppleDeletion(t)
+	d.store.roles = []string{RoleTrainer}
+	d.store.businessData = true
+	d.svc.appleRevoker = nil
+
+	err := d.run()
+
+	if !errors.Is(err, ErrAccountDeletionUnavailable) {
+		t.Fatalf("error = %v, want ErrAccountDeletionUnavailable", err)
+	}
+	d.assertUntouched(t, 0, 0)
+
+	d = newAppleDeletion(t)
+	d.store.roles = []string{RoleAdmin}
+	if err := d.run(); !errors.Is(err, ErrAccountDeletionUnavailable) {
+		t.Fatalf("admin: error = %v, want ErrAccountDeletionUnavailable", err)
+	}
+	if d.store.businessDataCalls != 0 {
+		t.Errorf("an admin was looked up for trainer data %d times, want 0", d.store.businessDataCalls)
+	}
+}
+
+// An account without an Apple sign-in never reaches the pre-check: the store decides.
+func TestService_DeleteAccount_accountWithoutAppleSkipsThePreCheck(t *testing.T) {
+	d := newAppleDeletion(t)
+	d.store.appleSubjects = nil
+	d.store.roles = []string{RoleTrainer}
+	d.store.businessData = true
+
+	if err := d.run(); err != nil {
+		t.Fatalf("DeleteAccount() error = %v", err)
+	}
+
+	if d.store.businessDataCalls != 0 {
+		t.Errorf("trainer data checks = %d, want 0", d.store.businessDataCalls)
+	}
+	if len(d.store.deleteCalls) != 1 {
+		t.Errorf("store delete calls = %d, want 1", len(d.store.deleteCalls))
+	}
 }

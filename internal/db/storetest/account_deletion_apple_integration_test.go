@@ -305,19 +305,15 @@ func TestAccountDeletion_serviceDeletesAnAccountWithTwoAppleIdentitiesByTheOnePr
 	}
 }
 
-func TestAccountDeletion_serviceRefusesATrainerWithAnAppleSignInBeforeAskingApple(t *testing.T) {
+func TestAccountDeletion_serviceRefusesATrainerWithDataAndAnAppleSignInBeforeAskingApple(t *testing.T) {
 	pool := NewPool(t)
-	store := auth.NewStore(pool)
-	trainer, err := store.RegisterTrainerEmailPassword(context.Background(), "svc-apple-trainer@test.com", "hash", "Coach")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	addIdentity(t, pool, trainer, auth.ProviderApple, "a-svc-trainer")
-	before := takeSnapshot(t, pool, trainer)
+	base := seedDeletionBase(t, pool, "del-trainer")
+	addIdentity(t, pool, base.trainerUser, auth.ProviderApple, "a-svc-trainer")
+	before := takeSnapshot(t, pool, base.trainerUser)
 	revoker := &scriptedRevoker{}
 	svc := deletionService(pool, scriptedVerifier{claims: validAppleClaims("a-svc-trainer")}, revoker)
 
-	err = svc.DeleteAccount(context.Background(), trainer, auth.AppleProof{IDToken: "t", AuthorizationCode: appleCode})
+	err := svc.DeleteAccount(context.Background(), base.trainerUser, auth.AppleProof{IDToken: "t", AuthorizationCode: appleCode})
 
 	if !errors.Is(err, auth.ErrAccountDeletionUnavailable) {
 		t.Fatalf("error = %v, want ErrAccountDeletionUnavailable", err)
@@ -325,7 +321,86 @@ func TestAccountDeletion_serviceRefusesATrainerWithAnAppleSignInBeforeAskingAppl
 	if revoker.callCount() != 0 {
 		t.Errorf("Apple was called %d times for an account that cannot be deleted", revoker.callCount())
 	}
-	before.assertUnchanged(t, pool, trainer)
+	before.assertUnchanged(t, pool, base.trainerUser)
+}
+
+// An admin is refused before Apple whatever else it holds.
+func TestAccountDeletion_serviceRefusesAnAdminWithAnAppleSignInBeforeAskingApple(t *testing.T) {
+	pool := NewPool(t)
+	store := auth.NewStore(pool)
+	admin, err := store.RegisterTrainerEmailPassword(context.Background(), "svc-apple-admin@test.com", "hash", "Admin")
+	if err != nil {
+		t.Fatalf("register admin: %v", err)
+	}
+	promoteToAdminOnly(t, pool, admin)
+	addIdentity(t, pool, admin, auth.ProviderApple, "a-svc-admin")
+	before := takeSnapshot(t, pool, admin)
+	revoker := &scriptedRevoker{}
+	svc := deletionService(pool, scriptedVerifier{claims: validAppleClaims("a-svc-admin")}, revoker)
+
+	err = svc.DeleteAccount(context.Background(), admin, auth.AppleProof{IDToken: "t", AuthorizationCode: appleCode})
+
+	if !errors.Is(err, auth.ErrAccountDeletionUnavailable) {
+		t.Fatalf("error = %v, want ErrAccountDeletionUnavailable", err)
+	}
+	if revoker.callCount() != 0 {
+		t.Errorf("Apple was called %d times for an account that cannot be deleted", revoker.callCount())
+	}
+	before.assertUnchanged(t, pool, admin)
+}
+
+// A trainer without data is revoked at Apple and then deleted, a registered one and one
+// who became a trainer in the app.
+func TestAccountDeletion_serviceRevokesAndDeletesATrainerWithoutData(t *testing.T) {
+	tests := []struct {
+		name string
+		make func(t *testing.T, pool *pgxpool.Pool, store *auth.Store) uuid.UUID
+	}{
+		{"registered trainer", func(t *testing.T, _ *pgxpool.Pool, store *auth.Store) uuid.UUID {
+			id, err := store.RegisterTrainerEmailPassword(context.Background(), "svc-apple-coach@test.com", "hash", "Coach")
+			if err != nil {
+				t.Fatalf("register trainer: %v", err)
+			}
+			return id
+		}},
+		{"client who became a trainer", func(t *testing.T, _ *pgxpool.Pool, store *auth.Store) uuid.UUID {
+			id := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-svc-apple-coach", "")
+			if err := store.ActivateTrainer(context.Background(), id, "2026-10-01"); err != nil {
+				t.Fatalf("activate trainer: %v", err)
+			}
+			return id
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := NewPool(t)
+			store := auth.NewStore(pool)
+			seedDeletionBase(t, pool, "del-trainer")
+			trainer := tt.make(t, pool, store)
+			addIdentity(t, pool, trainer, auth.ProviderApple, "a-svc-coach")
+			revoker := &scriptedRevoker{}
+			revoker.check = func() bool { return userExists(t, pool, trainer) }
+			svc := deletionService(pool, scriptedVerifier{claims: validAppleClaims("a-svc-coach")}, revoker)
+
+			err := svc.DeleteAccount(context.Background(), trainer, auth.AppleProof{IDToken: "t", AuthorizationCode: appleCode})
+
+			if err != nil {
+				t.Fatalf("DeleteAccount() error = %v", err)
+			}
+			if revoker.callCount() != 1 || !reflect.DeepEqual(revoker.userExisted, []bool{true}) {
+				t.Errorf("revoker calls = %d, user existed at the call = %v, want 1 and [true]", revoker.callCount(), revoker.userExisted)
+			}
+			if userExists(t, pool, trainer) {
+				t.Error("the user row is still there")
+			}
+			if n := countRows(t, pool, `SELECT count(*) FROM mentorix.trainers WHERE user_id = $1`, trainer); n != 0 {
+				t.Errorf("trainers rows = %d, want 0", n)
+			}
+			if _, ok := identityOwner(t, pool, auth.ProviderApple, "a-svc-coach"); ok {
+				t.Error("the Apple identity is still there")
+			}
+		})
+	}
 }
 
 // The service looked, found no Apple sign-in, and one arrived before the store took the

@@ -53,6 +53,12 @@ type DeleteAccountRequest struct {
 	AppleRedirectURI       string `json:"apple_redirect_uri"`
 }
 
+// TrainerActivationRequest is the JSON body for POST /auth/me/trainer. TermsVersion is the
+// version of the trainer terms the person accepted: a calendar date as YYYY-MM-DD.
+type TrainerActivationRequest struct {
+	TermsVersion string `json:"terms_version"`
+}
+
 // TelegramLinkRequest is the JSON body for POST /auth/telegram/link. Code is the
 // one-time code the bot sent to the Telegram user.
 type TelegramLinkRequest struct {
