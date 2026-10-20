@@ -518,15 +518,20 @@ func deleteWithoutRevocation(store *auth.Store, client uuid.UUID) func() error {
 	}
 }
 
+// lockWaiters counts the other sessions of the test database that wait for a lock.
+func lockWaiters(t *testing.T, pool *pgxpool.Pool) int {
+	t.Helper()
+	return countRows(t, pool, `
+SELECT count(*) FROM pg_stat_activity
+WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`)
+}
+
 // waitForLockWait returns once another session of the test database waits for a lock.
 func waitForLockWait(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		n := countRows(t, pool, `
-SELECT count(*) FROM pg_stat_activity
-WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`)
-		if n > 0 {
+		if lockWaiters(t, pool) > 0 {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

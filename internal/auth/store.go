@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -175,6 +176,12 @@ func (s *Store) createClientWithIdentity(ctx context.Context, id ClientIdentity)
 // empty: no trainer link and no role besides client. Otherwise
 // ErrTelegramLinkConflict. ErrTelegramAlreadyLinked means the app account holds
 // a different Telegram; pgx.ErrNoRows means the app account does not exist.
+//
+// A merge refuses a non-empty app account at once. Otherwise it locks both users,
+// the lower id first, and checks again under the locks. A trainer activation
+// running at the same time either waits for the merge or is seen by that check. A deletion that committed first is found
+// at the lock: ErrTelegramLinkConflict for the Telegram account, pgx.ErrNoRows
+// for the app account.
 func (s *Store) LinkTelegram(ctx context.Context, appUserID uuid.UUID, telegramUserID string) (uuid.UUID, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -243,7 +250,37 @@ func (s *Store) LinkTelegram(ctx context.Context, appUserID uuid.UUID, telegramU
 		return appUserID, nil
 	}
 
+	// A non-empty account is refused without taking locks, so the merge cannot
+	// deadlock with that account's own trainer writes. The check under the locks
+	// below is the authoritative one.
 	empty, err := appAccountIsEmpty(ctx, qtx, appPG)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if !empty {
+		return uuid.Nil, ErrTelegramLinkConflict
+	}
+
+	// Lock the lower uuid first (byte order is PostgreSQL's uuid order), so two
+	// merges cannot deadlock.
+	lockIDs := [2]pgtype.UUID{appPG, ownerPG}
+	if bytes.Compare(ownerPG.Bytes[:], appPG.Bytes[:]) < 0 {
+		lockIDs[0], lockIDs[1] = ownerPG, appPG
+	}
+	for _, id := range lockIDs {
+		if _, err := qtx.LockUserForUpdate(ctx, id); err != nil {
+			switch {
+			case !errors.Is(err, pgx.ErrNoRows):
+				return uuid.Nil, fmt.Errorf("lock user: %w", err)
+			case id == appPG:
+				return uuid.Nil, pgx.ErrNoRows
+			default:
+				return uuid.Nil, ErrTelegramLinkConflict
+			}
+		}
+	}
+
+	empty, err = appAccountIsEmpty(ctx, qtx, appPG)
 	if err != nil {
 		return uuid.Nil, err
 	}
