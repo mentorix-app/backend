@@ -35,6 +35,44 @@ func TestWebhookHandler_rejectsBadSecret(t *testing.T) {
 	}
 }
 
+func TestWebhookHandler_secretCheck(t *testing.T) {
+	tests := []struct {
+		name       string
+		secret     string
+		sendHeader bool
+		header     string
+		wantStatus int
+	}{
+		{name: "missing header", secret: "secret", wantStatus: http.StatusUnauthorized},
+		{name: "same length wrong value", secret: "secret", sendHeader: true, header: "secrex", wantStatus: http.StatusUnauthorized},
+		{name: "shorter value", secret: "secret", sendHeader: true, header: "sec", wantStatus: http.StatusUnauthorized},
+		{name: "longer value", secret: "secret", sendHeader: true, header: "secret-longer", wantStatus: http.StatusUnauthorized},
+		{name: "matching value", secret: "secret", sendHeader: true, header: "secret", wantStatus: http.StatusOK},
+		{name: "empty secret ignores header", secret: "", sendHeader: true, header: "anything", wantStatus: http.StatusOK},
+		{name: "empty secret without header", secret: "", wantStatus: http.StatusOK},
+		{name: "configured secret is trimmed", secret: "  secret  ", sendHeader: true, header: "secret", wantStatus: http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			bot := New(&noopTelegramAPI{}, &fakeTrainerClient{})
+			e.POST("/telegram/webhook", WebhookHandler(tt.secret, bot))
+
+			req := httptest.NewRequest(http.MethodPost, "/telegram/webhook", bytes.NewReader([]byte(`{}`)))
+			if tt.sendHeader {
+				req.Header.Set(telegramWebhookSecretHeader, tt.header)
+			}
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
 func TestWebhookHandler_acceptsUpdate(t *testing.T) {
 	e := echo.New()
 	sender := &recordingTelegramAPI{}

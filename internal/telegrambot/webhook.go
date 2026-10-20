@@ -3,6 +3,8 @@ package telegrambot
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -90,9 +92,14 @@ func RegisterWebhook(ctx context.Context, botToken string, cfg WebhookConfig) er
 
 func WebhookHandler(secret string, bot *Bot) echo.HandlerFunc {
 	secret = strings.TrimSpace(secret)
+	// Compare SHA-256 digests in constant time so neither content nor length leaks.
+	want := sha256.Sum256([]byte(secret))
 	return func(c echo.Context) error {
-		if secret != "" && c.Request().Header.Get(telegramWebhookSecretHeader) != secret {
-			return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+		if secret != "" {
+			got := sha256.Sum256([]byte(c.Request().Header.Get(telegramWebhookSecretHeader)))
+			if subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
+				return echo.NewHTTPError(http.StatusUnauthorized, "unauthorized")
+			}
 		}
 
 		body, err := io.ReadAll(c.Request().Body)
