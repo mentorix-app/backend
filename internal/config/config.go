@@ -66,6 +66,9 @@ type Config struct {
 	// GitCommit is the commit the binary was deployed from (RENDER_GIT_COMMIT on
 	// Render). Empty locally; reported by GET /health when set.
 	GitCommit string
+	// BFFSharedSecret is shared with the dashboard's server. Empty disables
+	// forwarding of the browser address.
+	BFFSharedSecret string
 }
 
 func (c Config) AccessTokenTTL() time.Duration {
@@ -159,6 +162,7 @@ func Load() (Config, error) {
 		GitCommit:              strings.TrimSpace(os.Getenv("RENDER_GIT_COMMIT")),
 		AppleTeamID:            strings.TrimSpace(os.Getenv("APPLE_TEAM_ID")),
 		AppleKeyID:             strings.TrimSpace(os.Getenv("APPLE_KEY_ID")),
+		BFFSharedSecret:        strings.TrimSpace(os.Getenv("BFF_SHARED_SECRET")),
 	}
 
 	if cfg.AppEnv != AppEnvDevelopment {
@@ -170,6 +174,10 @@ func Load() (Config, error) {
 	}
 	if len(cfg.JWTSecret) < 32 {
 		return Config{}, fmt.Errorf("config: JWT_SECRET must be at least 32 bytes for HS256")
+	}
+
+	if cfg.BFFSharedSecret != "" && len(cfg.BFFSharedSecret) < 32 {
+		return Config{}, fmt.Errorf("config: BFF_SHARED_SECRET must be at least 32 bytes")
 	}
 
 	if cfg.BotWebhookURL != "" && cfg.BotToken == "" {

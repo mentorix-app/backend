@@ -913,3 +913,48 @@ func TestUpdateMe_nameLimit(t *testing.T) {
 		})
 	}
 }
+
+func TestLogin_rateLimitCountsForwardedBFFAddress(t *testing.T) {
+	const secret = "bff-shared-secret-0123456789-abcdef"
+
+	post := func(e *echo.Echo, forwarded string) int {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"user@example.com","password":"wrong-password"}`))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		req.Header.Set(httpx.HeaderBFFSecret, secret)
+		req.Header.Set(httpx.HeaderBFFClientIP, forwarded)
+		req.RemoteAddr = "10.0.0.1:5555"
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	newEcho := func(t *testing.T) *echo.Echo {
+		mr := miniredis.RunT(t)
+		rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+		h := testAuthHandlers(&fakeAuthService{loginErr: ErrInvalidCredentials})
+		h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+		e := echo.New()
+		e.IPExtractor = echo.ExtractIPDirect()
+		e.Use(httpx.BFFClientIP(secret, nil))
+		e.POST("/auth/login", h.Login)
+		return e
+	}
+
+	t.Run("different forwarded addresses are counted separately", func(t *testing.T) {
+		e := newEcho(t)
+		for _, addr := range []string{"198.51.100.1", "198.51.100.2"} {
+			if got := post(e, addr); got != http.StatusUnauthorized {
+				t.Fatalf("login from %s: status = %d, want %d", addr, got, http.StatusUnauthorized)
+			}
+		}
+	})
+
+	t.Run("the same forwarded address shares one counter", func(t *testing.T) {
+		e := newEcho(t)
+		if got := post(e, "198.51.100.1"); got != http.StatusUnauthorized {
+			t.Fatalf("first login: status = %d, want %d", got, http.StatusUnauthorized)
+		}
+		if got := post(e, "198.51.100.1"); got != http.StatusTooManyRequests {
+			t.Fatalf("second login: status = %d, want %d", got, http.StatusTooManyRequests)
+		}
+	})
+}

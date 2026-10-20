@@ -64,6 +64,8 @@ services:
         sync: false
       - key: BOT_WEBHOOK_SECRET
         sync: false
+      - key: BFF_SHARED_SECRET
+        sync: false
       - key: TRAINER_INVITE_TTL_DAYS
         sync: false
       - key: CLIENT_ANALYTICS_PAGE_URL

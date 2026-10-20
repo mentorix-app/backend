@@ -26,6 +26,9 @@ func RequestLog(logger *slog.Logger) echo.MiddlewareFunc {
 				"request_id", c.Response().Header().Get(echo.HeaderXRequestID),
 				"remote_ip", c.RealIP(),
 			}
+			if ip, ok := bffClientIP(c); ok {
+				attrs = append(attrs, "client_ip", ip)
+			}
 			switch {
 			case status >= http.StatusInternalServerError:
 				if err != nil {

@@ -80,6 +80,7 @@ func main() {
 	e.HidePort = true
 	e.Use(middleware.RequestID())
 	e.Use(apphttp.RequestLog(logger))
+	e.Use(apphttp.BFFClientIP(cfg.BFFSharedSecret, logger))
 	e.Use(middleware.Recover())
 	e.Use(middleware.BodyLimit(bodyLimit))
 

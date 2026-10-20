@@ -169,7 +169,7 @@ func retryAfterSeconds(d time.Duration) string {
 }
 
 func (h *Handlers) Register(c echo.Context) error {
-	if err := h.limiter.AllowRegister(c.Request().Context(), c.RealIP()); err != nil {
+	if err := h.limiter.AllowRegister(c.Request().Context(), httpx.ClientIP(c)); err != nil {
 		return rateLimited(c, err)
 	}
 	var body RegisterRequest
@@ -201,7 +201,7 @@ func (h *Handlers) Register(c echo.Context) error {
 }
 
 func (h *Handlers) Login(c echo.Context) error {
-	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+	if err := h.limiter.AllowLogin(c.Request().Context(), httpx.ClientIP(c)); err != nil {
 		return rateLimited(c, err)
 	}
 	var body AuthCredentials
@@ -224,7 +224,7 @@ func (h *Handlers) Login(c echo.Context) error {
 }
 
 func (h *Handlers) Google(c echo.Context) error {
-	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+	if err := h.limiter.AllowLogin(c.Request().Context(), httpx.ClientIP(c)); err != nil {
 		return rateLimited(c, err)
 	}
 	var body IDTokenRequest
@@ -248,7 +248,7 @@ func (h *Handlers) Google(c echo.Context) error {
 }
 
 func (h *Handlers) Apple(c echo.Context) error {
-	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+	if err := h.limiter.AllowLogin(c.Request().Context(), httpx.ClientIP(c)); err != nil {
 		return rateLimited(c, err)
 	}
 	var body AppleSignInRequest
@@ -312,7 +312,7 @@ func (h *Handlers) TelegramLink(c echo.Context) error {
 	if !ok {
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
-	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
+	if err := h.limiter.AllowLogin(c.Request().Context(), httpx.ClientIP(c)); err != nil {
 		return rateLimited(c, err)
 	}
 	var body TelegramLinkRequest
@@ -339,7 +339,7 @@ func (h *Handlers) TelegramLink(c echo.Context) error {
 }
 
 func (h *Handlers) Refresh(c echo.Context) error {
-	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
+	if err := h.limiter.AllowRefresh(c.Request().Context(), httpx.ClientIP(c)); err != nil {
 		return rateLimited(c, err)
 	}
 	bodyToken := refreshFromBody(c)
