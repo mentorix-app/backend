@@ -154,3 +154,106 @@ func TestRateLimiter_windowExpiryResets(t *testing.T) {
 		t.Errorf("AllowLogin after window = %v, want nil", err)
 	}
 }
+
+func retryAfterOf(t *testing.T, err error) time.Duration {
+	t.Helper()
+	var rl *RateLimitError
+	if !errors.As(err, &rl) {
+		t.Fatalf("error %v is not a *RateLimitError", err)
+	}
+	return rl.RetryAfter
+}
+
+func TestRateLimiter_retryAfterIsTimeToWindowReset(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 1, time.Minute, 1, time.Minute)
+	ctx := context.Background()
+
+	_ = l.AllowLogin(ctx, "10.0.1.1")
+	err := l.AllowLogin(ctx, "10.0.1.1")
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("second AllowLogin = %v, want ErrRateLimited", err)
+	}
+	if got := retryAfterOf(t, err); got <= 59*time.Second || got > time.Minute {
+		t.Errorf("RetryAfter = %v, want within (59s, 1m]", got)
+	}
+
+	mr.FastForward(30 * time.Second)
+	err = l.AllowLogin(ctx, "10.0.1.1")
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("AllowLogin after 30s = %v, want ErrRateLimited", err)
+	}
+	if got := retryAfterOf(t, err); got <= 29*time.Second || got > 30*time.Second {
+		t.Errorf("RetryAfter after 30s = %v, want within (29s, 30s]", got)
+	}
+}
+
+func TestRateLimiter_retryAfterForEveryAction(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 1, 2*time.Minute, 1, 5*time.Minute)
+	ctx := context.Background()
+	tests := []struct {
+		name   string
+		allow  func(context.Context, string) error
+		window time.Duration
+	}{
+		{"login", l.AllowLogin, 2 * time.Minute},
+		{"register", l.AllowRegister, 5 * time.Minute},
+		{"refresh", l.AllowRefresh, 2 * time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_ = tt.allow(ctx, "10.0.1.2")
+			got := retryAfterOf(t, tt.allow(ctx, "10.0.1.2"))
+			if got <= tt.window-time.Second || got > tt.window {
+				t.Errorf("RetryAfter = %v, want within (%v, %v]", got, tt.window-time.Second, tt.window)
+			}
+		})
+	}
+}
+
+func TestNewRateLimitError_retryAfter(t *testing.T) {
+	tests := []struct {
+		name string
+		pttl int64
+		want time.Duration
+	}{
+		{"remaining ttl", 1500, 1500 * time.Millisecond},
+		{"no ttl falls back to the window", -1, time.Minute},
+		{"missing key falls back to the window", -2, time.Minute},
+		{"zero falls back to the window", 0, time.Minute},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := newRateLimitError(tt.pttl, time.Minute).RetryAfter; got != tt.want {
+				t.Errorf("RetryAfter = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRateLimitError_isErrRateLimited(t *testing.T) {
+	err := error(&RateLimitError{RetryAfter: time.Second})
+	if !errors.Is(err, ErrRateLimited) {
+		t.Error("errors.Is(RateLimitError, ErrRateLimited) = false")
+	}
+	if err.Error() != ErrRateLimited.Error() {
+		t.Errorf("Error() = %q, want %q", err.Error(), ErrRateLimited.Error())
+	}
+}
+
+func TestRateLimiter_failsOpenOnScriptError(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	l := NewRateLimiter(rdb, 1, time.Minute, 1, time.Minute)
+	// INCR fails on a non-integer value, so the script returns an error.
+	if err := mr.Set("mentorix:rl:login:ip:10.0.1.3", "not-a-number"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := l.AllowLogin(context.Background(), "10.0.1.3"); err != nil {
+		t.Errorf("AllowLogin on a script error = %v, want nil", err)
+	}
+}

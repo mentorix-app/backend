@@ -2775,6 +2775,12 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     TooManyRequests:
       description: Rate limit exceeded (code `rate_limited`)
+      headers:
+        Retry-After:
+          description: Whole seconds until the rate-limit window ends, at least 1
+          schema:
+            type: integer
+            minimum: 1
       content:
         application/json:
           schema:
@@ -2920,7 +2926,7 @@ components:
 
     TokenResponse:
       type: object
-      required: [access_token, token_type, expires_at, user_id, email]
+      required: [access_token, token_type, expires_at, refresh_expires_at, user_id, email]
       properties:
         access_token:
           type: string
@@ -2930,6 +2936,12 @@ components:
         expires_at:
           type: string
           format: date-time
+        refresh_expires_at:
+          type: string
+          format: date-time
+          description: >
+            When the refresh token issued with this response expires. Present
+            whether the refresh token is in the cookie or in the body.
         user_id:
           type: string
           format: uuid

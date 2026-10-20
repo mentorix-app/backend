@@ -58,16 +58,19 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// TokenResponse is the JSON body for successful register, login, refresh, and Google sign-in.
-// RefreshToken is set only for clients that keep the refresh token themselves
-// (Google sign-in, body-mode refresh); cookie flows leave it out.
+// TokenResponse is the JSON body for successful register, login, refresh, Google
+// and Apple sign-in, and Telegram link. RefreshExpiresAt is always set, also when
+// the refresh token travels in a cookie. RefreshToken is set only for clients that
+// keep the refresh token themselves (Google and Apple sign-in, Telegram link,
+// body-mode refresh); cookie flows leave it out.
 type TokenResponse struct {
-	AccessToken  string    `json:"access_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	UserID       string    `json:"user_id"`
-	Email        string    `json:"email"`
-	RefreshToken string    `json:"refresh_token,omitempty"`
+	AccessToken      string    `json:"access_token"`
+	TokenType        string    `json:"token_type"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at"`
+	UserID           string    `json:"user_id"`
+	Email            string    `json:"email"`
+	RefreshToken     string    `json:"refresh_token,omitempty"`
 }
 
 // MeResponse is the JSON body for GET /auth/me and PATCH /auth/me.

@@ -44,6 +44,8 @@ type fakeAuthStore struct {
 	rolesErr             error
 	appleSubjects        []string
 	appleSubjectsErr     error
+	insertedExpiry       time.Time
+	rotatedExpiry        time.Time
 }
 
 type fillDisplayNameCall struct {
@@ -102,11 +104,13 @@ func (f *fakeAuthStore) getEmailPasswordIdentity(_ context.Context, _ string) (e
 	return f.identity, f.identityErr
 }
 
-func (f *fakeAuthStore) InsertRefreshSession(context.Context, uuid.UUID, []byte, time.Time) error {
+func (f *fakeAuthStore) InsertRefreshSession(_ context.Context, _ uuid.UUID, _ []byte, expiresAt time.Time) error {
+	f.insertedExpiry = expiresAt
 	return f.insertSession
 }
 
-func (f *fakeAuthStore) RotateRefreshSession(context.Context, []byte, []byte, time.Time) (uuid.UUID, string, error) {
+func (f *fakeAuthStore) RotateRefreshSession(_ context.Context, _, _ []byte, newExpiresAt time.Time) (uuid.UUID, string, error) {
+	f.rotatedExpiry = newExpiresAt
 	if f.rotateErr != nil {
 		return uuid.Nil, "", f.rotateErr
 	}
