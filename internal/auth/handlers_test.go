@@ -22,25 +22,21 @@ import (
 )
 
 type fakeAuthService struct {
-	registerIssued IssuedAuth
-	registerErr    error
-	loginIssued    IssuedAuth
-	loginErr       error
-	refreshIssued  IssuedAuth
-	refreshErr     error
-	logoutErr      error
-	logoutAllErr   error
-	profile        UserProfile
-	profileErr     error
-	googleIssued   IssuedAuth
-	googleErr      error
-	appleIssued    IssuedAuth
-	appleErr       error
-	linkIssued     IssuedAuth
-	linkErr        error
-	deleteErr      error
-	activateErr    error
-	activate       activationRecorder
+	refreshIssued IssuedAuth
+	refreshErr    error
+	logoutErr     error
+	logoutAllErr  error
+	profile       UserProfile
+	profileErr    error
+	googleIssued  IssuedAuth
+	googleErr     error
+	appleIssued   IssuedAuth
+	appleErr      error
+	linkIssued    IssuedAuth
+	linkErr       error
+	deleteErr     error
+	activateErr   error
+	activate      activationRecorder
 
 	// Arguments of the last calls, for body-mode assertions.
 	googleToken  string
@@ -70,58 +66,6 @@ func (f *fakeAuthService) LinkTelegram(_ context.Context, appUserID uuid.UUID, c
 	}
 	if out.RefreshToken == "" {
 		out.RefreshToken = "link-refresh-token"
-	}
-	if out.AccessExpires.IsZero() {
-		out.AccessExpires = time.Now().UTC().Add(time.Hour)
-	}
-	if out.RefreshExpires.IsZero() {
-		out.RefreshExpires = time.Now().UTC().Add(24 * time.Hour)
-	}
-	return out, nil
-}
-
-func (f *fakeAuthService) RegisterTrainer(_ context.Context, email, _, _ string) (IssuedAuth, error) {
-	if f.registerErr != nil {
-		return IssuedAuth{}, f.registerErr
-	}
-	out := f.registerIssued
-	if out.Email == "" {
-		out.Email = email
-	}
-	if out.UserID == uuid.Nil {
-		out.UserID = uuid.New()
-	}
-	if out.AccessToken == "" {
-		out.AccessToken = "test-access-token"
-	}
-	if out.RefreshToken == "" {
-		out.RefreshToken = "test-refresh-token"
-	}
-	if out.AccessExpires.IsZero() {
-		out.AccessExpires = time.Now().UTC().Add(time.Hour)
-	}
-	if out.RefreshExpires.IsZero() {
-		out.RefreshExpires = time.Now().UTC().Add(24 * time.Hour)
-	}
-	return out, nil
-}
-
-func (f *fakeAuthService) Login(_ context.Context, email, _ string) (IssuedAuth, error) {
-	if f.loginErr != nil {
-		return IssuedAuth{}, f.loginErr
-	}
-	out := f.loginIssued
-	if out.Email == "" {
-		out.Email = email
-	}
-	if out.UserID == uuid.Nil {
-		out.UserID = uuid.New()
-	}
-	if out.AccessToken == "" {
-		out.AccessToken = "test-access-token"
-	}
-	if out.RefreshToken == "" {
-		out.RefreshToken = "test-refresh-token"
 	}
 	if out.AccessExpires.IsZero() {
 		out.AccessExpires = time.Now().UTC().Add(time.Hour)
@@ -254,7 +198,7 @@ func TestHandlers_Mount_registersRoutes(t *testing.T) {
 	for _, r := range e.Routes() {
 		found[r.Method+" "+r.Path] = true
 	}
-	for _, key := range []string{"POST /auth/register", "POST /auth/login", "GET /auth/me", "PATCH /auth/me"} {
+	for _, key := range []string{"POST /auth/google", "POST /auth/apple", "GET /auth/me", "PATCH /auth/me"} {
 		if !found[key] {
 			t.Fatalf("missing route %s", key)
 		}
@@ -265,213 +209,6 @@ func assertHTTPStatus(t *testing.T, rec *httptest.ResponseRecorder, want int) {
 	t.Helper()
 	if rec.Code != want {
 		t.Fatalf("status = %d, want %d; body = %s", rec.Code, want, rec.Body.String())
-	}
-}
-
-func TestRegister_rateLimited(t *testing.T) {
-	mr := miniredis.RunT(t)
-	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	limiter := NewRateLimiter(rdb, 5, time.Minute, 1, time.Minute)
-	h := &Handlers{
-		svc:        &fakeAuthService{},
-		jwtSecret:  testJWTSecret,
-		cookie:     config.RefreshCookieSettings{Name: "mentorix_refresh", Path: "/auth"},
-		refreshTTL: time.Hour,
-		limiter:    limiter,
-	}
-	e := echo.New()
-	e.POST("/auth/register", h.Register)
-
-	body := `{"email":"rate@test.com","password":"password123"}`
-	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
-		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-		rec := httptest.NewRecorder()
-		e.ServeHTTP(rec, req)
-	}
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	assertHTTPStatus(t, rec, http.StatusTooManyRequests)
-}
-
-func TestLogin_rateLimited(t *testing.T) {
-	mr := miniredis.RunT(t)
-	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	limiter := NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
-	h := &Handlers{
-		svc:        &fakeAuthService{},
-		jwtSecret:  testJWTSecret,
-		cookie:     config.RefreshCookieSettings{Name: "mentorix_refresh", Path: "/auth"},
-		refreshTTL: time.Hour,
-		limiter:    limiter,
-	}
-	e := echo.New()
-	e.POST("/auth/login", h.Login)
-
-	body := `{"email":"login@test.com","password":"password123"}`
-	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
-		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-		rec := httptest.NewRecorder()
-		e.ServeHTTP(rec, req)
-	}
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	assertHTTPStatus(t, rec, http.StatusTooManyRequests)
-}
-
-func TestRegister_invalidJSON(t *testing.T) {
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{})
-	e.POST("/auth/register", h.Register)
-
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader("not-json"))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusBadRequest)
-}
-
-func TestRegister_invalidEmail(t *testing.T) {
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{})
-	e.POST("/auth/register", h.Register)
-
-	body := `{"email":"not-an-email","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusBadRequest)
-}
-
-func TestRegister_shortPassword(t *testing.T) {
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{})
-	e.POST("/auth/register", h.Register)
-
-	body := `{"email":"user@example.com","password":"short"}`
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusBadRequest)
-}
-
-func TestRegister_emailTaken(t *testing.T) {
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{registerErr: ErrEmailTaken})
-	e.POST("/auth/register", h.Register)
-
-	body := `{"email":"user@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusConflict)
-}
-
-func TestRegister_success(t *testing.T) {
-	userID := uuid.New()
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{
-		registerIssued: IssuedAuth{UserID: userID, Email: "user@example.com"},
-	})
-	e.POST("/auth/register", h.Register)
-
-	body := `{"email":"user@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusCreated)
-	var resp TokenResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp.AccessToken == "" || resp.TokenType != TokenTypeBearer {
-		t.Fatalf("unexpected token response: %+v", resp)
-	}
-	if resp.UserID != userID.String() {
-		t.Fatalf("user_id = %q, want %q", resp.UserID, userID)
-	}
-	cookies := rec.Result().Cookies()
-	if len(cookies) == 0 || cookies[0].Value == "" {
-		t.Fatal("expected refresh cookie")
-	}
-}
-
-func TestLogin_invalidJSON(t *testing.T) {
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{})
-	e.POST("/auth/login", h.Login)
-
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader("not-json"))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusBadRequest)
-}
-
-func TestLogin_invalidEmail(t *testing.T) {
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{})
-	e.POST("/auth/login", h.Login)
-
-	body := `{"email":"bad","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusUnauthorized)
-}
-
-func TestLogin_invalidCredentials(t *testing.T) {
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{loginErr: ErrInvalidCredentials})
-	e.POST("/auth/login", h.Login)
-
-	body := `{"email":"user@example.com","password":"wrong-password"}`
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusUnauthorized)
-}
-
-func TestLogin_success(t *testing.T) {
-	userID := uuid.New()
-	e := echo.New()
-	h := testAuthHandlers(&fakeAuthService{
-		loginIssued: IssuedAuth{UserID: userID, Email: "user@example.com"},
-	})
-	e.POST("/auth/login", h.Login)
-
-	body := `{"email":"user@example.com","password":"password123"}`
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-
-	assertHTTPStatus(t, rec, http.StatusOK)
-	var resp TokenResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if resp.UserID != userID.String() {
-		t.Fatalf("user_id = %q", resp.UserID)
 	}
 }
 
@@ -843,43 +580,6 @@ func TestUpdateMe_success(t *testing.T) {
 	}
 }
 
-func TestRegister_textLimits(t *testing.T) {
-	emailOfLen := func(n int) string {
-		const domain = "@example.com"
-		return strings.Repeat("a", n-len(domain)) + domain
-	}
-	tests := []struct {
-		name  string
-		email string
-		dname string
-		want  int
-	}{
-		{"name at limit", "user@example.com", strings.Repeat("a", 100), http.StatusCreated},
-		{"name at limit in runes", "user@example.com", strings.Repeat("я", 100), http.StatusCreated},
-		{"name over limit", "user@example.com", strings.Repeat("a", 101), http.StatusBadRequest},
-		{"name over limit in runes", "user@example.com", strings.Repeat("я", 101), http.StatusBadRequest},
-		{"email at limit", emailOfLen(254), "", http.StatusCreated},
-		{"email over limit", emailOfLen(255), "", http.StatusBadRequest},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			e := echo.New()
-			h := testAuthHandlers(&fakeAuthService{})
-			e.POST("/auth/register", h.Register)
-
-			body, err := json.Marshal(RegisterRequest{Email: tt.email, Password: "password123", Name: tt.dname})
-			if err != nil {
-				t.Fatal(err)
-			}
-			req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(string(body)))
-			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-			rec := httptest.NewRecorder()
-			e.ServeHTTP(rec, req)
-			assertHTTPStatus(t, rec, tt.want)
-		})
-	}
-}
-
 func TestUpdateMe_nameLimit(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -918,11 +618,11 @@ func TestUpdateMe_nameLimit(t *testing.T) {
 	}
 }
 
-func TestLogin_rateLimitCountsForwardedBFFAddress(t *testing.T) {
+func TestSignIn_rateLimitCountsForwardedBFFAddress(t *testing.T) {
 	const secret = "bff-shared-secret-0123456789-abcdef"
 
 	post := func(e *echo.Echo, forwarded string) int {
-		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"email":"user@example.com","password":"wrong-password"}`))
+		req := httptest.NewRequest(http.MethodPost, "/auth/google", strings.NewReader(idTokenBody))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		req.Header.Set(httpx.HeaderBFFSecret, secret)
 		req.Header.Set(httpx.HeaderBFFClientIP, forwarded)
@@ -934,12 +634,12 @@ func TestLogin_rateLimitCountsForwardedBFFAddress(t *testing.T) {
 	newEcho := func(t *testing.T) *echo.Echo {
 		mr := miniredis.RunT(t)
 		rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-		h := testAuthHandlers(&fakeAuthService{loginErr: ErrInvalidCredentials})
-		h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+		h := testAuthHandlers(&fakeAuthService{googleErr: ErrInvalidIDToken})
+		h.limiter = NewRateLimiter(rdb, 1, time.Minute)
 		e := echo.New()
 		e.IPExtractor = echo.ExtractIPDirect()
 		e.Use(httpx.BFFClientIP(secret, nil))
-		e.POST("/auth/login", h.Login)
+		e.POST("/auth/google", h.Google)
 		return e
 	}
 
@@ -947,7 +647,7 @@ func TestLogin_rateLimitCountsForwardedBFFAddress(t *testing.T) {
 		e := newEcho(t)
 		for _, addr := range []string{"198.51.100.1", "198.51.100.2"} {
 			if got := post(e, addr); got != http.StatusUnauthorized {
-				t.Fatalf("login from %s: status = %d, want %d", addr, got, http.StatusUnauthorized)
+				t.Fatalf("sign-in from %s: status = %d, want %d", addr, got, http.StatusUnauthorized)
 			}
 		}
 	})
@@ -955,10 +655,10 @@ func TestLogin_rateLimitCountsForwardedBFFAddress(t *testing.T) {
 	t.Run("the same forwarded address shares one counter", func(t *testing.T) {
 		e := newEcho(t)
 		if got := post(e, "198.51.100.1"); got != http.StatusUnauthorized {
-			t.Fatalf("first login: status = %d, want %d", got, http.StatusUnauthorized)
+			t.Fatalf("first sign-in: status = %d, want %d", got, http.StatusUnauthorized)
 		}
 		if got := post(e, "198.51.100.1"); got != http.StatusTooManyRequests {
-			t.Fatalf("second login: status = %d, want %d", got, http.StatusTooManyRequests)
+			t.Fatalf("second sign-in: status = %d, want %d", got, http.StatusTooManyRequests)
 		}
 	})
 }

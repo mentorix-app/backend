@@ -9,64 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
-
 	"mentorix-backend/internal/auth"
 )
-
-func TestAuthStore_RegisterTrainerEmailPassword(t *testing.T) {
-	pool := NewPool(t)
-	store := auth.NewStore(pool)
-	ctx := context.Background()
-
-	email := "trainer-integration@test.com"
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-
-	userID, err := store.RegisterTrainerEmailPassword(ctx, email, hash, "Viktor")
-	if err != nil {
-		t.Fatalf("RegisterTrainerEmailPassword() error = %v", err)
-	}
-	if userID == uuid.Nil {
-		t.Fatal("user id is nil")
-	}
-
-	profile, err := store.UserProfile(ctx, userID)
-	if err != nil {
-		t.Fatalf("UserProfile() error = %v", err)
-	}
-	if profile.Email != email {
-		t.Errorf("email = %q, want %q", profile.Email, email)
-	}
-	if len(profile.Roles) != 1 || profile.Roles[0] != auth.RoleTrainer {
-		t.Errorf("roles = %v, want [%q]", profile.Roles, auth.RoleTrainer)
-	}
-
-	if profile.Name != "Viktor" {
-		t.Errorf("name = %q, want %q", profile.Name, "Viktor")
-	}
-
-	_, err = store.RegisterTrainerEmailPassword(ctx, email, hash, "")
-	if !errors.Is(err, auth.ErrEmailTaken) {
-		t.Errorf("duplicate register error = %v, want ErrEmailTaken", err)
-	}
-}
 
 func TestAuthStore_RotateRefreshSession(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
 
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := store.RegisterTrainerEmailPassword(ctx, "rotate@test.com", hash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "rotate@test.com", "")
 
 	oldHash := randomTokenHash(t)
 	expires := time.Now().UTC().Add(24 * time.Hour)
@@ -99,14 +50,7 @@ func TestAuthStore_RevokeRefreshSession_repeatKeepsFirstRevokedAt(t *testing.T) 
 	store := auth.NewStore(pool)
 	ctx := context.Background()
 
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := store.RegisterTrainerEmailPassword(ctx, "revoke-twice@test.com", hash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "revoke-twice@test.com", "")
 	revokedAt := func(tokenHash []byte) *time.Time {
 		t.Helper()
 		var got *time.Time
@@ -145,14 +89,7 @@ func TestAuthStore_RotateRefreshSession_revokesOldKeepsNewActive(t *testing.T) {
 	store := auth.NewStore(pool)
 	ctx := context.Background()
 
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := store.RegisterTrainerEmailPassword(ctx, "rotate-revokes@test.com", hash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "rotate-revokes@test.com", "")
 	oldHash, newHash := randomTokenHash(t), randomTokenHash(t)
 	if err := store.InsertRefreshSession(ctx, userID, oldHash, time.Now().UTC().Add(24*time.Hour)); err != nil {
 		t.Fatalf("InsertRefreshSession: %v", err)

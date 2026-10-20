@@ -29,8 +29,6 @@ const (
 // text, so a client can rely on the pair.
 const (
 	CodeRateLimited             = "rate_limited"
-	CodeEmailTaken              = "email_taken"
-	CodeInvalidCredentials      = "invalid_credentials"
 	CodeProviderNotConfigured   = "provider_not_configured"
 	CodeInvalidIDToken          = "invalid_id_token"
 	CodeInvalidLinkCode         = "invalid_link_code"

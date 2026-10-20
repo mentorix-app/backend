@@ -9,7 +9,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"net/mail"
 	"net/url"
 	"strconv"
 	"strings"
@@ -27,8 +26,6 @@ import (
 )
 
 type credentialService interface {
-	RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error)
-	Login(ctx context.Context, email, password string) (IssuedAuth, error)
 	SignInWithGoogle(ctx context.Context, rawIDToken, nonce string) (IssuedAuth, error)
 	SignInWithApple(ctx context.Context, rawIDToken, name, nonce string) (IssuedAuth, error)
 	Refresh(ctx context.Context, refreshPlain string) (IssuedAuth, error)
@@ -85,8 +82,6 @@ func NewHandlers(svc *Service, jwtSecret string, cookie config.RefreshCookieSett
 }
 
 func (h *Handlers) Mount(e *echo.Echo) {
-	e.POST("/auth/register", h.Register)
-	e.POST("/auth/login", h.Login)
 	e.POST("/auth/google", h.Google)
 	e.POST("/auth/apple", h.Apple)
 	e.POST("/auth/apple/callback", h.AppleCallback, middleware.BodyLimit("16K"))
@@ -168,61 +163,6 @@ func rateLimited(c echo.Context, err error) error {
 func retryAfterSeconds(d time.Duration) string {
 	secs := int64((d + time.Second - 1) / time.Second)
 	return strconv.FormatInt(max(secs, 1), 10)
-}
-
-func (h *Handlers) Register(c echo.Context) error {
-	if err := h.limiter.AllowRegister(c.Request().Context(), httpx.ClientIP(c)); err != nil {
-		return rateLimited(c, err)
-	}
-	var body RegisterRequest
-	if err := c.Bind(&body); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
-	}
-	addr, err := mail.ParseAddress(body.Email)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid email")
-	}
-	email := NormalizeEmail(addr.Address)
-	if email == "" || utf8.RuneCountInString(email) > maxEmailLen {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid email")
-	}
-	if err := ValidatePassword(body.Password); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
-	if err := ValidateDisplayName(body.Name); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
-	issued, err := h.svc.RegisterTrainer(c.Request().Context(), email, body.Password, body.Name)
-	if err != nil {
-		if errors.Is(err, ErrEmailTaken) {
-			return httpx.NewError(http.StatusConflict, httpx.CodeEmailTaken, ErrEmailTaken.Error())
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "registration failed")
-	}
-	return h.writeAuthJSON(c, http.StatusCreated, issued)
-}
-
-func (h *Handlers) Login(c echo.Context) error {
-	if err := h.limiter.AllowLogin(c.Request().Context(), httpx.ClientIP(c)); err != nil {
-		return rateLimited(c, err)
-	}
-	var body AuthCredentials
-	if err := c.Bind(&body); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
-	}
-	addr, err := mail.ParseAddress(body.Email)
-	if err != nil {
-		return httpx.NewError(http.StatusUnauthorized, httpx.CodeInvalidCredentials, ErrInvalidCredentials.Error())
-	}
-	email := NormalizeEmail(addr.Address)
-	issued, err := h.svc.Login(c.Request().Context(), email, body.Password)
-	if err != nil {
-		if errors.Is(err, ErrInvalidCredentials) {
-			return httpx.NewError(http.StatusUnauthorized, httpx.CodeInvalidCredentials, ErrInvalidCredentials.Error())
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "login failed")
-	}
-	return h.writeAuthJSON(c, http.StatusOK, issued)
 }
 
 func (h *Handlers) Google(c echo.Context) error {

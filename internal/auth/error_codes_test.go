@@ -88,8 +88,6 @@ func (r codedRequest) serve(t *testing.T, e *echo.Echo) *httptest.ResponseRecord
 }
 
 const (
-	registerBody = `{"email":"user@example.com","password":"password123"}`
-	loginBody    = `{"email":"user@example.com","password":"password123"}`
 	idTokenBody  = `{"id_token":"x"}`
 	linkBody     = `{"code":"ABCD2345"}`
 	activateBody = `{"terms_version":"2026-10-01"}`
@@ -104,23 +102,6 @@ func TestErrorCodes_handlerAnswers(t *testing.T) {
 		wantCode    string
 		wantMessage string
 	}{
-		{"register email taken", &fakeAuthService{registerErr: ErrEmailTaken},
-			codedRequest{method: "POST", path: "/auth/register", body: registerBody},
-			409, "email_taken", "email already registered"},
-		{"register invalid json keeps the default", &fakeAuthService{},
-			codedRequest{method: "POST", path: "/auth/register", body: "not-json"},
-			400, "bad_request", httpx.MsgInvalidJSON},
-		{"register failure keeps the default", &fakeAuthService{registerErr: errors.New("db down")},
-			codedRequest{method: "POST", path: "/auth/register", body: registerBody},
-			500, "internal_error", "registration failed"},
-
-		{"login wrong credentials", &fakeAuthService{loginErr: ErrInvalidCredentials},
-			codedRequest{method: "POST", path: "/auth/login", body: loginBody},
-			401, "invalid_credentials", "invalid email or password"},
-		{"login malformed email", &fakeAuthService{},
-			codedRequest{method: "POST", path: "/auth/login", body: `{"email":"nope","password":"password123"}`},
-			401, "invalid_credentials", "invalid email or password"},
-
 		{"google provider not configured", &fakeAuthService{googleErr: ErrProviderNotConfigured},
 			codedRequest{method: "POST", path: "/auth/google", body: idTokenBody},
 			503, "provider_not_configured", "google sign-in is not configured"},
@@ -259,8 +240,6 @@ func assertRetryAfter(t *testing.T, rec *httptest.ResponseRecorder, window time.
 
 func TestErrorCodes_rateLimitedEveryRoute(t *testing.T) {
 	routes := []codedRequest{
-		{method: "POST", path: "/auth/register", body: registerBody},
-		{method: "POST", path: "/auth/login", body: loginBody},
 		{method: "POST", path: "/auth/google", body: idTokenBody},
 		{method: "POST", path: "/auth/apple", body: idTokenBody},
 		{method: "POST", path: "/auth/refresh", cookie: "x"},
@@ -270,7 +249,7 @@ func TestErrorCodes_rateLimitedEveryRoute(t *testing.T) {
 		t.Run(r.path, func(t *testing.T) {
 			mr := miniredis.RunT(t)
 			h := testAuthHandlers(&fakeAuthService{})
-			h.limiter = NewRateLimiter(redis.NewClient(&redis.Options{Addr: mr.Addr()}), 1, time.Minute, 1, time.Minute)
+			h.limiter = NewRateLimiter(redis.NewClient(&redis.Options{Addr: mr.Addr()}), 1, time.Minute)
 			e := codedEcho(h)
 
 			r.serve(t, e)

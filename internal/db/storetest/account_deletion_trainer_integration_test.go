@@ -28,13 +28,9 @@ func trainersRowID(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID) uuid.UUID
 	return id
 }
 
-func registerCoach(t *testing.T, store *auth.Store, email string) uuid.UUID {
+func newCoach(t *testing.T, pool *pgxpool.Pool, email string) uuid.UUID {
 	t.Helper()
-	id, err := store.RegisterTrainerEmailPassword(context.Background(), email, "hash", "Coach")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	return id
+	return newTrainer(t, pool, email, "Coach")
 }
 
 // activatedTrainer is a Google client who became a trainer in the app.
@@ -81,12 +77,16 @@ INSERT INTO mentorix.trainer_plan_entitlements (trainer_id, plan_code, source, s
 func TestAccountDeletion_trainerWithoutBusinessDataIsDeleted(t *testing.T) {
 	tests := []struct {
 		name string
-		make func(t *testing.T, store *auth.Store) uuid.UUID
+		make func(t *testing.T, pool *pgxpool.Pool, store *auth.Store) uuid.UUID
 		// roles and identities are the rows the account holds before the seed adds a Telegram.
 		roles, identities int
 	}{
-		{"registered trainer", func(t *testing.T, store *auth.Store) uuid.UUID { return registerCoach(t, store, "coach-del@test.com") }, 1, 1},
-		{"client who became a trainer", func(t *testing.T, store *auth.Store) uuid.UUID { return activatedTrainer(t, store, "g-activated-del") }, 2, 1},
+		{"trainer-only", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store) uuid.UUID {
+			return newCoach(t, pool, "coach-del@test.com")
+		}, 1, 1},
+		{"client who became a trainer", func(t *testing.T, _ *pgxpool.Pool, store *auth.Store) uuid.UUID {
+			return activatedTrainer(t, store, "g-activated-del")
+		}, 2, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestAccountDeletion_trainerWithoutBusinessDataIsDeleted(t *testing.T) {
 			ctx := context.Background()
 			base := seedDeletionBase(t, pool, "del-trainer")
 			seedClientData(t, pool, base, newClientWithIdentity(t, store, auth.ProviderGoogle, "g-del-neighbour", ""), "neighbour")
-			trainer := tt.make(t, store)
+			trainer := tt.make(t, pool, store)
 			seedTrainerOwnRows(t, pool, store, trainer, "coach")
 			baseBefore := rowsFingerprint(t, pool, "program_assignments", "trainer_id", base.trainerID)
 			counts := tableCounts(t, pool)
@@ -180,8 +180,8 @@ func TestAccountDeletion_clientTrainerWithoutTrainerDataIsDeletedWithItsClientDa
 	}
 }
 
-// businessDataKind seeds one kind of trainer business data for account, a registered
-// trainer. base is another trainer with a published program.
+// businessDataKind seeds one kind of trainer business data for account, a trainer-only
+// account. base is another trainer with a published program.
 type businessDataKind struct {
 	name string
 	seed func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase, account, trainerID uuid.UUID)
@@ -322,7 +322,7 @@ func TestAccountDeletion_trainerBusinessDataRefusesAndChangesNothing(t *testing.
 			store := auth.NewStore(pool)
 			ctx := context.Background()
 			base := seedDeletionBase(t, pool, "del-trainer")
-			account := registerCoach(t, store, "coach-data@test.com")
+			account := newCoach(t, pool, "coach-data@test.com")
 			seedTrainerOwnRows(t, pool, store, account, "coach-data")
 			kind.seed(t, pool, store, base, account, trainersRowID(t, pool, account))
 			roles, err := store.UserRoles(ctx, account)
@@ -377,7 +377,7 @@ func TestAccountDeletion_trainerHasBusinessDataIsFalseForWhatGoesWithTheAccount(
 	store := auth.NewStore(pool)
 	ctx := context.Background()
 	base := seedDeletionBase(t, pool, "del-trainer")
-	coach := registerCoach(t, store, "coach-clean@test.com")
+	coach := newCoach(t, pool, "coach-clean@test.com")
 	seedTrainerOwnRows(t, pool, store, coach, "coach-clean")
 	asClient := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-only-client", "")
 	seedClientData(t, pool, base, asClient, "only-client")
@@ -402,7 +402,7 @@ func TestAccountDeletion_trainerHasBusinessDataIsFalseForWhatGoesWithTheAccount(
 func TestAccountDeletion_trainerDataCommittedWhileWaitingIsSeen(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
-	account := registerCoach(t, store, "coach-race@test.com")
+	account := newCoach(t, pool, "coach-race@test.com")
 	trainerID := trainersRowID(t, pool, account)
 	client := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-race-client", "")
 	before := takeSnapshot(t, pool, account)
@@ -430,7 +430,7 @@ func TestAccountDeletion_locksTheTrainerRowBeforeTheUserRow(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
-	account := registerCoach(t, store, "coach-lock@test.com")
+	account := newCoach(t, pool, "coach-lock@test.com")
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatalf("begin: %v", err)
@@ -490,7 +490,7 @@ func TestAccountDeletion_mountedRouteDeletesATrainerWithoutData(t *testing.T) {
 
 func TestAccountDeletion_mountedRouteRefusesATrainerWithAClient(t *testing.T) {
 	m := newMountedEnv(t)
-	account := registerCoach(t, m.store, "coach-mount-refuse@test.com")
+	account := newCoach(t, m.pool, "coach-mount-refuse@test.com")
 	execSQL(t, m.pool, "trainer link", `
 INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id) VALUES ($1, $2)`,
 		trainersRowID(t, m.pool, account), newClientWithIdentity(t, m.store, auth.ProviderGoogle, "g-mount-refuse-client", ""))
@@ -551,7 +551,7 @@ func TestAccountDeletion_acceptInFlightFinishesAndTheDeletionIsRefused(t *testin
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
-	account := registerCoach(t, store, "coach-accept@test.com")
+	account := newCoach(t, pool, "coach-accept@test.com")
 	trainerID := trainersRowID(t, pool, account)
 	client := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-accept-client", "")
 	execSQL(t, pool, "invite", `INSERT INTO mentorix.trainer_invites (trainer_id, token, expires_at) VALUES ($1, 'inv-accept', now() + interval '1 day')`, trainerID)
@@ -599,7 +599,7 @@ func TestAccountDeletion_acceptAfterTheDeletionFindsNoInvite(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
-	account := registerCoach(t, store, "coach-accept-late@test.com")
+	account := newCoach(t, pool, "coach-accept-late@test.com")
 	trainerID := trainersRowID(t, pool, account)
 	client := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-accept-late-client", "")
 	execSQL(t, pool, "invite", `INSERT INTO mentorix.trainer_invites (trainer_id, token, expires_at) VALUES ($1, 'inv-late', now() + interval '1 day')`, trainerID)

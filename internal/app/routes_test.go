@@ -72,7 +72,6 @@ func productionLikeConfig() config.Config {
 		BotToken:             "123:token",
 		TelegramBotUsername:  "mentorix_bot",
 		AuthLoginRateMax:     20,
-		AuthRegisterRateMax:  10,
 	}
 }
 
@@ -259,5 +258,34 @@ func TestMount_servesTheClientAppRoutesBehindTheToken(t *testing.T) {
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/client/analytics", nil))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("GET /client/analytics: status = %d, want 400 from the missing link parameters; body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Email and password sign-in is retired: the routes must not exist at all, so a
+// stale client gets the plain unknown-route answer instead of a validation error.
+func TestMount_doesNotServeEmailPasswordSignIn(t *testing.T) {
+	e := echo.New()
+	res := app.Mount(e, app.Deps{Config: productionLikeConfig(), Pool: lazyPool(t), Logger: slog.Default()})
+	if res.Notifier != nil {
+		t.Cleanup(func() { _ = res.Notifier.Close(context.Background()) })
+	}
+
+	for _, path := range []string{"/auth/register", "/auth/login"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"email":"a@b.co","password":"correct-horse-battery"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want 404; body = %s", rec.Code, rec.Body.String())
+			}
+			if got, want := strings.TrimSpace(rec.Body.String()), `{"code":"not_found","message":"Not Found"}`; got != want {
+				t.Errorf("body = %s, want %s", got, want)
+			}
+			if slices.Contains(routeSet(e), "POST "+path) {
+				t.Errorf("POST %s is mounted", path)
+			}
+		})
 	}
 }

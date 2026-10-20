@@ -3,10 +3,6 @@ INSERT INTO mentorix.users (primary_email, display_name)
 VALUES ($1, $2)
 RETURNING id;
 
--- name: InsertAuthIdentity :exec
-INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
-VALUES ($1, $2, $3, $4);
-
 -- name: InsertAuthIdentityIfAbsent :execrows
 INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
 VALUES ($1, $2, $3, $4)
@@ -20,10 +16,6 @@ WHERE u.id = $1
 -- name: InsertUserRole :exec
 INSERT INTO mentorix.user_roles (user_id, role)
 VALUES ($1, $2);
-
--- name: InsertTrainer :exec
-INSERT INTO mentorix.trainers (user_id)
-VALUES ($1);
 
 -- name: InsertTrainerIfAbsent :exec
 INSERT INTO mentorix.trainers (user_id)
@@ -90,11 +82,6 @@ ORDER BY role;
 INSERT INTO mentorix.user_roles (user_id, role)
 VALUES ($1, $2)
 ON CONFLICT (user_id, role) DO NOTHING;
-
--- name: GetEmailPasswordIdentity :one
-SELECT user_id, COALESCE(password_hash, '') AS password_hash
-FROM mentorix.auth_identities
-WHERE provider = $1 AND subject = $2;
 
 -- name: InsertRefreshSession :exec
 INSERT INTO mentorix.auth_refresh_sessions (user_id, token_hash, expires_at)

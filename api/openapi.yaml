@@ -68,72 +68,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReadyResponse"
 
-  /auth/register:
-    post:
-      tags: [auth]
-      summary: Register trainer account
-      operationId: register
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RegisterRequest"
-      responses:
-        "201":
-          description: Registered
-          headers:
-            Set-Cookie:
-              description: HttpOnly refresh token cookie
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "409":
-          description: Email already registered (code `email_taken`)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
-
-  /auth/login:
-    post:
-      tags: [auth]
-      summary: Login with email and password
-      operationId: login
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AuthCredentials"
-      responses:
-        "200":
-          description: Authenticated
-          headers:
-            Set-Cookie:
-              description: HttpOnly refresh token cookie
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TokenResponse"
-        "401":
-          description: Invalid credentials (code `invalid_credentials`)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "429":
-          $ref: "#/components/responses/TooManyRequests"
-
   /auth/google:
     post:
       tags: [auth]
@@ -2905,35 +2839,6 @@ components:
           additionalProperties:
             type: string
             enum: [ok, error, skipped]
-
-    AuthCredentials:
-      type: object
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          minLength: 8
-          maxLength: 72
-
-    RegisterRequest:
-      type: object
-      required: [email, password]
-      properties:
-        email:
-          type: string
-          maxLength: 254
-          format: email
-        password:
-          type: string
-          minLength: 8
-          maxLength: 72
-        name:
-          type: string
-          maxLength: 100
-          description: Optional display name; defaults to empty string
 
     IDTokenRequest:
       type: object

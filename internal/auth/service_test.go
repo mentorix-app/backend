@@ -12,10 +12,6 @@ import (
 )
 
 type fakeAuthStore struct {
-	registerUserID       uuid.UUID
-	registerErr          error
-	identity             emailIdentityRow
-	identityErr          error
 	insertSession        error
 	rotateUserID         uuid.UUID
 	rotateErr            error
@@ -70,16 +66,6 @@ func (f *fakeAuthStore) LinkTelegram(_ context.Context, appUserID uuid.UUID, tel
 	return f.linkRemaining, nil
 }
 
-func (f *fakeAuthStore) RegisterTrainerEmailPassword(_ context.Context, _, _, _ string) (uuid.UUID, error) {
-	if f.registerErr != nil {
-		return uuid.Nil, f.registerErr
-	}
-	if f.registerUserID == uuid.Nil {
-		f.registerUserID = uuid.New()
-	}
-	return f.registerUserID, nil
-}
-
 func (f *fakeAuthStore) FindOrCreateClientByIdentity(_ context.Context, id ClientIdentity) (uuid.UUID, bool, error) {
 	f.clientCalls = append(f.clientCalls, id)
 	if f.clientErr != nil {
@@ -102,10 +88,6 @@ func (f *fakeAuthStore) FillUserDisplayNameIfEmpty(_ context.Context, userID uui
 	}
 	f.profile.Name = name
 	return true, nil
-}
-
-func (f *fakeAuthStore) getEmailPasswordIdentity(_ context.Context, _ string) (emailIdentityRow, error) {
-	return f.identity, f.identityErr
 }
 
 func (f *fakeAuthStore) InsertRefreshSession(_ context.Context, _ uuid.UUID, _ []byte, expiresAt time.Time) error {
@@ -158,88 +140,6 @@ func testAuthService(store authStore) *Service {
 		jwtSecret:  []byte("test-jwt-secret-at-least-32-chars"),
 		accessTTL:  15 * time.Minute,
 		refreshTTL: 30 * 24 * time.Hour,
-	}
-}
-
-func TestService_RegisterTrainer(t *testing.T) {
-	svc := testAuthService(&fakeAuthStore{})
-	issued, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123", "Trainer")
-	if err != nil {
-		t.Fatalf("RegisterTrainer() error = %v", err)
-	}
-	if issued.AccessToken == "" || issued.RefreshToken == "" {
-		t.Fatal("expected access and refresh tokens")
-	}
-	if issued.Email != "trainer@test.com" {
-		t.Errorf("email = %q", issued.Email)
-	}
-}
-
-func TestService_RegisterTrainer_weakPassword(t *testing.T) {
-	svc := testAuthService(&fakeAuthStore{})
-	_, err := svc.RegisterTrainer(context.Background(), "a@b.com", "short", "")
-	if err == nil {
-		t.Fatal("expected validation error")
-	}
-}
-
-func TestService_Login_success(t *testing.T) {
-	userID := uuid.New()
-	hash, err := HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	svc := testAuthService(&fakeAuthStore{
-		identity: emailIdentityRow{UserID: userID, PasswordHash: hash},
-	})
-	issued, err := svc.Login(context.Background(), "trainer@test.com", "password123")
-	if err != nil {
-		t.Fatalf("Login() error = %v", err)
-	}
-	if issued.UserID != userID {
-		t.Errorf("user id = %v, want %v", issued.UserID, userID)
-	}
-}
-
-func TestService_Login_invalidCredentials(t *testing.T) {
-	tests := []struct {
-		name    string
-		store   *fakeAuthStore
-		wantErr error
-	}{
-		{
-			name:    "not found",
-			store:   &fakeAuthStore{identityErr: pgx.ErrNoRows},
-			wantErr: ErrInvalidCredentials,
-		},
-		{
-			name:    "empty hash",
-			store:   &fakeAuthStore{identity: emailIdentityRow{UserID: uuid.New()}},
-			wantErr: ErrInvalidCredentials,
-		},
-		{
-			name: "wrong password",
-			store: &fakeAuthStore{
-				identity: emailIdentityRow{
-					UserID:       uuid.New(),
-					PasswordHash: mustHash(t, "password123"),
-				},
-			},
-			wantErr: ErrInvalidCredentials,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			svc := testAuthService(tt.store)
-			password := "wrong"
-			if tt.name == "wrong password" {
-				password = "other"
-			}
-			_, err := svc.Login(context.Background(), "trainer@test.com", password)
-			if !errors.Is(err, tt.wantErr) {
-				t.Errorf("Login() error = %v, want %v", err, tt.wantErr)
-			}
-		})
 	}
 }
 
@@ -355,47 +255,9 @@ func TestService_UpdateProfileName_profileError(t *testing.T) {
 	}
 }
 
-func TestService_RegisterTrainer_storeError(t *testing.T) {
-	svc := testAuthService(&fakeAuthStore{registerErr: errors.New("db down")})
-	_, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123", "")
-	if err == nil {
-		t.Fatal("expected error")
+func TestNormalizeEmail(t *testing.T) {
+	got := NormalizeEmail("  User@Example.COM ")
+	if got != "user@example.com" {
+		t.Errorf("NormalizeEmail = %q", got)
 	}
-}
-
-func TestService_RegisterTrainer_insertSessionError(t *testing.T) {
-	svc := testAuthService(&fakeAuthStore{insertSession: errors.New("db down")})
-	_, err := svc.RegisterTrainer(context.Background(), "trainer@test.com", "password123", "")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestService_Login_insertSessionError(t *testing.T) {
-	hash := mustHash(t, "password123")
-	svc := testAuthService(&fakeAuthStore{
-		identity:      emailIdentityRow{UserID: uuid.New(), PasswordHash: hash},
-		insertSession: errors.New("db down"),
-	})
-	_, err := svc.Login(context.Background(), "trainer@test.com", "password123")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestService_Login_identityLoadError(t *testing.T) {
-	svc := testAuthService(&fakeAuthStore{identityErr: errors.New("db down")})
-	_, err := svc.Login(context.Background(), "trainer@test.com", "password123")
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func mustHash(t *testing.T, password string) string {
-	t.Helper()
-	h, err := HashPassword(password)
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	return h
 }

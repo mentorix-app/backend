@@ -3,6 +3,7 @@ package auth
 import "errors"
 
 const (
+	// ProviderEmailPassword is a legacy value the database still allows; nothing creates it any more.
 	ProviderEmailPassword = "email_password"
 	ProviderTelegram      = "telegram"
 	ProviderGoogle        = "google"
@@ -21,10 +22,8 @@ const (
 )
 
 var (
-	ErrEmailTaken         = errors.New("email already registered")
-	ErrInvalidCredentials = errors.New("invalid email or password")
-	ErrInvalidRefresh     = errors.New("invalid or expired refresh token")
-	ErrInvalidIDToken     = errors.New("invalid id token")
+	ErrInvalidRefresh = errors.New("invalid or expired refresh token")
+	ErrInvalidIDToken = errors.New("invalid id token")
 	// ErrProviderNotConfigured means the sign-in provider has no client ids set, or,
 	// for account deletion, that the Apple revocation is not configured.
 	ErrProviderNotConfigured = errors.New("sign-in provider is not configured")

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Live API smoke: health, ready, optional auth + list endpoints.
+# Live API smoke over public checks only: health, readiness, a protected route
+# without a token, and Google sign-in with a junk token. It needs no credentials.
 #
 # Usage:
 #   ./scripts/smoke.sh
 #   SMOKE_BASE_URL=https://mentorix-api-stage.onrender.com ./scripts/smoke.sh
-#   SMOKE_EMAIL=… SMOKE_PASSWORD=… ./scripts/smoke.sh
 #
 # Env:
 #   SMOKE_BASE_URL   default http://localhost:8080 (no trailing slash)
-#   SMOKE_EMAIL / SMOKE_PASSWORD  optional; enables login + GET exercises/programs
-#   SMOKE_REQUIRE=1  fail if API is unreachable (default: skip when local down)
+#   SMOKE_REQUIRE=1  fail if API is unreachable or Google sign-in is not configured
+#                    (default: skip both when running locally)
 #   SMOKE_WAIT_SECONDS  poll /health up to N seconds (default 0 = once)
 #   SMOKE_EXPECT_COMMIT  git commit that /health must report; keep polling within
 #                        SMOKE_WAIT_SECONDS until it matches, fail on timeout (default: any)
@@ -82,48 +82,47 @@ assert d.get('status') in ('ready', 'not_ready', 'no_dependencies_configured')
 print('  GET /health/ready OK:', d['status'])
 "
 
-if [[ -z "${SMOKE_EMAIL:-}" || -z "${SMOKE_PASSWORD:-}" ]]; then
-  echo "  auth smoke skipped (set SMOKE_EMAIL and SMOKE_PASSWORD)"
-  exit 0
-fi
+# expect_error METHOD PATH STATUS CODE [JSON_BODY]: the request must answer STATUS with
+# error code CODE. Prints the status and code it got; returns 1 on a mismatch.
+expect_error() {
+  local method="$1" path="$2" want_status="$3" want_code="$4" body="${5:-}"
+  local out status code
+  local args=(-s --max-time 10 -o - -w '\n%{http_code}' -X "$method" "$BASE$path")
+  if [[ -n "$body" ]]; then
+    args+=(-H "Content-Type: application/json" --data-binary "$body")
+  fi
+  out="$(curl "${args[@]}" 2>/dev/null || true)"
+  status="${out##*$'\n'}"
+  # Only a plain snake_case code goes on: the value is echoed into the CI log.
+  code="$(printf '%s' "${out%$'\n'*}" | python3 -c "
+import sys, json, re
+try:
+    code = json.load(sys.stdin).get('code') or ''
+except (ValueError, AttributeError):
+    code = ''
+print(code if isinstance(code, str) and re.fullmatch(r'[a-z0-9_]{1,64}', code) else '')
+" 2>/dev/null || true)"
+  [[ "$status" =~ ^[0-9]{3}$ ]] || status="(none)"
+  last_status="$status"
+  last_code="$code"
+  [[ "$status" == "$want_status" && "$code" == "$want_code" ]]
+}
 
-# The credentials go from the environment into python and from there to curl's stdin,
-# so they are JSON-escaped and never appear on a command line.
-TOKEN=$(
-  python3 -c "
-import json, os
-print(json.dumps({'email': os.environ['SMOKE_EMAIL'], 'password': os.environ['SMOKE_PASSWORD']}))
-" \
-    | curl -sf --max-time 10 -X POST "$BASE/auth/login" \
-      -H "Content-Type: application/json" \
-      --data-binary @- \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true
-)
-
-if [[ -z "$TOKEN" ]]; then
-  echo "FAIL: POST /auth/login failed — check SMOKE_EMAIL/SMOKE_PASSWORD" >&2
+if expect_error GET /auth/me 401 missing_authorization; then
+  echo "  GET /auth/me without a token OK: 401 missing_authorization"
+else
+  echo "FAIL: GET /auth/me without a token answered $last_status ${last_code:-(no code)}, want 401 missing_authorization" >&2
   exit 1
 fi
 
-echo "  POST /auth/login OK"
-curl -sf --max-time 10 -H "Authorization: Bearer $TOKEN" "$BASE/auth/me" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-print('  GET /auth/me OK: roles=', d.get('roles'))
-"
-curl -sf --max-time 10 -H "Authorization: Bearer $TOKEN" \
-  "$BASE/exercises?page=1&limit=20&sort_by=name&sort_order=asc" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-assert 'items' in d and 'pagination' in d
-print('  GET /exercises OK: total=', d['pagination']['total'])
-"
-curl -sf --max-time 10 -H "Authorization: Bearer $TOKEN" \
-  "$BASE/programs?page=1&limit=20&sort_by=created_at&sort_order=desc" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-assert 'items' in d and 'pagination' in d
-print('  GET /programs OK: total=', d['pagination']['total'])
-"
+# A junk token never reaches Google: the verifier rejects it before any network call.
+if expect_error POST /auth/google 401 invalid_id_token '{"id_token":"smoke-not-a-jwt"}'; then
+  echo "  POST /auth/google with a junk token OK: 401 invalid_id_token"
+elif [[ "$last_status" == "503" && "$last_code" == "provider_not_configured" && "$require" != "1" ]]; then
+  echo "  SKIP: POST /auth/google check, Google sign-in is not configured on $BASE"
+else
+  echo "FAIL: POST /auth/google with a junk token answered $last_status ${last_code:-(no code)}, want 401 invalid_id_token" >&2
+  exit 1
+fi
 
 echo "Smoke OK"

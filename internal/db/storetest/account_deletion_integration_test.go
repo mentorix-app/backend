@@ -363,10 +363,7 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 		make    func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase) uuid.UUID
 	}{
 		{"admin", auth.ErrAccountDeletionUnavailable, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
-			id, err := store.RegisterTrainerEmailPassword(context.Background(), "bare-admin@test.com", "hash", "Admin")
-			if err != nil {
-				t.Fatalf("register admin: %v", err)
-			}
+			id := newTrainer(t, pool, "bare-admin@test.com", "Admin")
 			promoteToAdminOnly(t, pool, id)
 			return id
 		}},
@@ -387,19 +384,13 @@ func TestAccountDeletion_refusalsChangeNothing(t *testing.T) {
 		{"client with a Telegram and an Apple sign-in, the Telegram id", auth.ErrAppleSignInNotRevoked, "tg-with-apple", withAppleSignIn},
 		// A trainer without data is deletable, so the Apple rule applies to it like to a client.
 		{"trainer with an Apple sign-in, no revoked subject", auth.ErrAppleSignInNotRevoked, "", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
-			id, err := store.RegisterTrainerEmailPassword(context.Background(), "apple-trainer@test.com", "hash", "Coach")
-			if err != nil {
-				t.Fatalf("register trainer: %v", err)
-			}
+			id := newTrainer(t, pool, "apple-trainer@test.com", "Coach")
 			addIdentity(t, pool, id, auth.ProviderApple, "a-trainer")
 			return id
 		}},
 		// The role and data rules come before the Apple rule even when the subject matches.
 		{"admin with an Apple sign-in and its subject", auth.ErrAccountDeletionUnavailable, "a-admin", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, _ deletionBase) uuid.UUID {
-			id, err := store.RegisterTrainerEmailPassword(context.Background(), "apple-admin@test.com", "hash", "Admin")
-			if err != nil {
-				t.Fatalf("register admin: %v", err)
-			}
+			id := newTrainer(t, pool, "apple-admin@test.com", "Admin")
 			promoteToAdminOnly(t, pool, id)
 			addIdentity(t, pool, id, auth.ProviderApple, "a-admin")
 			return id

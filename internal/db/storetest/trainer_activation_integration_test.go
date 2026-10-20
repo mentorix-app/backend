@@ -159,19 +159,16 @@ func TestTrainerActivation_anotherVersionOverwritesVersionAndTime(t *testing.T) 
 	assertTableDeltas(t, counts, tableCounts(t, pool), nil)
 }
 
-// A trainer from email registration has a trainers row without terms; activating records them
+// A trainer-only account has a trainers row without terms; activating records them
 // and does not add the client role.
-func TestTrainerActivation_registeredTrainerRecordsTerms(t *testing.T) {
+func TestTrainerActivation_trainerOnlyRecordsTerms(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
-	trainer, err := store.RegisterTrainerEmailPassword(ctx, "registered-activate@test.com", "hash", "Coach")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainer := newTrainer(t, pool, "trainer-only-activate@test.com", "Coach")
 	before := trainerTermsOf(t, pool, trainer)
 	if !before.found || before.version != nil || before.acceptedAt != nil {
-		t.Fatalf("registered trainer terms = %+v, want a row without terms", before)
+		t.Fatalf("trainer-only terms = %+v, want a row without terms", before)
 	}
 	counts := tableCounts(t, pool)
 
@@ -208,14 +205,11 @@ func TestTrainerActivation_adminIsRefusedAndNothingChanges(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
-	admin, err := store.RegisterTrainerEmailPassword(ctx, "activate-admin@test.com", "hash", "Admin")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	admin := newTrainer(t, pool, "activate-admin@test.com", "Admin")
 	promoteToAdminOnly(t, pool, admin)
 	counts := tableCounts(t, pool)
 
-	err = store.ActivateTrainer(ctx, admin, "2026-10-01")
+	err := store.ActivateTrainer(ctx, admin, "2026-10-01")
 
 	if !errors.Is(err, auth.ErrAdminCannotActivate) {
 		t.Fatalf("error = %v, want ErrAdminCannotActivate", err)
@@ -269,10 +263,7 @@ func TestTrainerActivation_locksTheTrainerRowBeforeTheUserRow(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
-	trainer, err := store.RegisterTrainerEmailPassword(ctx, "activate-lock@test.com", "hash", "Coach")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainer := newTrainer(t, pool, "activate-lock@test.com", "Coach")
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatalf("begin: %v", err)
@@ -360,11 +351,7 @@ func TestTrainerActivation_mountedRoute(t *testing.T) {
 
 func TestTrainerActivation_mountedRouteRefusals(t *testing.T) {
 	m := newMountedEnv(t)
-	ctx := context.Background()
-	admin, err := m.store.RegisterTrainerEmailPassword(ctx, "mount-activate-admin@test.com", "hash", "Admin")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	admin := newTrainer(t, m.pool, "mount-activate-admin@test.com", "Admin")
 	promoteToAdminOnly(t, m.pool, admin)
 	client := newClientWithIdentity(t, m.store, auth.ProviderGoogle, "g-mount-activate-bad", "")
 	counts := tableCounts(t, m.pool)

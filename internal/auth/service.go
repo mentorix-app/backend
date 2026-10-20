@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -13,13 +12,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type authStore interface {
-	RegisterTrainerEmailPassword(ctx context.Context, email, passwordHash, displayName string) (uuid.UUID, error)
-	getEmailPasswordIdentity(ctx context.Context, email string) (emailIdentityRow, error)
 	FindOrCreateClientByIdentity(ctx context.Context, id ClientIdentity) (userID uuid.UUID, created bool, err error)
 	FillUserDisplayNameIfEmpty(ctx context.Context, userID uuid.UUID, displayName string) (bool, error)
 	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
@@ -125,10 +121,12 @@ func normalizeDisplayName(name string) string {
 	return strings.TrimSpace(name)
 }
 
-const (
-	maxDisplayNameLen = 100
-	maxEmailLen       = 254
-)
+// NormalizeEmail trims and lowercases an email address for storage and lookup.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+const maxDisplayNameLen = 100
 
 // ValidateDisplayName rejects names longer than maxDisplayNameLen runes after trimming.
 func ValidateDisplayName(name string) error {
@@ -136,80 +134,6 @@ func ValidateDisplayName(name string) error {
 		return fmt.Errorf("name must be at most %d characters", maxDisplayNameLen)
 	}
 	return nil
-}
-
-func (s *Service) RegisterTrainer(ctx context.Context, email, password, name string) (IssuedAuth, error) {
-	var out IssuedAuth
-	if err := ValidatePassword(password); err != nil {
-		return out, err
-	}
-	hash, err := HashPassword(password)
-	if err != nil {
-		return out, fmt.Errorf("hash password: %w", err)
-	}
-	userID, err := s.store.RegisterTrainerEmailPassword(ctx, email, hash, normalizeDisplayName(name))
-	if err != nil {
-		return out, err
-	}
-	plain, h, err := newRefreshToken()
-	if err != nil {
-		return out, fmt.Errorf("refresh token: %w", err)
-	}
-	expiresAt := time.Now().UTC().Add(s.refreshTTL)
-	if err := s.store.InsertRefreshSession(ctx, userID, h, expiresAt); err != nil {
-		return out, fmt.Errorf("session: %w", err)
-	}
-	token, exp, err := signAccessToken(userID, s.jwtSecret, s.accessTTL)
-	if err != nil {
-		return out, fmt.Errorf("sign token: %w", err)
-	}
-	out.AccessToken = token
-	out.AccessExpires = exp
-	out.RefreshExpires = expiresAt
-	out.RefreshToken = plain
-	out.UserID = userID
-	out.Email = email
-	return out, nil
-}
-
-func (s *Service) Login(ctx context.Context, email, password string) (IssuedAuth, error) {
-	var out IssuedAuth
-	row, err := s.store.getEmailPasswordIdentity(ctx, email)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return out, ErrInvalidCredentials
-		}
-		return out, fmt.Errorf("load identity: %w", err)
-	}
-	if row.PasswordHash == "" {
-		return out, ErrInvalidCredentials
-	}
-	ok, err := PasswordMatches(row.PasswordHash, password)
-	if err != nil {
-		return out, fmt.Errorf("verify password: %w", err)
-	}
-	if !ok {
-		return out, ErrInvalidCredentials
-	}
-	plain, h, err := newRefreshToken()
-	if err != nil {
-		return out, fmt.Errorf("refresh token: %w", err)
-	}
-	expiresAt := time.Now().UTC().Add(s.refreshTTL)
-	if err := s.store.InsertRefreshSession(ctx, row.UserID, h, expiresAt); err != nil {
-		return out, fmt.Errorf("session: %w", err)
-	}
-	token, exp, err := signAccessToken(row.UserID, s.jwtSecret, s.accessTTL)
-	if err != nil {
-		return out, fmt.Errorf("sign token: %w", err)
-	}
-	out.AccessToken = token
-	out.AccessExpires = exp
-	out.RefreshExpires = expiresAt
-	out.RefreshToken = plain
-	out.UserID = row.UserID
-	out.Email = email
-	return out, nil
 }
 
 // SignInWithGoogle verifies a Google ID token and signs in the matching client,

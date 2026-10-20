@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/workoutcompletion"
@@ -72,21 +71,13 @@ func TestMigration_BlockKeyColumnsExist(t *testing.T) {
 	}
 }
 
-// seedTrainerAndExercise registers a trainer and one catalog exercise.
+// seedTrainerAndExercise creates a trainer and one catalog exercise.
 // Returns the trainer's user id and the exercise id.
 func seedTrainerAndExercise(t *testing.T, pool *pgxpool.Pool, emailPrefix string) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
 
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(
-		ctx, emailPrefix+"@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	userID := newTrainer(t, pool, emailPrefix+"@test.com", "")
 
 	ex, err := exercise.NewStore(pool).Create(ctx, userID, nil, exercise.UpsertInput{
 		Name:        "Bench Press",
@@ -147,15 +138,7 @@ func TestProgramDetail_BlockClientRules_ScopedByBlockKey(t *testing.T) {
 
 	trainerID, exerciseID := seedTrainerAndExercise(t, pool, "block-rules-trainer")
 
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	clientID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(
-		ctx, "block-rules-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	clientID := newTrainer(t, pool, "block-rules-client@test.com", "")
 
 	detail, err := store.CreateDraft(ctx, trainerID)
 	if err != nil {
@@ -282,18 +265,10 @@ func seedAssignedClient(t *testing.T, pool *pgxpool.Pool, trainerUserID uuid.UUI
 	t.Helper()
 	ctx := context.Background()
 
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	clientUserID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(
-		ctx, emailPrefix+"@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client user: %v", err)
-	}
+	clientUserID := newTrainer(t, pool, emailPrefix+"@test.com", "")
 
 	var trainerID uuid.UUID
-	err = pool.QueryRow(ctx,
+	err := pool.QueryRow(ctx,
 		`SELECT id FROM mentorix.trainers WHERE user_id = $1`, trainerUserID).Scan(&trainerID)
 	if err != nil {
 		t.Fatalf("select trainer id: %v", err)

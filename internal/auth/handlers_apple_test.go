@@ -103,7 +103,7 @@ func TestApple_rateLimited(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	h := testAuthHandlers(&fakeAuthService{})
-	h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	h.limiter = NewRateLimiter(rdb, 1, time.Minute)
 	e := echo.New()
 	e.POST("/auth/apple", h.Apple)
 

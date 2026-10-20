@@ -115,29 +115,6 @@ func (q *Queries) FillUserPrimaryEmailIfEmpty(ctx context.Context, arg FillUserP
 	return err
 }
 
-const getEmailPasswordIdentity = `-- name: GetEmailPasswordIdentity :one
-SELECT user_id, COALESCE(password_hash, '') AS password_hash
-FROM mentorix.auth_identities
-WHERE provider = $1 AND subject = $2
-`
-
-type GetEmailPasswordIdentityParams struct {
-	Provider string `json:"provider"`
-	Subject  string `json:"subject"`
-}
-
-type GetEmailPasswordIdentityRow struct {
-	UserID       pgtype.UUID `json:"user_id"`
-	PasswordHash string      `json:"password_hash"`
-}
-
-func (q *Queries) GetEmailPasswordIdentity(ctx context.Context, arg GetEmailPasswordIdentityParams) (GetEmailPasswordIdentityRow, error) {
-	row := q.db.QueryRow(ctx, getEmailPasswordIdentity, arg.Provider, arg.Subject)
-	var i GetEmailPasswordIdentityRow
-	err := row.Scan(&i.UserID, &i.PasswordHash)
-	return i, err
-}
-
 const getRefreshSessionUserForUpdate = `-- name: GetRefreshSessionUserForUpdate :one
 SELECT user_id
 FROM mentorix.auth_refresh_sessions
@@ -203,28 +180,6 @@ func (q *Queries) GrantUserRole(ctx context.Context, arg GrantUserRoleParams) er
 	return err
 }
 
-const insertAuthIdentity = `-- name: InsertAuthIdentity :exec
-INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
-VALUES ($1, $2, $3, $4)
-`
-
-type InsertAuthIdentityParams struct {
-	UserID       pgtype.UUID `json:"user_id"`
-	Provider     string      `json:"provider"`
-	Subject      string      `json:"subject"`
-	PasswordHash *string     `json:"password_hash"`
-}
-
-func (q *Queries) InsertAuthIdentity(ctx context.Context, arg InsertAuthIdentityParams) error {
-	_, err := q.db.Exec(ctx, insertAuthIdentity,
-		arg.UserID,
-		arg.Provider,
-		arg.Subject,
-		arg.PasswordHash,
-	)
-	return err
-}
-
 const insertAuthIdentityIfAbsent = `-- name: InsertAuthIdentityIfAbsent :execrows
 INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
 VALUES ($1, $2, $3, $4)
@@ -264,16 +219,6 @@ type InsertRefreshSessionParams struct {
 
 func (q *Queries) InsertRefreshSession(ctx context.Context, arg InsertRefreshSessionParams) error {
 	_, err := q.db.Exec(ctx, insertRefreshSession, arg.UserID, arg.TokenHash, arg.ExpiresAt)
-	return err
-}
-
-const insertTrainer = `-- name: InsertTrainer :exec
-INSERT INTO mentorix.trainers (user_id)
-VALUES ($1)
-`
-
-func (q *Queries) InsertTrainer(ctx context.Context, userID pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, insertTrainer, userID)
 	return err
 }
 

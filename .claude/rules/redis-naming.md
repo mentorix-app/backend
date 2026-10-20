@@ -15,7 +15,7 @@ mentorix:{domain}:{purpose}:{identifier}
 | `{purpose}` | what is stored | `active_trainer`, `login` |
 | `{identifier}` | dynamic suffix | IP, `telegram_user_id` |
 
-Rate limits add an action segment: `mentorix:rl:{action}:ip:{ip}` where `{action}` ∈ `login`, `register`, `refresh`.
+Rate limits add an action segment: `mentorix:rl:{action}:ip:{ip}` where `{action}` ∈ `login`, `refresh`. `login` counts every sign-in: Google, Apple and the Telegram link.
 
 ## Values
 
@@ -43,7 +43,6 @@ Prefer plain string keys over hashes unless one identity needs multiple fields.
 | Key | Code | Value |
 | --- | ---- | ----- |
 | `mentorix:rl:login:ip:{ip}` | `internal/auth/rate_limit.go` | INCR + EXPIRE |
-| `mentorix:rl:register:ip:{ip}` | `internal/auth/rate_limit.go` | INCR + EXPIRE |
 | `mentorix:rl:refresh:ip:{ip}` | `internal/auth/rate_limit.go` | INCR + EXPIRE |
 | `mentorix:telegram:active_trainer:{telegram_user_id}` | `internal/trainerclient/active_trainer.go` | `trainers.id` UUID |
 | `mentorix:telegram:avatar_checked:{telegram_user_id}` | `internal/trainerclient/avatar_check.go` | `1`, `SET NX` with TTL 24h |

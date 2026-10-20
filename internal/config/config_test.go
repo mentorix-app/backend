@@ -94,8 +94,6 @@ func TestLoad_rateLimits(t *testing.T) {
 	setMinimalEnv(t)
 	t.Setenv("AUTH_LOGIN_RATE_MAX", "5")
 	t.Setenv("AUTH_LOGIN_RATE_WINDOW_SEC", "60")
-	t.Setenv("AUTH_REGISTER_RATE_MAX", "3")
-	t.Setenv("AUTH_REGISTER_RATE_WINDOW_SEC", "120")
 
 	cfg, err := Load()
 	if err != nil {
@@ -103,9 +101,6 @@ func TestLoad_rateLimits(t *testing.T) {
 	}
 	if cfg.AuthLoginRateMax != 5 || cfg.AuthLoginRateWindow != 60*time.Second {
 		t.Errorf("login rate: max=%d window=%v", cfg.AuthLoginRateMax, cfg.AuthLoginRateWindow)
-	}
-	if cfg.AuthRegisterRateMax != 3 || cfg.AuthRegisterRateWin != 120*time.Second {
-		t.Errorf("register rate: max=%d window=%v", cfg.AuthRegisterRateMax, cfg.AuthRegisterRateWin)
 	}
 }
 

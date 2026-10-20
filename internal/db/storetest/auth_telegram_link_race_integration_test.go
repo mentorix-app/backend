@@ -29,19 +29,15 @@ func raceContext(t *testing.T) context.Context {
 
 // newMergePair creates a Telegram owner and an app account whose ids sort in the wanted order,
 // the order in which LinkTelegram locks the two rows. The app account is an empty Google client,
-// or a registered trainer when appIsTrainer is set. Each attempt makes a fresh pair, so a miss
+// or a trainer-only account when appIsTrainer is set. Each attempt makes a fresh pair, so a miss
 // has a probability of one half. It returns the Telegram subject of the owner.
-func newMergePair(t *testing.T, store *auth.Store, appBelowOwner, appIsTrainer bool) (owner, app uuid.UUID, telegramSubject string) {
+func newMergePair(t *testing.T, pool *pgxpool.Pool, store *auth.Store, appBelowOwner, appIsTrainer bool) (owner, app uuid.UUID, telegramSubject string) {
 	t.Helper()
 	for i := range 64 {
 		telegramSubject = fmt.Sprintf("tg-race-%d", i)
 		owner = newClientWithIdentity(t, store, auth.ProviderTelegram, telegramSubject, "")
 		if appIsTrainer {
-			var err error
-			app, err = store.RegisterTrainerEmailPassword(context.Background(), fmt.Sprintf("app-trainer-%d@test.com", i), "hash", "Coach")
-			if err != nil {
-				t.Fatalf("register trainer: %v", err)
-			}
+			app = newTrainer(t, pool, fmt.Sprintf("app-trainer-%d@test.com", i), "Coach")
 		} else {
 			app = newClientWithIdentity(t, store, auth.ProviderGoogle, fmt.Sprintf("g-app-%d", i), "app@test.com")
 		}
@@ -116,7 +112,7 @@ func TestAuthStore_LinkTelegram_trainerActivationDuringMergeIsNotLost(t *testing
 			pool := NewPool(t)
 			ctx := raceContext(t)
 			store := auth.NewStore(pool)
-			owner, app, telegramSubject := newMergePair(t, store, tc.appBelowOwner, false)
+			owner, app, telegramSubject := newMergePair(t, pool, store, tc.appBelowOwner, false)
 			tx := lockOwnerRow(t, ctx, pool, owner)
 
 			linkDone := make(chan error, 1)
@@ -195,7 +191,7 @@ func TestAuthStore_LinkTelegram_telegramAccountDeletedDuringMergeIsConflict(t *t
 			pool := NewPool(t)
 			ctx := raceContext(t)
 			store := auth.NewStore(pool)
-			owner, app, telegramSubject := newMergePair(t, store, tc.appBelowOwner, false)
+			owner, app, telegramSubject := newMergePair(t, pool, store, tc.appBelowOwner, false)
 			tx := lockOwnerRow(t, ctx, pool, owner)
 
 			linkDone := make(chan error, 1)
@@ -236,7 +232,7 @@ func TestAuthStore_LinkTelegram_nonEmptyAppAccountDoesNotDeadlockWithItsWriters(
 	ctx := raceContext(t)
 	store := auth.NewStore(pool)
 	// The owner id is lower, so the merge would take the owner row first.
-	owner, app, telegramSubject := newMergePair(t, store, false, true)
+	owner, app, telegramSubject := newMergePair(t, pool, store, false, true)
 
 	writer, err := pool.Begin(ctx)
 	if err != nil {

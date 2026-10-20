@@ -31,7 +31,6 @@ func newRateLimitError(pttl int64, window time.Duration) *RateLimitError {
 const (
 	rateLimitKeyPrefix = "mentorix:rl:"
 	rateLimitLogin     = "login:ip"
-	rateLimitRegister  = "register:ip"
 	rateLimitRefresh   = "refresh:ip"
 	rateLimitUnknownIP = "unknown"
 )
@@ -48,25 +47,21 @@ return {n, redis.call('PTTL', KEYS[1])}
 `)
 
 type RateLimiter struct {
-	rdb         *redis.Client
-	log         *slog.Logger
-	loginMax    int
-	loginWin    time.Duration
-	registerMax int
-	registerWin time.Duration
+	rdb      *redis.Client
+	log      *slog.Logger
+	loginMax int
+	loginWin time.Duration
 }
 
-func NewRateLimiter(rdb *redis.Client, loginMax int, loginWin time.Duration, registerMax int, registerWin time.Duration) *RateLimiter {
+func NewRateLimiter(rdb *redis.Client, loginMax int, loginWin time.Duration) *RateLimiter {
 	if rdb == nil {
 		return nil
 	}
 	return &RateLimiter{
-		rdb:         rdb,
-		log:         slog.Default(),
-		loginMax:    loginMax,
-		loginWin:    loginWin,
-		registerMax: registerMax,
-		registerWin: registerWin,
+		rdb:      rdb,
+		log:      slog.Default(),
+		loginMax: loginMax,
+		loginWin: loginWin,
 	}
 }
 
@@ -83,13 +78,6 @@ func (l *RateLimiter) AllowLogin(ctx context.Context, ip string) error {
 		return nil
 	}
 	return l.allow(ctx, rateLimitLogin, ip, l.loginMax, l.loginWin)
-}
-
-func (l *RateLimiter) AllowRegister(ctx context.Context, ip string) error {
-	if l == nil || l.registerMax <= 0 {
-		return nil
-	}
-	return l.allow(ctx, rateLimitRegister, ip, l.registerMax, l.registerWin)
 }
 
 func (l *RateLimiter) AllowRefresh(ctx context.Context, ip string) error {

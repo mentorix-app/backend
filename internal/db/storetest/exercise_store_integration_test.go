@@ -15,23 +15,14 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/health"
 )
 
-func registerTrainerWithID(t *testing.T, pool *pgxpool.Pool, email, name string) (uuid.UUID, uuid.UUID) {
+func newTrainerWithID(t *testing.T, pool *pgxpool.Pool, email, name string) (uuid.UUID, uuid.UUID) {
 	t.Helper()
 	ctx := context.Background()
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, email, pwHash, name)
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	userID := newTrainer(t, pool, email, name)
 	trainerID, err := exercise.NewStore(pool).TrainerIDForUser(ctx, userID)
 	if err != nil {
 		t.Fatalf("TrainerIDForUser: %v", err)
@@ -42,7 +33,7 @@ func registerTrainerWithID(t *testing.T, pool *pgxpool.Pool, email, name string)
 func TestExerciseStore_CreateAndList(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
-	userID, trainerID := registerTrainerWithID(t, pool, "exercise-store@test.com", "Exercise Admin")
+	userID, trainerID := newTrainerWithID(t, pool, "exercise-store@test.com", "Exercise Admin")
 
 	store := exercise.NewStore(pool)
 	created, err := store.Create(ctx, userID, &trainerID, exercise.UpsertInput{
@@ -91,7 +82,7 @@ func TestExerciseStore_CreateAndList(t *testing.T) {
 func TestExerciseStore_GetUpdateDelete(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
-	userID, trainerID := registerTrainerWithID(t, pool, "exercise-crud@test.com", "")
+	userID, trainerID := newTrainerWithID(t, pool, "exercise-crud@test.com", "")
 
 	store := exercise.NewStore(pool)
 	created, err := store.Create(ctx, userID, &trainerID, exercise.UpsertInput{
@@ -169,7 +160,7 @@ func TestExerciseStore_UpdateNotFound(t *testing.T) {
 func TestExerciseStore_ListWithFilters(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
-	userID, trainerID := registerTrainerWithID(t, pool, "exercise-filter@test.com", "")
+	userID, trainerID := newTrainerWithID(t, pool, "exercise-filter@test.com", "")
 
 	store := exercise.NewStore(pool)
 	equipment := exercise.EquipmentBarbell
@@ -202,19 +193,8 @@ func TestExerciseService_adminMutatesGlobalExercise(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	ownerID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-owner@test.com", pwHash, "Owner")
-	if err != nil {
-		t.Fatalf("register owner: %v", err)
-	}
-	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "exercise-admin@test.com", pwHash, "Admin")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	ownerID := newTrainer(t, pool, "exercise-owner@test.com", "Owner")
+	adminID := newTrainer(t, pool, "exercise-admin@test.com", "Admin")
 	promoteToAdminOnly(t, pool, ownerID)
 	promoteToAdminOnly(t, pool, adminID)
 
