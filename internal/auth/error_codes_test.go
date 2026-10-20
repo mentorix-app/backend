@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -226,6 +227,19 @@ func TestErrorCodes_tokenWithoutAUserIDIsInvalid(t *testing.T) {
 	assertCodedError(t, rec, 401, "invalid_token", httpx.MsgInvalidToken)
 }
 
+// assertRetryAfter checks Retry-After is whole seconds, at least 1 and at most the window.
+func assertRetryAfter(t *testing.T, rec *httptest.ResponseRecorder, window time.Duration) {
+	t.Helper()
+	raw := rec.Header().Get(echo.HeaderRetryAfter)
+	secs, err := strconv.Atoi(raw)
+	if err != nil {
+		t.Fatalf("Retry-After = %q, want whole seconds", raw)
+	}
+	if secs < 1 || time.Duration(secs)*time.Second > window {
+		t.Errorf("Retry-After = %d, want within [1, %d]", secs, int(window.Seconds()))
+	}
+}
+
 func TestErrorCodes_rateLimitedEveryRoute(t *testing.T) {
 	routes := []codedRequest{
 		{method: "POST", path: "/auth/register", body: registerBody},
@@ -246,6 +260,7 @@ func TestErrorCodes_rateLimitedEveryRoute(t *testing.T) {
 			rec := r.serve(t, e)
 
 			assertCodedError(t, rec, 429, "rate_limited", "too many requests")
+			assertRetryAfter(t, rec, time.Minute)
 		})
 	}
 }

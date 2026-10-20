@@ -70,6 +70,9 @@ func (f *fakeAuthService) LinkTelegram(_ context.Context, appUserID uuid.UUID, c
 	if out.AccessExpires.IsZero() {
 		out.AccessExpires = time.Now().UTC().Add(time.Hour)
 	}
+	if out.RefreshExpires.IsZero() {
+		out.RefreshExpires = time.Now().UTC().Add(24 * time.Hour)
+	}
 	return out, nil
 }
 
@@ -92,6 +95,9 @@ func (f *fakeAuthService) RegisterTrainer(_ context.Context, email, _, _ string)
 	}
 	if out.AccessExpires.IsZero() {
 		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	if out.RefreshExpires.IsZero() {
+		out.RefreshExpires = time.Now().UTC().Add(24 * time.Hour)
 	}
 	return out, nil
 }
@@ -116,6 +122,9 @@ func (f *fakeAuthService) Login(_ context.Context, email, _ string) (IssuedAuth,
 	if out.AccessExpires.IsZero() {
 		out.AccessExpires = time.Now().UTC().Add(time.Hour)
 	}
+	if out.RefreshExpires.IsZero() {
+		out.RefreshExpires = time.Now().UTC().Add(24 * time.Hour)
+	}
 	return out, nil
 }
 
@@ -136,6 +145,9 @@ func (f *fakeAuthService) SignInWithGoogle(_ context.Context, rawIDToken string)
 	}
 	if out.AccessExpires.IsZero() {
 		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	if out.RefreshExpires.IsZero() {
+		out.RefreshExpires = time.Now().UTC().Add(24 * time.Hour)
 	}
 	return out, nil
 }
@@ -158,6 +170,9 @@ func (f *fakeAuthService) SignInWithApple(_ context.Context, rawIDToken, name st
 	if out.AccessExpires.IsZero() {
 		out.AccessExpires = time.Now().UTC().Add(time.Hour)
 	}
+	if out.RefreshExpires.IsZero() {
+		out.RefreshExpires = time.Now().UTC().Add(24 * time.Hour)
+	}
 	return out, nil
 }
 
@@ -178,6 +193,9 @@ func (f *fakeAuthService) Refresh(_ context.Context, plain string) (IssuedAuth, 
 	}
 	if out.AccessExpires.IsZero() {
 		out.AccessExpires = time.Now().UTC().Add(time.Hour)
+	}
+	if out.RefreshExpires.IsZero() {
+		out.RefreshExpires = time.Now().UTC().Add(24 * time.Hour)
 	}
 	return out, nil
 }

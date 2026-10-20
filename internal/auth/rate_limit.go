@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -10,6 +11,22 @@ import (
 )
 
 var ErrRateLimited = errors.New("too many requests")
+
+// RateLimitError is returned when a limit is exceeded. RetryAfter is the time
+// until the window resets. It matches ErrRateLimited under errors.Is.
+type RateLimitError struct{ RetryAfter time.Duration }
+
+func (e *RateLimitError) Error() string { return ErrRateLimited.Error() }
+
+func (e *RateLimitError) Is(target error) bool { return target == ErrRateLimited }
+
+// newRateLimitError falls back to the whole window when Redis reports no TTL.
+func newRateLimitError(pttl int64, window time.Duration) *RateLimitError {
+	if pttl <= 0 {
+		return &RateLimitError{RetryAfter: window}
+	}
+	return &RateLimitError{RetryAfter: time.Duration(pttl) * time.Millisecond}
+}
 
 const (
 	rateLimitKeyPrefix = "mentorix:rl:"
@@ -20,13 +37,14 @@ const (
 )
 
 // incrWithTTL increments the counter and sets the window TTL on the first hit
-// or when the key has none, in one atomic step.
+// or when the key has none, in one atomic step. It returns the counter and the
+// remaining TTL in milliseconds.
 var incrWithTTL = redis.NewScript(`
 local n = redis.call('INCR', KEYS[1])
 if n == 1 or redis.call('PTTL', KEYS[1]) < 0 then
   redis.call('PEXPIRE', KEYS[1], ARGV[1])
 end
-return n
+return {n, redis.call('PTTL', KEYS[1])}
 `)
 
 type RateLimiter struct {
@@ -86,14 +104,17 @@ func (l *RateLimiter) allow(ctx context.Context, prefix, key string, max int, wi
 		key = rateLimitUnknownIP
 	}
 	rkey := rateLimitKeyPrefix + prefix + ":" + key
-	n, err := incrWithTTL.Run(ctx, l.rdb, []string{rkey}, window.Milliseconds()).Int()
+	reply, err := incrWithTTL.Run(ctx, l.rdb, []string{rkey}, window.Milliseconds()).Int64Slice()
+	if err == nil && len(reply) != 2 {
+		err = fmt.Errorf("unexpected script reply of %d values", len(reply))
+	}
 	if err != nil {
 		// Fail open: a Redis outage must not take sign-in down.
 		l.log.Warn("rate limiter unavailable, allowing request", "limit", prefix, "error", err)
 		return nil
 	}
-	if n > max {
-		return ErrRateLimited
+	if reply[0] > int64(max) {
+		return newRateLimitError(reply[1], window)
 	}
 	return nil
 }

@@ -142,17 +142,35 @@ func (h *Handlers) writeAuthBodyJSON(c echo.Context, status int, issued IssuedAu
 
 func tokenResponse(issued IssuedAuth) TokenResponse {
 	return TokenResponse{
-		AccessToken: issued.AccessToken,
-		TokenType:   TokenTypeBearer,
-		ExpiresAt:   issued.AccessExpires.UTC(),
-		UserID:      issued.UserID.String(),
-		Email:       issued.Email,
+		AccessToken:      issued.AccessToken,
+		TokenType:        TokenTypeBearer,
+		ExpiresAt:        issued.AccessExpires.UTC(),
+		RefreshExpiresAt: issued.RefreshExpires.UTC(),
+		UserID:           issued.UserID.String(),
+		Email:            issued.Email,
 	}
+}
+
+// rateLimited answers 429 with Retry-After set from the limiter's error.
+func rateLimited(c echo.Context, err error) error {
+	var rl *RateLimitError
+	var wait time.Duration
+	if errors.As(err, &rl) {
+		wait = rl.RetryAfter
+	}
+	c.Response().Header().Set(echo.HeaderRetryAfter, retryAfterSeconds(wait))
+	return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
+}
+
+// retryAfterSeconds rounds up to whole seconds and never answers 0.
+func retryAfterSeconds(d time.Duration) string {
+	secs := int64((d + time.Second - 1) / time.Second)
+	return strconv.FormatInt(max(secs, 1), 10)
 }
 
 func (h *Handlers) Register(c echo.Context) error {
 	if err := h.limiter.AllowRegister(c.Request().Context(), c.RealIP()); err != nil {
-		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
+		return rateLimited(c, err)
 	}
 	var body RegisterRequest
 	if err := c.Bind(&body); err != nil {
@@ -184,7 +202,7 @@ func (h *Handlers) Register(c echo.Context) error {
 
 func (h *Handlers) Login(c echo.Context) error {
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
+		return rateLimited(c, err)
 	}
 	var body AuthCredentials
 	if err := c.Bind(&body); err != nil {
@@ -207,7 +225,7 @@ func (h *Handlers) Login(c echo.Context) error {
 
 func (h *Handlers) Google(c echo.Context) error {
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
+		return rateLimited(c, err)
 	}
 	var body IDTokenRequest
 	if err := c.Bind(&body); err != nil {
@@ -231,7 +249,7 @@ func (h *Handlers) Google(c echo.Context) error {
 
 func (h *Handlers) Apple(c echo.Context) error {
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
+		return rateLimited(c, err)
 	}
 	var body AppleSignInRequest
 	if err := c.Bind(&body); err != nil {
@@ -295,7 +313,7 @@ func (h *Handlers) TelegramLink(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, httpx.MsgInternal)
 	}
 	if err := h.limiter.AllowLogin(c.Request().Context(), c.RealIP()); err != nil {
-		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
+		return rateLimited(c, err)
 	}
 	var body TelegramLinkRequest
 	if err := c.Bind(&body); err != nil {
@@ -322,7 +340,7 @@ func (h *Handlers) TelegramLink(c echo.Context) error {
 
 func (h *Handlers) Refresh(c echo.Context) error {
 	if err := h.limiter.AllowRefresh(c.Request().Context(), c.RealIP()); err != nil {
-		return httpx.NewError(http.StatusTooManyRequests, httpx.CodeRateLimited, ErrRateLimited.Error())
+		return rateLimited(c, err)
 	}
 	bodyToken := refreshFromBody(c)
 	inBody := bodyToken != ""

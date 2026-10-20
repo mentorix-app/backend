@@ -53,11 +53,12 @@ type Service struct {
 }
 
 type IssuedAuth struct {
-	AccessToken   string
-	AccessExpires time.Time
-	RefreshToken  string
-	UserID        uuid.UUID
-	Email         string
+	AccessToken    string
+	AccessExpires  time.Time
+	RefreshExpires time.Time
+	RefreshToken   string
+	UserID         uuid.UUID
+	Email          string
 }
 
 // ServiceOption configures optional Service features.
@@ -159,6 +160,7 @@ func (s *Service) RegisterTrainer(ctx context.Context, email, password, name str
 	}
 	out.AccessToken = token
 	out.AccessExpires = exp
+	out.RefreshExpires = expiresAt
 	out.RefreshToken = plain
 	out.UserID = userID
 	out.Email = email
@@ -198,6 +200,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (IssuedAuth
 	}
 	out.AccessToken = token
 	out.AccessExpires = exp
+	out.RefreshExpires = expiresAt
 	out.RefreshToken = plain
 	out.UserID = row.UserID
 	out.Email = email
@@ -303,11 +306,12 @@ func (s *Service) issueSession(ctx context.Context, userID uuid.UUID, email stri
 		return out, fmt.Errorf("sign token: %w", err)
 	}
 	return IssuedAuth{
-		AccessToken:   token,
-		AccessExpires: exp,
-		RefreshToken:  plain,
-		UserID:        userID,
-		Email:         email,
+		AccessToken:    token,
+		AccessExpires:  exp,
+		RefreshExpires: expiresAt,
+		RefreshToken:   plain,
+		UserID:         userID,
+		Email:          email,
 	}, nil
 }
 
@@ -344,6 +348,7 @@ func (s *Service) Refresh(ctx context.Context, refreshPlain string) (IssuedAuth,
 	}
 	out.AccessToken = token
 	out.AccessExpires = exp
+	out.RefreshExpires = newExpires
 	out.RefreshToken = newPlain
 	out.UserID = userID
 	out.Email = email
