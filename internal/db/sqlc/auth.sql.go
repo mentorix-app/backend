@@ -181,25 +181,19 @@ func (q *Queries) GrantUserRole(ctx context.Context, arg GrantUserRoleParams) er
 }
 
 const insertAuthIdentityIfAbsent = `-- name: InsertAuthIdentityIfAbsent :execrows
-INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
-VALUES ($1, $2, $3, $4)
+INSERT INTO mentorix.auth_identities (user_id, provider, subject)
+VALUES ($1, $2, $3)
 ON CONFLICT ON CONSTRAINT auth_identities_provider_subject_uniq DO NOTHING
 `
 
 type InsertAuthIdentityIfAbsentParams struct {
-	UserID       pgtype.UUID `json:"user_id"`
-	Provider     string      `json:"provider"`
-	Subject      string      `json:"subject"`
-	PasswordHash *string     `json:"password_hash"`
+	UserID   pgtype.UUID `json:"user_id"`
+	Provider string      `json:"provider"`
+	Subject  string      `json:"subject"`
 }
 
 func (q *Queries) InsertAuthIdentityIfAbsent(ctx context.Context, arg InsertAuthIdentityIfAbsentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, insertAuthIdentityIfAbsent,
-		arg.UserID,
-		arg.Provider,
-		arg.Subject,
-		arg.PasswordHash,
-	)
+	result, err := q.db.Exec(ctx, insertAuthIdentityIfAbsent, arg.UserID, arg.Provider, arg.Subject)
 	if err != nil {
 		return 0, err
 	}

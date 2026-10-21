@@ -438,10 +438,9 @@ func (s *Store) resolveTelegramUser(ctx context.Context, q *sqlc.Queries, telegr
 	}
 
 	inserted, err := q.InsertAuthIdentityIfAbsent(ctx, sqlc.InsertAuthIdentityIfAbsentParams{
-		UserID:       userPG,
-		Provider:     auth.ProviderTelegram,
-		Subject:      subject,
-		PasswordHash: nil,
+		UserID:   userPG,
+		Provider: auth.ProviderTelegram,
+		Subject:  subject,
 	})
 	if err != nil {
 		return uuid.Nil, false, fmt.Errorf("insert telegram identity: %w", err)

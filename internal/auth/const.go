@@ -3,11 +3,9 @@ package auth
 import "errors"
 
 const (
-	// ProviderEmailPassword is a legacy value the database still allows; nothing creates it any more.
-	ProviderEmailPassword = "email_password"
-	ProviderTelegram      = "telegram"
-	ProviderGoogle        = "google"
-	ProviderApple         = "apple"
+	ProviderTelegram = "telegram"
+	ProviderGoogle   = "google"
+	ProviderApple    = "apple"
 )
 
 const (
