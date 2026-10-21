@@ -11,12 +11,11 @@ import (
 )
 
 type MentorixAuthIdentity struct {
-	ID           pgtype.UUID `json:"id"`
-	UserID       pgtype.UUID `json:"user_id"`
-	Provider     string      `json:"provider"`
-	Subject      string      `json:"subject"`
-	PasswordHash *string     `json:"password_hash"`
-	CreatedAt    time.Time   `json:"created_at"`
+	ID        pgtype.UUID `json:"id"`
+	UserID    pgtype.UUID `json:"user_id"`
+	Provider  string      `json:"provider"`
+	Subject   string      `json:"subject"`
+	CreatedAt time.Time   `json:"created_at"`
 }
 
 type MentorixAuthRefreshSession struct {
