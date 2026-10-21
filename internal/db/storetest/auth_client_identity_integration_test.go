@@ -4,6 +4,8 @@ package storetest
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 	"testing"
 	"time"
@@ -239,6 +241,10 @@ func TestAuthStore_FillUserDisplayNameIfEmpty_leavesOtherUsersAlone(t *testing.T
 func signInName(t *testing.T, pool *pgxpool.Pool, provider string, claims auth.IDTokenClaims, requestName string) string {
 	t.Helper()
 	ctx := context.Background()
+	// Apple sign-in must send a nonce; the token carries its SHA-256 as lowercase hex.
+	const appleNonce = "integration-apple-nonce"
+	nonceHash := sha256.Sum256([]byte(appleNonce))
+	claims.Nonce = hex.EncodeToString(nonceHash[:])
 	verifier := scriptedVerifier{claims: claims}
 	svc := auth.NewService(pool, "integration-test-jwt-secret-32chars", 15*time.Minute, 30*24*time.Hour,
 		auth.WithGoogleVerifier(verifier), auth.WithAppleVerifier(verifier))
@@ -247,7 +253,7 @@ func signInName(t *testing.T, pool *pgxpool.Pool, provider string, claims auth.I
 		err    error
 	)
 	if provider == auth.ProviderApple {
-		issued, err = svc.SignInWithApple(ctx, "raw", requestName, "")
+		issued, err = svc.SignInWithApple(ctx, "raw", requestName, appleNonce)
 	} else {
 		issued, err = svc.SignInWithGoogle(ctx, "raw", "")
 	}

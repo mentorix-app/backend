@@ -24,8 +24,8 @@ type IDTokenRequest struct {
 type AppleSignInRequest struct {
 	IDToken string `json:"id_token"`
 	Name    string `json:"name"`
-	// Nonce is optional: the raw value, at most 256 characters. When set, the ID
-	// token's nonce claim must be its SHA-256 as lowercase hex.
+	// Nonce is required: the raw value, 1 to 256 characters. The ID token's nonce
+	// claim must be its SHA-256 as lowercase hex.
 	Nonce string `json:"nonce"`
 }
 

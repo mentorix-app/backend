@@ -22,6 +22,8 @@ const (
 var (
 	ErrInvalidRefresh = errors.New("invalid or expired refresh token")
 	ErrInvalidIDToken = errors.New("invalid id token")
+	// ErrNonceRequired means a sign-in that must carry a nonce, Apple's, came without one.
+	ErrNonceRequired = errors.New("nonce is required")
 	// ErrProviderNotConfigured means the sign-in provider has no client ids set, or,
 	// for account deletion, that the Apple revocation is not configured.
 	ErrProviderNotConfigured = errors.New("sign-in provider is not configured")

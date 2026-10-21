@@ -36,7 +36,7 @@ func TestApple_success(t *testing.T) {
 	e := echo.New()
 	e.POST("/auth/apple", testAuthHandlers(svc).Apple)
 
-	rec := postJSON(e, "/auth/apple", `{"id_token":"raw-token","name":"Apple Person"}`)
+	rec := postJSON(e, "/auth/apple", `{"id_token":"raw-token","name":"Apple Person","nonce":"n-1"}`)
 
 	assertHTTPStatus(t, rec, http.StatusOK)
 	if svc.appleToken != "raw-token" || svc.appleName != "Apple Person" {
@@ -56,7 +56,7 @@ func TestApple_success(t *testing.T) {
 
 func TestApple_nameIsOptionalAndNeverRejected(t *testing.T) {
 	long := strings.Repeat("я", 500)
-	for _, body := range []string{`{"id_token":"x"}`, `{"id_token":"x","name":"` + long + `"}`} {
+	for _, body := range []string{`{"id_token":"x","nonce":"n"}`, `{"id_token":"x","nonce":"n","name":"` + long + `"}`} {
 		e := echo.New()
 		e.POST("/auth/apple", testAuthHandlers(&fakeAuthService{}).Apple)
 		assertHTTPStatus(t, postJSON(e, "/auth/apple", body), http.StatusOK)
@@ -73,9 +73,9 @@ func TestApple_errors(t *testing.T) {
 		{"invalid json", `not-json`, &fakeAuthService{}, http.StatusBadRequest},
 		{"empty id_token", `{"id_token":""}`, &fakeAuthService{}, http.StatusBadRequest},
 		{"missing id_token", `{}`, &fakeAuthService{}, http.StatusBadRequest},
-		{"invalid token", `{"id_token":"x"}`, &fakeAuthService{appleErr: ErrInvalidIDToken}, http.StatusUnauthorized},
-		{"not configured", `{"id_token":"x"}`, &fakeAuthService{appleErr: ErrProviderNotConfigured}, http.StatusServiceUnavailable},
-		{"internal", `{"id_token":"x"}`, &fakeAuthService{appleErr: errors.New("db down")}, http.StatusInternalServerError},
+		{"invalid token", `{"id_token":"x","nonce":"n"}`, &fakeAuthService{appleErr: ErrInvalidIDToken}, http.StatusUnauthorized},
+		{"not configured", `{"id_token":"x","nonce":"n"}`, &fakeAuthService{appleErr: ErrProviderNotConfigured}, http.StatusServiceUnavailable},
+		{"internal", `{"id_token":"x","nonce":"n"}`, &fakeAuthService{appleErr: errors.New("db down")}, http.StatusInternalServerError},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -93,7 +93,7 @@ func TestApple_errors(t *testing.T) {
 func TestApple_notConfiguredMessage(t *testing.T) {
 	e := echo.New()
 	e.POST("/auth/apple", testAuthHandlers(&fakeAuthService{appleErr: ErrProviderNotConfigured}).Apple)
-	rec := postJSON(e, "/auth/apple", `{"id_token":"x"}`)
+	rec := postJSON(e, "/auth/apple", `{"id_token":"x","nonce":"n"}`)
 	if !strings.Contains(rec.Body.String(), "apple sign-in is not configured") {
 		t.Errorf("body = %s", rec.Body.String())
 	}
@@ -108,9 +108,9 @@ func TestApple_rateLimited(t *testing.T) {
 	e.POST("/auth/apple", h.Apple)
 
 	for range 2 {
-		postJSON(e, "/auth/apple", `{"id_token":"x"}`)
+		postJSON(e, "/auth/apple", `{"id_token":"x","nonce":"n"}`)
 	}
-	assertHTTPStatus(t, postJSON(e, "/auth/apple", `{"id_token":"x"}`), http.StatusTooManyRequests)
+	assertHTTPStatus(t, postJSON(e, "/auth/apple", `{"id_token":"x","nonce":"n"}`), http.StatusTooManyRequests)
 }
 
 func TestApple_causeReachesRequestLog(t *testing.T) {
@@ -129,7 +129,7 @@ func TestApple_causeReachesRequestLog(t *testing.T) {
 			e.Use(httpx.RequestLog(slog.New(slog.NewTextHandler(&buf, nil))))
 			e.POST("/auth/apple", testAuthHandlers(&fakeAuthService{appleErr: tt.err}).Apple)
 
-			rec := postJSON(e, "/auth/apple", `{"id_token":"secret-raw-token"}`)
+			rec := postJSON(e, "/auth/apple", `{"id_token":"secret-raw-token","nonce":"n"}`)
 
 			assertHTTPStatus(t, rec, tt.wantStatus)
 			if strings.Contains(rec.Body.String(), tt.err.Error()) {
@@ -153,8 +153,9 @@ func TestApple_nonce(t *testing.T) {
 		wantCalled bool
 		wantNonce  string
 	}{
-		{"no nonce reaches the service as empty", `{"id_token":"raw-token"}`, http.StatusOK, true, ""},
-		{"empty nonce reaches the service as empty", `{"id_token":"raw-token","nonce":""}`, http.StatusOK, true, ""},
+		{"no nonce is refused before the service", `{"id_token":"raw-token"}`, http.StatusBadRequest, false, ""},
+		{"empty nonce is refused before the service", `{"id_token":"raw-token","nonce":""}`, http.StatusBadRequest, false, ""},
+		{"null nonce is refused before the service", `{"id_token":"raw-token","nonce":null}`, http.StatusBadRequest, false, ""},
 		{"nonce reaches the service", `{"id_token":"raw-token","nonce":"abc-123"}`, http.StatusOK, true, "abc-123"},
 		{"256 ASCII characters accepted", `{"id_token":"raw-token","nonce":"` + strings.Repeat("a", 256) + `"}`, http.StatusOK, true, strings.Repeat("a", 256)},
 		{"257 ASCII characters refused", `{"id_token":"raw-token","nonce":"` + strings.Repeat("a", 257) + `"}`, http.StatusBadRequest, false, ""},
@@ -190,5 +191,69 @@ func TestApple_nonceTooLongMessage(t *testing.T) {
 	assertHTTPStatus(t, rec, http.StatusBadRequest)
 	if !strings.Contains(rec.Body.String(), "nonce must be at most 256 characters") {
 		t.Errorf("body = %s", rec.Body.String())
+	}
+}
+
+func TestApple_nonceRequiredAnswer(t *testing.T) {
+	const (
+		notConfiguredCode    = "provider_not_configured"
+		notConfiguredMessage = "apple sign-in is not configured"
+	)
+	tests := []struct {
+		name string
+		body string
+		svc  *fakeAuthService
+		// wantCalled is whether the service must run: the handler refuses an empty nonce itself.
+		wantCalled  bool
+		wantStatus  int
+		wantCode    string
+		wantMessage string
+	}{
+		{"no nonce", `{"id_token":"raw-token"}`, &fakeAuthService{}, false, 400, "nonce_required", "nonce is required"},
+		{"empty nonce", `{"id_token":"raw-token","nonce":""}`, &fakeAuthService{}, false, 400, "nonce_required", "nonce is required"},
+		{"service refuses the nonce", `{"id_token":"raw-token","nonce":"n"}`, &fakeAuthService{appleErr: ErrNonceRequired}, true, 400, "nonce_required", "nonce is required"},
+		{"wrapped service refusal", `{"id_token":"raw-token","nonce":"n"}`, &fakeAuthService{appleErr: fmt.Errorf("sign in: %w", ErrNonceRequired)}, true, 400, "nonce_required", "nonce is required"},
+		// The handler checks the nonce before the service, so an unconfigured provider
+		// shows only to a request that carries one. The service has the opposite order.
+		{"no nonce, provider not configured", `{"id_token":"raw-token"}`, &fakeAuthService{appleErr: ErrProviderNotConfigured}, false, 400, "nonce_required", "nonce is required"},
+		{"nonce, provider not configured", `{"id_token":"raw-token","nonce":"n"}`, &fakeAuthService{appleErr: ErrProviderNotConfigured}, true, 503, notConfiguredCode, notConfiguredMessage},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			e.HTTPErrorHandler = httpx.ErrorHandler
+			e.POST("/auth/apple", testAuthHandlers(tt.svc).Apple)
+
+			rec := postJSON(e, "/auth/apple", tt.body)
+
+			assertCodedError(t, rec, tt.wantStatus, tt.wantCode, tt.wantMessage)
+			if called := tt.svc.appleToken != ""; called != tt.wantCalled {
+				t.Errorf("service called = %v, want %v", called, tt.wantCalled)
+			}
+			if got := rec.Result().Header.Values("Set-Cookie"); len(got) != 0 {
+				t.Errorf("Set-Cookie = %v, want none", got)
+			}
+		})
+	}
+}
+
+// A missing id_token and a too-long nonce are reported before a missing nonce.
+func TestApple_nonceRequiredComesAfterTheOtherChecks(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantMessage string
+	}{
+		{"missing id_token", `{"nonce":""}`, "id_token is required"},
+		{"nonce too long", `{"id_token":"x","nonce":"` + strings.Repeat("a", 257) + `"}`, "nonce must be at most 256 characters"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			e.HTTPErrorHandler = httpx.ErrorHandler
+			e.POST("/auth/apple", testAuthHandlers(&fakeAuthService{}).Apple)
+
+			assertCodedError(t, postJSON(e, "/auth/apple", tt.body), http.StatusBadRequest, "bad_request", tt.wantMessage)
+		})
 	}
 }

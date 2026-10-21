@@ -9,7 +9,7 @@ import (
 )
 
 func TestService_RefreshExpiresMatchesStoredExpiry(t *testing.T) {
-	verifier := fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub", Email: "a@b.com", EmailVerified: true}}
+	verifier := fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub", Email: "a@b.com", EmailVerified: true, Nonce: hashedNonce(testAppleNonce)}}
 	tests := []struct {
 		name string
 		// issue returns the session and the expiry the store received.
@@ -25,7 +25,7 @@ func TestService_RefreshExpiresMatchesStoredExpiry(t *testing.T) {
 		}},
 		{"apple", func(t *testing.T) (IssuedAuth, time.Time) {
 			store := &fakeAuthStore{profile: UserProfile{Email: "a@b.com"}}
-			issued, err := testAppleService(store, verifier).SignInWithApple(context.Background(), "raw", "", "")
+			issued, err := testAppleService(store, verifier).SignInWithApple(context.Background(), "raw", "", testAppleNonce)
 			if err != nil {
 				t.Fatalf("SignInWithApple() error = %v", err)
 			}

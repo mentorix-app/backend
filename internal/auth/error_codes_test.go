@@ -88,9 +88,11 @@ func (r codedRequest) serve(t *testing.T, e *echo.Echo) *httptest.ResponseRecord
 }
 
 const (
-	idTokenBody  = `{"id_token":"x"}`
-	linkBody     = `{"code":"ABCD2345"}`
-	activateBody = `{"terms_version":"2026-10-01"}`
+	idTokenBody = `{"id_token":"x"}`
+	// appleIDTokenBody carries the nonce POST /auth/apple requires.
+	appleIDTokenBody = `{"id_token":"x","nonce":"n"}`
+	linkBody         = `{"code":"ABCD2345"}`
+	activateBody     = `{"terms_version":"2026-10-01"}`
 )
 
 func TestErrorCodes_handlerAnswers(t *testing.T) {
@@ -116,13 +118,19 @@ func TestErrorCodes_handlerAnswers(t *testing.T) {
 			500, "internal_error", "google sign-in failed"},
 
 		{"apple provider not configured", &fakeAuthService{appleErr: ErrProviderNotConfigured},
-			codedRequest{method: "POST", path: "/auth/apple", body: idTokenBody},
+			codedRequest{method: "POST", path: "/auth/apple", body: appleIDTokenBody},
 			503, "provider_not_configured", "apple sign-in is not configured"},
 		{"apple invalid id token", &fakeAuthService{appleErr: fmt.Errorf("%w: audience not allowed", ErrInvalidIDToken)},
-			codedRequest{method: "POST", path: "/auth/apple", body: idTokenBody},
+			codedRequest{method: "POST", path: "/auth/apple", body: appleIDTokenBody},
 			401, "invalid_id_token", "invalid id token"},
-		{"apple failure keeps the default", &fakeAuthService{appleErr: errors.New("db down")},
+		{"apple without a nonce", &fakeAuthService{},
 			codedRequest{method: "POST", path: "/auth/apple", body: idTokenBody},
+			400, "nonce_required", "nonce is required"},
+		{"apple nonce refused by the service", &fakeAuthService{appleErr: ErrNonceRequired},
+			codedRequest{method: "POST", path: "/auth/apple", body: appleIDTokenBody},
+			400, "nonce_required", "nonce is required"},
+		{"apple failure keeps the default", &fakeAuthService{appleErr: errors.New("db down")},
+			codedRequest{method: "POST", path: "/auth/apple", body: appleIDTokenBody},
 			500, "internal_error", "apple sign-in failed"},
 
 		{"refresh without a token", &fakeAuthService{},
@@ -241,7 +249,7 @@ func assertRetryAfter(t *testing.T, rec *httptest.ResponseRecorder, window time.
 func TestErrorCodes_rateLimitedEveryRoute(t *testing.T) {
 	routes := []codedRequest{
 		{method: "POST", path: "/auth/google", body: idTokenBody},
-		{method: "POST", path: "/auth/apple", body: idTokenBody},
+		{method: "POST", path: "/auth/apple", body: appleIDTokenBody},
 		{method: "POST", path: "/auth/refresh", cookie: "x"},
 		{method: "POST", path: "/auth/telegram/link", body: linkBody, authorization: "user"},
 	}

@@ -38,7 +38,7 @@ func TestTokenResponse_refreshExpiresAt(t *testing.T) {
 		{"refresh (cookie mode)", cookieRefresh()},
 		{"refresh (body mode)", postJSON(e, "/auth/refresh", `{"refresh_token":"body-token"}`)},
 		{"google (body mode)", postJSON(e, "/auth/google", idTokenBody)},
-		{"apple (body mode)", postJSON(e, "/auth/apple", idTokenBody)},
+		{"apple (body mode)", postJSON(e, "/auth/apple", appleIDTokenBody)},
 		{"telegram link (body mode)", postLink(t, linkEcho(h), userID, linkBody)},
 	}
 	for _, tt := range tests {

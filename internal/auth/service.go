@@ -137,28 +137,36 @@ func ValidateDisplayName(name string) error {
 }
 
 // SignInWithGoogle verifies a Google ID token and signs in the matching client,
-// creating the account on the first sign-in. A non-empty nonce must match the
-// token's nonce claim, which carries its SHA-256 as lowercase hex.
+// creating the account on the first sign-in. The nonce is optional; a non-empty
+// one must match the token's nonce claim, which carries its SHA-256 as lowercase hex.
 func (s *Service) SignInWithGoogle(ctx context.Context, rawIDToken, nonce string) (IssuedAuth, error) {
-	return s.signInWithProvider(ctx, ProviderGoogle, s.googleVerifier, rawIDToken, "", nonce)
+	return s.signInWithProvider(ctx, ProviderGoogle, s.googleVerifier, rawIDToken, "", nonce, false)
 }
 
 // SignInWithApple verifies an Apple ID token and signs in the matching client,
 // creating the account on the first sign-in. Apple puts no name in the token,
 // so name from the request is used when the account is created or its name is empty.
-// A non-empty nonce must match the token's nonce claim, which carries its SHA-256
-// as lowercase hex.
+// The nonce is required: an empty one is refused with ErrNonceRequired before the
+// token is verified, but after the provider check, so an unconfigured Apple answers
+// ErrProviderNotConfigured first. That is this method's own order; the HTTP handler
+// refuses an empty nonce before it calls the service. A nonce must match the token's
+// nonce claim, which carries its SHA-256 as lowercase hex.
 func (s *Service) SignInWithApple(ctx context.Context, rawIDToken, name, nonce string) (IssuedAuth, error) {
-	return s.signInWithProvider(ctx, ProviderApple, s.appleVerifier, rawIDToken, name, nonce)
+	return s.signInWithProvider(ctx, ProviderApple, s.appleVerifier, rawIDToken, name, nonce, true)
 }
 
 // signInWithProvider uses fallbackName only when the token carries no name. The
 // name goes into a new account; an existing account gets it only while its own
-// name is empty, so a name that is set is never overwritten.
-func (s *Service) signInWithProvider(ctx context.Context, provider string, verifier IDTokenVerifier, rawIDToken, fallbackName, nonce string) (IssuedAuth, error) {
+// name is empty, so a name that is set is never overwritten. With nonceRequired
+// an empty nonce is refused after the provider check and before the verifier runs;
+// that is the service's own order, the HTTP handler checks the nonce before it calls here.
+func (s *Service) signInWithProvider(ctx context.Context, provider string, verifier IDTokenVerifier, rawIDToken, fallbackName, nonce string, nonceRequired bool) (IssuedAuth, error) {
 	var out IssuedAuth
 	if verifier == nil {
 		return out, ErrProviderNotConfigured
+	}
+	if nonceRequired && nonce == "" {
+		return out, ErrNonceRequired
 	}
 	claims, err := verifier.Verify(ctx, rawIDToken)
 	if err != nil {
