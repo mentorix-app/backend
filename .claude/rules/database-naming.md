@@ -23,7 +23,7 @@ Immediate-parent rule: FK `program_week_day_block_id` → table `program_week_da
 | Client link | `client_user_id` | not `client_id` |
 | Trainer link | `trainer_id` → `trainers` | not `trainer_user_id` |
 | Type | concrete name | `exercise_type`, `block_type` (not `type`) |
-| Enum values | `snake_case` + CHECK | `email_password`, `published` |
+| Enum values | `snake_case` + CHECK | `muscle_gain`, `published` |
 | Audit | `created_at`, `modified_at`, `created_by`, `modified_by` | |
 | Soft delete | `deleted_at` | |
 

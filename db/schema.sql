@@ -1266,3 +1266,12 @@ ALTER TABLE mentorix.trainers
   ADD COLUMN terms_version text,
   ADD COLUMN terms_accepted_at timestamptz,
   ADD CONSTRAINT trainers_terms_check CHECK ((terms_version IS NULL) = (terms_accepted_at IS NULL));
+
+-- >>> 000035_drop_auth_identities_password_hash.up.sql
+-- Fail fast instead of queueing behind a long transaction and stalling every query after it.
+SET LOCAL lock_timeout = '3s';
+
+-- Password sign-in is gone and the running code names its columns without this one,
+-- so it can go while that code serves traffic.
+ALTER TABLE mentorix.auth_identities
+  DROP COLUMN IF EXISTS password_hash;
