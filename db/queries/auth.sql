@@ -4,8 +4,8 @@ VALUES ($1, $2)
 RETURNING id;
 
 -- name: InsertAuthIdentityIfAbsent :execrows
-INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
-VALUES ($1, $2, $3, $4)
+INSERT INTO mentorix.auth_identities (user_id, provider, subject)
+VALUES ($1, $2, $3)
 ON CONFLICT ON CONSTRAINT auth_identities_provider_subject_uniq DO NOTHING;
 
 -- name: DeleteUserWithoutIdentity :exec

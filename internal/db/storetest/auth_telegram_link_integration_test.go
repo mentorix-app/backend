@@ -356,22 +356,22 @@ func TestAuthStore_LinkTelegram_parallelLinksOfSameTelegramBothSucceed(t *testin
 	}
 }
 
-func TestAuthStore_LinkTelegram_refusedWhenAppAccountHasPasswordSignIn(t *testing.T) {
+func TestAuthStore_LinkTelegram_refusedWhenAppAccountHasAnotherSignIn(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
 	old := newClientWithIdentity(t, store, auth.ProviderTelegram, "tg-100", "")
 	app := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-1", "")
 	if _, err := pool.Exec(ctx, `
-INSERT INTO mentorix.auth_identities (user_id, provider, subject, password_hash)
-VALUES ($1, 'email_password', 'app@test.com', 'hash')`, app); err != nil {
-		t.Fatalf("insert password identity: %v", err)
+INSERT INTO mentorix.auth_identities (user_id, provider, subject)
+VALUES ($1, 'other', 'other-1')`, app); err != nil {
+		t.Fatalf("insert other identity: %v", err)
 	}
 
 	_, err := store.LinkTelegram(ctx, app, "tg-100")
 	assertLinkRefused(t, pool, err, auth.ErrTelegramLinkConflict, app, old)
-	if owner, ok := identityOwner(t, pool, auth.ProviderEmailPassword, "app@test.com"); !ok || owner != app {
-		t.Errorf("password identity owner = %v, %v, want %v", owner, ok, app)
+	if owner, ok := identityOwner(t, pool, "other", "other-1"); !ok || owner != app {
+		t.Errorf("other identity owner = %v, %v, want %v", owner, ok, app)
 	}
 }
 
