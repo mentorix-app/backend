@@ -206,11 +206,16 @@ func (h *Handlers) Apple(c echo.Context) error {
 	if err := validateNonce(body.Nonce); err != nil {
 		return err
 	}
+	if body.Nonce == "" {
+		return httpx.NewError(http.StatusBadRequest, httpx.CodeNonceRequired, ErrNonceRequired.Error())
+	}
 	issued, err := h.svc.SignInWithApple(c.Request().Context(), body.IDToken, body.Name, body.Nonce)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrProviderNotConfigured):
 			return httpx.NewError(http.StatusServiceUnavailable, httpx.CodeProviderNotConfigured, "apple sign-in is not configured")
+		case errors.Is(err, ErrNonceRequired):
+			return httpx.NewError(http.StatusBadRequest, httpx.CodeNonceRequired, ErrNonceRequired.Error())
 		case errors.Is(err, ErrInvalidIDToken):
 			return httpx.NewErrorCause(http.StatusUnauthorized, httpx.CodeInvalidIDToken, ErrInvalidIDToken.Error(), err)
 		}

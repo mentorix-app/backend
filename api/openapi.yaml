@@ -132,7 +132,15 @@ paths:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: >
+            Invalid JSON, empty `id_token` or a `nonce` over 256 characters
+            (code `bad_request`), or `nonce` is empty or absent (code
+            `nonce_required`). The body is checked first, so these answers
+            come before a `503`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Invalid ID token (code `invalid_id_token`)
           content:
@@ -2859,7 +2867,7 @@ components:
 
     AppleSignInRequest:
       type: object
-      required: [id_token]
+      required: [id_token, nonce]
       properties:
         id_token:
           type: string
@@ -2869,13 +2877,15 @@ components:
           description: Display name the app received from Apple; optional, cut to 100 characters, used when the account is created or fills an empty name of an existing account
         nonce:
           type: string
+          minLength: 1
           maxLength: 256
           description: >
-            Optional raw nonce, at most 256 characters. The app passes its SHA-256 as
+            Raw nonce, 1 to 256 characters. The app passes its SHA-256 as
             lowercase hex to Apple and sends the raw value here; the token's
-            `nonce` claim must then equal that hash, otherwise `401
-            invalid_id_token`. Empty or absent skips the check. Longer than 256
-            characters answers `400`.
+            `nonce` claim must equal that hash, otherwise `401
+            invalid_id_token`. Empty or absent answers `400 nonce_required`
+            before the token is checked. Longer than 256 characters answers
+            `400`.
 
     DeleteAccountRequest:
       type: object

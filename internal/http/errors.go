@@ -31,6 +31,7 @@ const (
 	CodeRateLimited             = "rate_limited"
 	CodeProviderNotConfigured   = "provider_not_configured"
 	CodeInvalidIDToken          = "invalid_id_token"
+	CodeNonceRequired           = "nonce_required"
 	CodeInvalidLinkCode         = "invalid_link_code"
 	CodeTelegramLinkUnavailable = "telegram_link_unavailable"
 	CodeTelegramLinkConflict    = "telegram_link_conflict"
