@@ -12,7 +12,7 @@
 | HTTP | Echo v4 |
 | Database | PostgreSQL, schema `mentorix`, pgx + sqlc, golang-migrate |
 | Cache/rate limits | Redis |
-| Auth | JWT + opaque refresh (cookie), argon2id |
+| Auth | JWT + opaque refresh (cookie or JSON body); Google and Apple ID tokens checked with go-oidc |
 | Deployment | Render Blueprint ([`render.yaml`](../render.yaml)): stage from `develop`; CI-gated Deploy Hook |
 | Logs | `log/slog`, request ID |
 

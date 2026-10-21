@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
 )
@@ -55,19 +54,8 @@ func TestProgramStore_mutatorsRecordActingUser(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	creator, err := authStore.RegisterTrainerEmailPassword(ctx, "audit-creator@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register creator: %v", err)
-	}
-	editor, err := authStore.RegisterTrainerEmailPassword(ctx, "audit-editor@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register editor: %v", err)
-	}
+	creator := newTrainer(t, pool, "audit-creator@test.com", "")
+	editor := newTrainer(t, pool, "audit-editor@test.com", "")
 
 	ex, err := exercise.NewStore(pool).Create(ctx, creator, nil, exercise.UpsertInput{
 		Name: "A", NameRu: "А", Type: exercise.ExerciseTypeStrength,
@@ -87,10 +75,7 @@ func TestProgramStore_mutatorsRecordActingUser(t *testing.T) {
 	// Each fixture gets its own owner: the free plan caps programs per trainer.
 	newDraft := func(t *testing.T) fixture {
 		t.Helper()
-		owner, err := authStore.RegisterTrainerEmailPassword(ctx, uuid.NewString()+"@test.com", pwHash, "")
-		if err != nil {
-			t.Fatalf("register owner: %v", err)
-		}
+		owner := newTrainer(t, pool, uuid.NewString()+"@test.com", "")
 		d, err := store.CreateDraft(ctx, owner)
 		if err != nil {
 			t.Fatalf("CreateDraft: %v", err)

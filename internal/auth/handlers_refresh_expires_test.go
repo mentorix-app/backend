@@ -16,13 +16,10 @@ func TestTokenResponse_refreshExpiresAt(t *testing.T) {
 	userID := uuid.New()
 	issued := IssuedAuth{UserID: userID, Email: "u@example.com", RefreshExpires: refreshExp}
 	svc := &fakeAuthService{
-		registerIssued: issued, loginIssued: issued, refreshIssued: issued,
-		googleIssued: issued, appleIssued: issued, linkIssued: issued,
+		refreshIssued: issued, googleIssued: issued, appleIssued: issued, linkIssued: issued,
 	}
 	h := testAuthHandlers(svc)
 	e := echo.New()
-	e.POST("/auth/register", h.Register)
-	e.POST("/auth/login", h.Login)
 	e.POST("/auth/refresh", h.Refresh)
 	e.POST("/auth/google", h.Google)
 	e.POST("/auth/apple", h.Apple)
@@ -38,8 +35,6 @@ func TestTokenResponse_refreshExpiresAt(t *testing.T) {
 		name string
 		rec  *httptest.ResponseRecorder
 	}{
-		{"register (cookie mode)", postJSON(e, "/auth/register", registerBody)},
-		{"login (cookie mode)", postJSON(e, "/auth/login", loginBody)},
 		{"refresh (cookie mode)", cookieRefresh()},
 		{"refresh (body mode)", postJSON(e, "/auth/refresh", `{"refresh_token":"body-token"}`)},
 		{"google (body mode)", postJSON(e, "/auth/google", idTokenBody)},

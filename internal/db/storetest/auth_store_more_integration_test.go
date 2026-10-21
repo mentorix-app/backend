@@ -4,7 +4,6 @@ package storetest
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -13,37 +12,12 @@ import (
 	"mentorix-backend/internal/auth"
 )
 
-func TestAuthStore_RegisterDuplicateEmail(t *testing.T) {
-	pool := NewPool(t)
-	store := auth.NewStore(pool)
-	ctx := context.Background()
-
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	if _, err := store.RegisterTrainerEmailPassword(ctx, "dup@test.com", hash, ""); err != nil {
-		t.Fatalf("first register: %v", err)
-	}
-	_, err = store.RegisterTrainerEmailPassword(ctx, "dup@test.com", hash, "")
-	if !errors.Is(err, auth.ErrEmailTaken) {
-		t.Fatalf("duplicate register error = %v, want ErrEmailTaken", err)
-	}
-}
-
 func TestAuthStore_RevokeAndGrantRole(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
 	ctx := context.Background()
 
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := store.RegisterTrainerEmailPassword(ctx, "grant@test.com", hash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "grant@test.com", "")
 
 	tokenHash := randomTokenHash(t)
 	if err := store.InsertRefreshSession(ctx, userID, tokenHash, mustFuture(t)); err != nil {
@@ -75,14 +49,7 @@ func TestAuthStore_UpdateUserDisplayName(t *testing.T) {
 	store := auth.NewStore(pool)
 	ctx := context.Background()
 
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := store.RegisterTrainerEmailPassword(ctx, "display-name@test.com", hash, "Before")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "display-name@test.com", "Before")
 	if err := store.UpdateUserDisplayName(ctx, userID, "After"); err != nil {
 		t.Fatalf("UpdateUserDisplayName: %v", err)
 	}
@@ -122,5 +89,31 @@ func TestAuthStore_UserRoles_emptyForUnknownUser(t *testing.T) {
 	}
 	if len(roles) != 0 {
 		t.Fatalf("roles = %v, want empty", roles)
+	}
+}
+
+// A trainer-only account is the legacy shape from before the app became client-first: it
+// has the trainer role and no client role, and no Telegram sign-in.
+func TestAuthStore_UserProfile_trainerOnlyAccount(t *testing.T) {
+	pool := NewPool(t)
+	store := auth.NewStore(pool)
+
+	userID := newTrainer(t, pool, "profile-trainer@test.com", "Profile Coach")
+
+	profile, err := store.UserProfile(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("UserProfile: %v", err)
+	}
+	if len(profile.Roles) != 1 || profile.Roles[0] != auth.RoleTrainer {
+		t.Fatalf("roles = %v, want [trainer]", profile.Roles)
+	}
+	if profile.Email != "profile-trainer@test.com" {
+		t.Fatalf("email = %q, want %q", profile.Email, "profile-trainer@test.com")
+	}
+	if profile.Name != "Profile Coach" {
+		t.Fatalf("name = %q, want %q", profile.Name, "Profile Coach")
+	}
+	if profile.TelegramLinked {
+		t.Fatal("telegram linked = true, want false")
 	}
 }

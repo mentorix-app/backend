@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/program"
@@ -23,19 +22,8 @@ func TestProgramVersionAndAssignment_oneRowPerTrainerClient(t *testing.T) {
 	ctx := context.Background()
 	q := sqlc.New(pool)
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "version-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "version-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client user: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "version-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "version-client@test.com", "")
 
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
 	if err != nil {

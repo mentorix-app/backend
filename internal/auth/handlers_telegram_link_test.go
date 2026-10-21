@@ -144,7 +144,7 @@ func TestTelegramLink_rateLimited(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	h := testAuthHandlers(&fakeAuthService{})
-	h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	h.limiter = NewRateLimiter(rdb, 1, time.Minute)
 	e := linkEcho(h)
 	user := uuid.New()
 

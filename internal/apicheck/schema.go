@@ -28,8 +28,6 @@ func schemaBindings() []schemaBinding {
 		{name: "QuotaExceededError", typ: reflect.TypeOf(subscription.QuotaErrorBody{})},
 		{name: "HealthStatus", typ: reflect.TypeOf(health.LivenessResponse{})},
 		{name: "ReadyResponse", typ: reflect.TypeOf(health.ReadyResponse{})},
-		{name: "AuthCredentials", typ: reflect.TypeOf(auth.AuthCredentials{})},
-		{name: "RegisterRequest", typ: reflect.TypeOf(auth.RegisterRequest{})},
 		{name: "IDTokenRequest", typ: reflect.TypeOf(auth.IDTokenRequest{})},
 		{name: "AppleSignInRequest", typ: reflect.TypeOf(auth.AppleSignInRequest{})},
 		{name: "DeleteAccountRequest", typ: reflect.TypeOf(auth.DeleteAccountRequest{})},

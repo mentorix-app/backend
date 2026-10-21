@@ -45,11 +45,7 @@ func newAppInviteEnv(t *testing.T) appInviteEnv {
 
 func (e appInviteEnv) trainer(t *testing.T, email, name string) uuid.UUID {
 	t.Helper()
-	id, err := e.auth.RegisterTrainerEmailPassword(context.Background(), email, "hash", name)
-	if err != nil {
-		t.Fatalf("register trainer %s: %v", email, err)
-	}
-	return id
+	return newTrainer(t, e.pool, email, name)
 }
 
 func (e appInviteEnv) invite(t *testing.T, trainerUserID uuid.UUID) string {

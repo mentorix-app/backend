@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/trainerclient"
@@ -21,15 +20,7 @@ func TestTelegramClient_program(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "tg-trainer@test.com", pwHash, "Coach Max")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "tg-trainer@test.com", "Coach Max")
 
 	progSvc := program.NewService(pool)
 	activeStore := trainerclient.NewMemoryActiveTrainerStore()
@@ -137,19 +128,8 @@ func TestTelegramClient_setActiveTrainerTwoTrainers(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerA, err := authStore.RegisterTrainerEmailPassword(ctx, "tg-active-a@test.com", pwHash, "Coach A")
-	if err != nil {
-		t.Fatalf("register trainer A: %v", err)
-	}
-	trainerB, err := authStore.RegisterTrainerEmailPassword(ctx, "tg-active-b@test.com", pwHash, "Coach B")
-	if err != nil {
-		t.Fatalf("register trainer B: %v", err)
-	}
+	trainerA := newTrainer(t, pool, "tg-active-a@test.com", "Coach A")
+	trainerB := newTrainer(t, pool, "tg-active-b@test.com", "Coach B")
 
 	progSvc := program.NewService(pool)
 	activeStore := trainerclient.NewMemoryActiveTrainerStore()
@@ -246,15 +226,7 @@ func TestTelegramClient_beforeProgramAssignment(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "tg2-trainer@test.com", pwHash, "Coach")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "tg2-trainer@test.com", "Coach")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -318,16 +290,7 @@ func TestTelegramClient_programHidesRestrictedBlock(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(
-		ctx, "tg-restrict-trainer@test.com", pwHash, "Coach Restrict")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "tg-restrict-trainer@test.com", "Coach Restrict")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{

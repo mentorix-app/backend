@@ -35,7 +35,7 @@ func TestSchemaPropertyNames_unknownSchema(t *testing.T) {
 
 func TestRequestBodySchemaName_knownRoute(t *testing.T) {
 	openapi := loadRepoOpenAPI(t)
-	name, ok, err := openapi.RequestBodySchemaName("POST", "/auth/login")
+	name, ok, err := openapi.RequestBodySchemaName("POST", "/auth/google")
 	if err != nil {
 		t.Fatalf("RequestBodySchemaName() error = %v", err)
 	}

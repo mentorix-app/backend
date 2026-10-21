@@ -13,18 +13,9 @@ import (
 	"mentorix-backend/internal/auth"
 )
 
-func TestTrainerMiddleware_allowsRegisteredTrainer(t *testing.T) {
+func TestTrainerMiddleware_allowsTrainer(t *testing.T) {
 	pool := NewPool(t)
-	ctx := t.Context()
-
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(ctx, "middleware-trainer@test.com", hash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "middleware-trainer@test.com", "")
 
 	e := echo.New()
 	called := false
@@ -48,16 +39,7 @@ func TestTrainerMiddleware_allowsRegisteredTrainer(t *testing.T) {
 
 func TestAdminMiddleware_deniesTrainerWithoutAdmin(t *testing.T) {
 	pool := NewPool(t)
-	ctx := t.Context()
-
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := auth.NewStore(pool).RegisterTrainerEmailPassword(ctx, "middleware-no-admin@test.com", hash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "middleware-no-admin@test.com", "")
 
 	e := echo.New()
 	h := auth.AdminMiddleware(pool)(func(c echo.Context) error {
@@ -69,7 +51,7 @@ func TestAdminMiddleware_deniesTrainerWithoutAdmin(t *testing.T) {
 	c := e.NewContext(req, rec)
 	c.Set(auth.ContextUserIDKey, userID)
 
-	err = h(c)
+	err := h(c)
 	if err == nil {
 		t.Fatal("expected forbidden error")
 	}
@@ -81,20 +63,8 @@ func TestAdminMiddleware_deniesTrainerWithoutAdmin(t *testing.T) {
 
 func TestTrainerOrAdminMiddleware_allowsTrainerAndAdmin(t *testing.T) {
 	pool := NewPool(t)
-	ctx := t.Context()
-	hash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	store := auth.NewStore(pool)
-	trainerID, err := store.RegisterTrainerEmailPassword(ctx, "middleware-or-trainer@test.com", hash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	adminID, err := store.RegisterTrainerEmailPassword(ctx, "middleware-or-admin@test.com", hash, "")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "middleware-or-trainer@test.com", "")
+	adminID := newTrainer(t, pool, "middleware-or-admin@test.com", "")
 	promoteToAdminOnly(t, pool, adminID)
 
 	e := echo.New()

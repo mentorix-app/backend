@@ -28,15 +28,7 @@ func TestTrainerInvite_acceptAndListClients(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "invite-trainer@test.com", pwHash, "Trainer Anna")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "invite-trainer@test.com", "Trainer Anna")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -141,19 +133,8 @@ func TestTrainerInvite_existingTelegramSecondTrainer(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerA, err := authStore.RegisterTrainerEmailPassword(ctx, "trainer-a@test.com", pwHash, "Trainer A")
-	if err != nil {
-		t.Fatalf("register trainer A: %v", err)
-	}
-	trainerB, err := authStore.RegisterTrainerEmailPassword(ctx, "trainer-b@test.com", pwHash, "Trainer B")
-	if err != nil {
-		t.Fatalf("register trainer B: %v", err)
-	}
+	trainerA := newTrainer(t, pool, "trainer-a@test.com", "Trainer A")
+	trainerB := newTrainer(t, pool, "trainer-b@test.com", "Trainer B")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -206,15 +187,7 @@ func TestTrainerInvite_createForbiddenForNonTrainer(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "later-client@test.com", pwHash, "User")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "later-client@test.com", "User")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -222,7 +195,7 @@ func TestTrainerInvite_createForbiddenForNonTrainer(t *testing.T) {
 		InviteTTL:           time.Hour,
 	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
 
-	_, err = pool.Exec(ctx, `DELETE FROM mentorix.trainers WHERE user_id = $1`, userID)
+	_, err := pool.Exec(ctx, `DELETE FROM mentorix.trainers WHERE user_id = $1`, userID)
 	if err != nil {
 		t.Fatalf("delete trainer row: %v", err)
 	}
@@ -236,22 +209,14 @@ func TestTrainerInvite_createForbiddenForNonTrainer(t *testing.T) {
 func TestTrainerInvite_notConfigured(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "noconfig-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "noconfig-trainer@test.com", "")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
 		InviteTTL: time.Hour,
 	}, trainerclient.NewMemoryActiveTrainerStore(), nil)
 
-	_, err = svc.CreateInvite(ctx, trainerUserID)
+	_, err := svc.CreateInvite(ctx, trainerUserID)
 	if !errors.Is(err, trainerclient.ErrInviteNotConfigured) {
 		t.Fatalf("error = %v, want ErrInviteNotConfigured", err)
 	}
@@ -261,23 +226,9 @@ func TestTrainerInvite_adminListsAllClients(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerA, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-list-trainer-a@test.com", pwHash, "Trainer A")
-	if err != nil {
-		t.Fatalf("register trainer A: %v", err)
-	}
-	trainerB, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-list-trainer-b@test.com", pwHash, "Trainer B")
-	if err != nil {
-		t.Fatalf("register trainer B: %v", err)
-	}
-	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-list-admin@test.com", pwHash, "Admin")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	trainerA := newTrainer(t, pool, "admin-list-trainer-a@test.com", "Trainer A")
+	trainerB := newTrainer(t, pool, "admin-list-trainer-b@test.com", "Trainer B")
+	adminID := newTrainer(t, pool, "admin-list-admin@test.com", "Admin")
 	promoteToAdminOnly(t, pool, adminID)
 
 	progSvc := program.NewService(pool)
@@ -339,23 +290,9 @@ func TestTrainerInvite_adminSeesMostRecentLink(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerA, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-prefer-trainer-a@test.com", pwHash, "Trainer A")
-	if err != nil {
-		t.Fatalf("register trainer A: %v", err)
-	}
-	trainerB, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-prefer-trainer-b@test.com", pwHash, "Trainer B")
-	if err != nil {
-		t.Fatalf("register trainer B: %v", err)
-	}
-	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-prefer-admin@test.com", pwHash, "Admin")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	trainerA := newTrainer(t, pool, "admin-prefer-trainer-a@test.com", "Trainer A")
+	trainerB := newTrainer(t, pool, "admin-prefer-trainer-b@test.com", "Trainer B")
+	adminID := newTrainer(t, pool, "admin-prefer-admin@test.com", "Admin")
 	promoteToAdminOnly(t, pool, adminID)
 
 	progSvc := program.NewService(pool)
@@ -387,7 +324,7 @@ func TestTrainerInvite_adminSeesMostRecentLink(t *testing.T) {
 	acceptClient(trainerA, "881002", "Other Client")
 
 	var trainerALinkedAt, trainerBLinkedAt time.Time
-	err = pool.QueryRow(ctx, `
+	err := pool.QueryRow(ctx, `
 SELECT tc.created_at
 FROM mentorix.trainer_clients tc
 INNER JOIN mentorix.trainers t ON t.id = tc.trainer_id
@@ -437,16 +374,8 @@ func TestTrainerInvite_listForbiddenForNonTrainer(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "list-nontrainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	_, err = pool.Exec(ctx, `DELETE FROM mentorix.trainers WHERE user_id = $1`, userID)
+	userID := newTrainer(t, pool, "list-nontrainer@test.com", "")
+	_, err := pool.Exec(ctx, `DELETE FROM mentorix.trainers WHERE user_id = $1`, userID)
 	if err != nil {
 		t.Fatalf("delete trainer row: %v", err)
 	}
@@ -467,15 +396,7 @@ func TestTrainerInvite_acceptWithEmptyDisplayName(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "empty-name-trainer@test.com", pwHash, "Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "empty-name-trainer@test.com", "Trainer")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -510,15 +431,7 @@ func TestTrainerInvite_listClientsSearchAndSort(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "search-sort-trainer@test.com", pwHash, "Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "search-sort-trainer@test.com", "Trainer")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -589,15 +502,7 @@ func TestTrainerInvite_expired(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "expired-trainer@test.com", pwHash, "Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "expired-trainer@test.com", "Trainer")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -630,15 +535,7 @@ func TestTrainerInvite_consumedByOtherUser(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "consumed-trainer@test.com", pwHash, "Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "consumed-trainer@test.com", "Trainer")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -675,19 +572,8 @@ func TestTrainerInvite_blockedClient(t *testing.T) {
 	ctx := context.Background()
 	q := sqlc.New(pool)
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "blocked-trainer@test.com", pwHash, "Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "blocked-client@test.com", pwHash, "Client")
-	if err != nil {
-		t.Fatalf("register client user: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "blocked-trainer@test.com", "Trainer")
+	clientUserID := newTrainer(t, pool, "blocked-client@test.com", "Client")
 
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
 	if err != nil {
@@ -734,15 +620,7 @@ func TestTrainerInvite_handlersCreateListAccept(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "handler-trainer@test.com", pwHash, "Handler Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "handler-trainer@test.com", "Handler Trainer")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -792,15 +670,7 @@ func TestTrainerClient_listIncludesAvatarURL(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "avatar-list-trainer@test.com", pwHash, "Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "avatar-list-trainer@test.com", "Trainer")
 
 	const jwtSecret = "test-jwt-secret-at-least-32-chars-long"
 	progSvc := program.NewService(pool)
@@ -877,15 +747,7 @@ func TestTrainerClient_refreshTelegramAvatar(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "refresh-avatar-trainer@test.com", pwHash, "Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "refresh-avatar-trainer@test.com", "Trainer")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -926,15 +788,7 @@ func TestTrainerClient_listIncludesProgramAssignmentNames(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-name-trainer@test.com", pwHash, "Trainer")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "program-name-trainer@test.com", "Trainer")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -1066,11 +920,6 @@ func TestTrainerInvite_concurrentFirstAcceptSameTelegramUser(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
 	svc := trainerclient.NewService(pool, program.NewService(pool), trainerclient.InviteSettings{
 		TelegramBotUsername: "mentorix_bot",
 		InviteTTL:           7 * 24 * time.Hour,
@@ -1082,10 +931,7 @@ func TestTrainerInvite_concurrentFirstAcceptSameTelegramUser(t *testing.T) {
 		tokens := make([]string, 0, 2)
 		// Fresh trainers per iteration keep each one under the free-plan client limit.
 		for _, who := range []string{"a", "b"} {
-			trainer, err := authStore.RegisterTrainerEmailPassword(ctx, fmt.Sprintf("race-%s-%d@test.com", who, i), pwHash, "Trainer "+who)
-			if err != nil {
-				t.Fatalf("register trainer: %v", err)
-			}
+			trainer := newTrainer(t, pool, fmt.Sprintf("race-%s-%d@test.com", who, i), "Trainer "+who)
 			inv, err := svc.CreateInvite(ctx, trainer)
 			if err != nil {
 				t.Fatalf("create invite: %v", err)

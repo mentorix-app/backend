@@ -21,15 +21,7 @@ func TestProgramStore_CreateDraftAndPublish(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-store@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-store@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -119,19 +111,8 @@ func TestProgramStore_ListFiltersByTrainer(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerA, err := authStore.RegisterTrainerEmailPassword(ctx, "trainer-a@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer A: %v", err)
-	}
-	trainerB, err := authStore.RegisterTrainerEmailPassword(ctx, "trainer-b@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer B: %v", err)
-	}
+	trainerA := newTrainer(t, pool, "trainer-a@test.com", "")
+	trainerB := newTrainer(t, pool, "trainer-b@test.com", "")
 
 	progStore := program.NewStore(pool)
 	svc := program.NewService(pool)
@@ -164,15 +145,7 @@ func TestProgramStore_dayAndExerciseLifecycle(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-lifecycle@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-lifecycle@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -292,15 +265,7 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-weeks@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-weeks@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -646,15 +611,7 @@ func TestProgramStore_DeleteDay_lastDay(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-last-day@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-last-day@test.com", "")
 
 	progStore := program.NewStore(pool)
 	draft, err := progStore.CreateDraft(ctx, trainerID)
@@ -681,15 +638,7 @@ func TestProgramStore_reorderUnknownWeek(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-unknown-week@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-unknown-week@test.com", "")
 
 	progStore := program.NewStore(pool)
 	draft, err := progStore.CreateDraft(ctx, trainerID)
@@ -713,15 +662,7 @@ func TestProgramStore_ListWithFilters(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-list@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-list@test.com", "")
 
 	progStore := program.NewStore(pool)
 	draft, err := progStore.CreateDraft(ctx, trainerID)
@@ -781,15 +722,7 @@ func TestAuthUserIsAdmin_integration(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-check@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "admin-check@test.com", "")
 
 	q := sqlc.New(pool)
 	isAdmin, err := auth.UserIsAdmin(ctx, q, userID)
@@ -810,19 +743,8 @@ func TestProgramService_adminCannotMutateOtherUsersProgram(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	ownerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-owner@test.com", pwHash, "Owner")
-	if err != nil {
-		t.Fatalf("register owner: %v", err)
-	}
-	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-admin@test.com", pwHash, "Admin")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	ownerID := newTrainer(t, pool, "program-owner@test.com", "Owner")
+	adminID := newTrainer(t, pool, "program-admin@test.com", "Admin")
 	promoteToAdminOnly(t, pool, adminID)
 
 	svc := program.NewService(pool)
@@ -844,15 +766,7 @@ func TestProgramStore_blockValidationErrors(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "block-val@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "block-val@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -937,15 +851,7 @@ func TestProgramStore_blockNotFound(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "block-nf@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "block-nf@test.com", "")
 
 	progStore := program.NewStore(pool)
 	draft, err := progStore.CreateDraft(ctx, trainerID)
@@ -988,15 +894,7 @@ func TestProgramStore_groupBlockExerciseCRUD(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "group-crud@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "group-crud@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	ex1, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -1145,19 +1043,12 @@ func TestProgramStore_twoGroupsMoveAndMergeInstructions(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "two-groups@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "two-groups@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	exercises := make([]exercise.Exercise, 4)
 	for i := range exercises {
+		var err error
 		exercises[i], err = exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
 			Name:        "Ex",
 			NameRu:      "Упр",

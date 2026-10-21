@@ -73,8 +73,6 @@ func Mount(e *echo.Echo, d Deps) Result {
 		d.Redis,
 		cfg.AuthLoginRateMax,
 		cfg.AuthLoginRateWindow,
-		cfg.AuthRegisterRateMax,
-		cfg.AuthRegisterRateWin,
 	).WithLogger(d.Logger)
 	subsSvc := subscription.NewService(pool)
 	subscription.NewHandlers(auth.JWTMiddleware(cfg.JWTSecret)).Mount(e)

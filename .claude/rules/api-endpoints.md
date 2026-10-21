@@ -8,7 +8,7 @@ Canon: [api/openapi.yaml](../../api/openapi.yaml). Do not duplicate full path li
 | ---- | ------- |
 | Keys | `snake_case` | `exercise_id`, `sort_order` |
 | Enum values | `snake_case` | `muscle_gain`, `for_time` |
-| Exceptions | `token_type: "Bearer"`; single words `email`, `password` | |
+| Exceptions | `token_type: "Bearer"`; single word `email` | |
 
 Shared auth DTOs: [internal/auth/apitypes.go](../../internal/auth/apitypes.go).
 

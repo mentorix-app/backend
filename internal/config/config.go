@@ -37,8 +37,6 @@ type Config struct {
 	RefreshCookie        RefreshCookieSettings
 	AuthLoginRateMax     int
 	AuthLoginRateWindow  time.Duration
-	AuthRegisterRateMax  int
-	AuthRegisterRateWin  time.Duration
 	TelegramBotUsername  string
 	TrainerInviteTTLDays int
 	BotToken             string
@@ -122,8 +120,6 @@ func Load() (Config, error) {
 
 	loginMax := intFromEnv("AUTH_LOGIN_RATE_MAX", 20)
 	loginWin := secondsFromEnv("AUTH_LOGIN_RATE_WINDOW_SEC", 900)
-	regMax := intFromEnv("AUTH_REGISTER_RATE_MAX", 10)
-	regWin := secondsFromEnv("AUTH_REGISTER_RATE_WINDOW_SEC", 900)
 	inviteDays := intFromEnv("TRAINER_INVITE_TTL_DAYS", 7)
 	if inviteDays < 1 {
 		inviteDays = 7
@@ -148,8 +144,6 @@ func Load() (Config, error) {
 		},
 		AuthLoginRateMax:       loginMax,
 		AuthLoginRateWindow:    loginWin,
-		AuthRegisterRateMax:    regMax,
-		AuthRegisterRateWin:    regWin,
 		TelegramBotUsername:    strings.TrimSpace(os.Getenv("TELEGRAM_BOT_USERNAME")),
 		TrainerInviteTTLDays:   inviteDays,
 		BotToken:               strings.TrimSpace(os.Getenv("BOT_TOKEN")),

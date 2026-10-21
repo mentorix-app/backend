@@ -9,32 +9,12 @@ import (
 )
 
 func TestService_RefreshExpiresMatchesStoredExpiry(t *testing.T) {
-	hash, err := HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
 	verifier := fakeIDTokenVerifier{claims: IDTokenClaims{Subject: "sub", Email: "a@b.com", EmailVerified: true}}
 	tests := []struct {
 		name string
 		// issue returns the session and the expiry the store received.
 		issue func(t *testing.T) (IssuedAuth, time.Time)
 	}{
-		{"register", func(t *testing.T) (IssuedAuth, time.Time) {
-			store := &fakeAuthStore{}
-			issued, err := testAuthService(store).RegisterTrainer(context.Background(), "t@test.com", "password123", "T")
-			if err != nil {
-				t.Fatalf("RegisterTrainer() error = %v", err)
-			}
-			return issued, store.insertedExpiry
-		}},
-		{"login", func(t *testing.T) (IssuedAuth, time.Time) {
-			store := &fakeAuthStore{identity: emailIdentityRow{UserID: uuid.New(), PasswordHash: hash}}
-			issued, err := testAuthService(store).Login(context.Background(), "t@test.com", "password123")
-			if err != nil {
-				t.Fatalf("Login() error = %v", err)
-			}
-			return issued, store.insertedExpiry
-		}},
 		{"google", func(t *testing.T) (IssuedAuth, time.Time) {
 			store := &fakeAuthStore{profile: UserProfile{Email: "a@b.com"}}
 			issued, err := testGoogleService(store, verifier).SignInWithGoogle(context.Background(), "raw", "")

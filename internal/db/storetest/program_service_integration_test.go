@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/exercise"
@@ -21,15 +20,7 @@ func TestProgramService_dayExerciseViaService(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-day@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-svc-day@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -163,15 +154,7 @@ func TestProgramService_DiscardUnpublished(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-discard@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-discard@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -270,18 +253,10 @@ func TestProgramStore_RestoreWorkingTreeFromLatestVersion_errors(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-restore-err@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-restore-err@test.com", "")
 
 	progStore := program.NewStore(pool)
-	_, err = progStore.RestoreWorkingTreeFromLatestVersion(ctx, uuid.New(), trainerID)
+	_, err := progStore.RestoreWorkingTreeFromLatestVersion(ctx, uuid.New(), trainerID)
 	if !errors.Is(err, program.ErrNotFound) {
 		t.Fatalf("unknown program error = %v, want ErrNotFound", err)
 	}
@@ -342,15 +317,7 @@ func TestProgramService_trainingDaysCount(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "training-days@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "training-days@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -423,15 +390,7 @@ func TestProgramService_ListAndArchive(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-list@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-svc-list@test.com", "")
 
 	svc := program.NewService(pool)
 	if _, err := svc.Create(ctx, trainerID); err != nil {
@@ -515,15 +474,7 @@ func TestProgramService_weeksViaService(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-weeks@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-svc-weeks@test.com", "")
 
 	svc := program.NewService(pool)
 	draft, err := svc.Create(ctx, trainerID)
@@ -564,15 +515,7 @@ func TestProgramService_reorderAndDeleteGuards(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-guards@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-svc-guards@test.com", "")
 
 	svc := program.NewService(pool)
 	draft, err := svc.Create(ctx, trainerID)
@@ -621,15 +564,7 @@ func TestProgramService_publishWithTwoWeeks(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerID, err := authStore.RegisterTrainerEmailPassword(ctx, "program-svc-two-weeks@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerID := newTrainer(t, pool, "program-svc-two-weeks@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	catalogExercise, err := exStore.Create(ctx, trainerID, nil, exercise.UpsertInput{
@@ -699,19 +634,8 @@ func TestProgramService_ClientProgramAssignment(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "assign-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "assign-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "assign-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "assign-client@test.com", "")
 
 	q := sqlc.New(pool)
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
@@ -809,23 +733,9 @@ func TestProgramService_BulkSetClientProgramAssignment(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "bulk-assign-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	linkedClientID, err := authStore.RegisterTrainerEmailPassword(ctx, "bulk-linked@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register linked client: %v", err)
-	}
-	unlinkedClientID, err := authStore.RegisterTrainerEmailPassword(ctx, "bulk-unlinked@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register unlinked client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "bulk-assign-trainer@test.com", "")
+	linkedClientID := newTrainer(t, pool, "bulk-linked@test.com", "")
+	unlinkedClientID := newTrainer(t, pool, "bulk-unlinked@test.com", "")
 
 	q := sqlc.New(pool)
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
@@ -910,19 +820,8 @@ func TestProgramService_AssignmentSyncAndVersionCleanup(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "sync-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "sync-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "sync-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "sync-client@test.com", "")
 
 	q := sqlc.New(pool)
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
@@ -1100,19 +999,8 @@ func TestProgramService_CleanupVersions_skipsAssignedVersion(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "cleanup-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "cleanup-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "cleanup-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "cleanup-client@test.com", "")
 
 	q := sqlc.New(pool)
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
@@ -1203,23 +1091,12 @@ func TestProgramService_SetClientAssignment_notLinked(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "notlinked-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "notlinked-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "notlinked-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "notlinked-client@test.com", "")
 
 	svc := program.NewService(pool)
 	programID := uuid.New()
-	_, err = svc.SetClientProgramAssignment(ctx, trainerUserID, clientUserID, &programID)
+	_, err := svc.SetClientProgramAssignment(ctx, trainerUserID, clientUserID, &programID)
 	if !errors.Is(err, program.ErrClientNotLinked) {
 		t.Fatalf("SetClientProgramAssignment() error = %v, want ErrClientNotLinked", err)
 	}
@@ -1229,22 +1106,11 @@ func TestProgramService_GetClientAssignment_notLinked(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "getlink-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "getlink-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "getlink-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "getlink-client@test.com", "")
 
 	svc := program.NewService(pool)
-	_, err = svc.GetClientProgramAssignment(ctx, trainerUserID, clientUserID)
+	_, err := svc.GetClientProgramAssignment(ctx, trainerUserID, clientUserID)
 	if !errors.Is(err, program.ErrClientNotLinked) {
 		t.Fatalf("GetClientProgramAssignment() error = %v, want ErrClientNotLinked", err)
 	}
@@ -1254,19 +1120,8 @@ func TestProgramStore_assignmentQueriesWithoutAssignment(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "store-assign-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "store-assign-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "store-assign-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "store-assign-client@test.com", "")
 
 	q := sqlc.New(pool)
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
@@ -1308,19 +1163,8 @@ func TestProgramService_SetClientAssignment_draftProgram(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "draft-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "draft-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "draft-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "draft-client@test.com", "")
 
 	q := sqlc.New(pool)
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
@@ -1350,23 +1194,9 @@ func TestProgramService_SetClientAssignment_wrongOwner(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	ownerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "owner-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register owner: %v", err)
-	}
-	otherUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "other-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register other: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "wrongowner-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	ownerUserID := newTrainer(t, pool, "owner-trainer@test.com", "")
+	otherUserID := newTrainer(t, pool, "other-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "wrongowner-client@test.com", "")
 
 	q := sqlc.New(pool)
 	otherTrainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(otherUserID))
@@ -1438,19 +1268,8 @@ func TestProgramService_SetClientAssignment_blockedClient(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "blocked-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "blocked-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "blocked-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, "blocked-client@test.com", "")
 
 	q := sqlc.New(pool)
 	trainerID, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
@@ -1476,19 +1295,8 @@ func TestProgramService_adminCannotSyncOtherUsersProgram(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	ownerID, err := authStore.RegisterTrainerEmailPassword(ctx, "sync-owner@test.com", pwHash, "Owner")
-	if err != nil {
-		t.Fatalf("register owner: %v", err)
-	}
-	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "sync-admin@test.com", pwHash, "Admin")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	ownerID := newTrainer(t, pool, "sync-owner@test.com", "Owner")
+	adminID := newTrainer(t, pool, "sync-admin@test.com", "Admin")
 	promoteToAdminOnly(t, pool, adminID)
 
 	exStore := exercise.NewStore(pool)

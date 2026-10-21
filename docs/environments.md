@@ -25,7 +25,7 @@ feature/* → PR → develop → CI → Deploy stage → smoke
 - Required check: `check` job (`make check-ci`).
 - Migrations: [`scripts/render-migrate.sh`](../scripts/render-migrate.sh) in `preDeployCommand`.
 - The deploy job calls the Render deploy hook with `ref` set to the commit that passed CI, so stage always gets that exact commit. A manual run of the workflow deploys the head of the branch it was started from.
-- Post-deploy smoke ([`scripts/smoke.sh`](../scripts/smoke.sh)) polls `GET /health` for up to `SMOKE_WAIT_SECONDS` and passes only when its `commit` equals the commit under deploy (`SMOKE_EXPECT_COMMIT`, set by the workflows). A failed build or pre-deploy migration leaves the previous instance serving the old commit, so the smoke job fails on timeout and names the expected and last seen commit.
+- Post-deploy smoke ([`scripts/smoke.sh`](../scripts/smoke.sh)) polls `GET /health` for up to `SMOKE_WAIT_SECONDS` and passes only when its `commit` equals the commit under deploy (`SMOKE_EXPECT_COMMIT`, set by the workflows). A failed build or pre-deploy migration leaves the previous instance serving the old commit, so the smoke job fails on timeout and names the expected and last seen commit. After that it checks only public answers and needs no account: `GET /health/ready`, `401 missing_authorization` from `GET /auth/me` without a token, and `401 invalid_id_token` from `POST /auth/google` with a junk token (stage fails the run when Google sign-in is not configured; a local run skips that check).
 - `commit` in `/health` is `RENDER_GIT_COMMIT`, which Render sets at runtime. It is omitted when the variable is empty (local runs) and is not part of `/health/ready`.
 - Local: pre-commit runs `make check-quick`; before push run `make check`.
 - Workflow [`deploy-prod.yml`](../.github/workflows/deploy-prod.yml) — manual only (`workflow_dispatch`), no prod on Render yet.
@@ -36,7 +36,7 @@ feature/* → PR → develop → CI → Deploy stage → smoke
 
 | Environment | Secrets |
 | --- | --- |
-| `staging` | `RENDER_DEPLOY_HOOK_STAGE`; optional `SMOKE_EMAIL` / `SMOKE_PASSWORD` |
+| `staging` | `RENDER_DEPLOY_HOOK_STAGE` |
 
 Deploy Hook: Render → `mentorix-api-stage` → Settings → Deploy Hook.
 
@@ -55,7 +55,6 @@ If `mentorix-api` / `mentorix-db` / `mentorix-redis` already appear in Dashboard
 | migrate dirty | Check Render logs → fix / careful `migrate force` → redeploy |
 | `migrate down` of 000033 fails | It cannot run while `client_workout_completions` has rows with `source = 'app'`. It rolls back and leaves the database dirty at 32 with the schema still at 33; recovery is `migrate force 33`. Do not run the down on stage once the app has marks |
 | bad stage | fix-forward to `develop` or Rollback in Dashboard |
-| smoke without auth | set `SMOKE_*` in Environment `staging` |
 
 ## Env
 
@@ -82,9 +81,9 @@ The last three sign the Apple client secret for the revocation in `DELETE /auth/
 
 `TRUSTED_PROXY_CIDRS` decides which address counts as the client's: rate limit keys and `remote_ip` in the request log use it, unless the dashboard's server forwards the browser address with the shared secret (see `BFF_SHARED_SECRET` below). It is a comma-separated list of CIDRs, single IPs and the keywords `private`, `loopback` and `cloudflare`; empty means the TCP peer. With CIDRs or `private`, the server walks `X-Forwarded-For` from the right and takes the first untrusted hop. `cloudflare` adds one step: when that hop is a Cloudflare edge address (ranges copied into `internal/http/cloudflare.go`, with the date), the client is the `CF-Connecting-IP` header, which Cloudflare sets itself. A missing or invalid header, or a hop outside the list, keeps the hop. Stage sits behind Cloudflare and Render's proxy, so it uses `private,cloudflare`. Cloudflare ranges are not added to the walk because a Cloudflare Worker reaches the origin from them with an `X-Forwarded-For` of its own choosing.
 
-`BFF_SHARED_SECRET` lets the dashboard's server forward the browser address. When it is empty, both headers are ignored. When it is set (at least 32 bytes, otherwise startup stops), a request whose `X-Mentorix-BFF-Secret` header equals it and whose `X-Mentorix-Client-IP` header is an IP address is counted by that address in the auth rate limits (register, login, Google, Apple, Telegram link and refresh). The zone is dropped from the address, and an IPv4-mapped IPv6 address is read as IPv4. The request log adds `client_ip` next to `remote_ip`. A forwarded address that arrives with a missing or wrong secret, or with the right secret and an address that does not parse or is `0.0.0.0`, `::` or a multicast address, is ignored: the request goes on with the address from `TRUSTED_PROXY_CIDRS`, and the API logs one warning, `bff client ip rejected`, with `reason` (`secret_mismatch` or `invalid_address`) and `request_id`. The secret and the address are never logged. The same value must be set on the dashboard's server. Keep it out of chats, tickets and the repository.
+`BFF_SHARED_SECRET` lets the dashboard's server forward the browser address. When it is empty, both headers are ignored. When it is set (at least 32 bytes, otherwise startup stops), a request whose `X-Mentorix-BFF-Secret` header equals it and whose `X-Mentorix-Client-IP` header is an IP address is counted by that address in the auth rate limits (Google, Apple, Telegram link and refresh). The zone is dropped from the address, and an IPv4-mapped IPv6 address is read as IPv4. The request log adds `client_ip` next to `remote_ip`. A forwarded address that arrives with a missing or wrong secret, or with the right secret and an address that does not parse or is `0.0.0.0`, `::` or a multicast address, is ignored: the request goes on with the address from `TRUSTED_PROXY_CIDRS`, and the API logs one warning, `bff client ip rejected`, with `reason` (`secret_mismatch` or `invalid_address`) and `request_id`. The secret and the address are never logged. The same value must be set on the dashboard's server. Keep it out of chats, tickets and the repository.
 
-Stage still sets `AUTH_LOGIN_RATE_MAX=100` in the Dashboard (the default is 20). The dashboard's server does not send the two headers yet, so it calls the API from one address and all its users share one login counter and one refresh counter. When it sends them, the override is dropped and the default applies.
+Stage uses the default `AUTH_LOGIN_RATE_MAX=20`. The dashboard's server sends both headers, so each browser address gets its own login and refresh counters.
 
 Datastore CLI: `make psql` / `make redis` (local), `make psql-stage` / `make redis-stage` (Render; `ARGS="-c 'select 1'"`).
 For `.env.stage` values: Dashboard → instance → External URL, or `render pg get` / `render kv get … --include-sensitive-connection-info`.

@@ -5,7 +5,6 @@ go 1.26.0
 toolchain go1.26.9
 
 require (
-	github.com/alexedwards/argon2id v1.0.0
 	github.com/alicebob/miniredis/v2 v2.33.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1

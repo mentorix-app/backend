@@ -9,7 +9,7 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Exercise blocks in a program day (single / groups, merge, move) | [features/program-blocks.md](features/program-blocks.md) |
 | Per-client block visibility (`block_key`, client list on block) | [features/program-block-visibility.md](features/program-block-visibility.md) |
 | Infrastructure (health, config, slog, CORS, proxy) | [features/health.md](features/health.md), [architecture.md](architecture.md) |
-| Auth (register, login, refresh, logout, me, rate limit) | [features/auth.md](features/auth.md) |
+| Auth (refresh, logout, me, rate limit) | [features/auth.md](features/auth.md) |
 | Google and Apple sign-in for the mobile app (client account, refresh token in the body, Apple return address for Android) | [features/auth.md](features/auth.md) |
 | Become a trainer (`POST /auth/me/trainer`: trainer role next to `client`, accepted terms version and time) | [features/auth.md](features/auth.md) |
 | Telegram link for app clients (`/start link` code in the bot, `POST /auth/telegram/link`, `telegram_linked` in `/auth/me`) | [features/auth.md](features/auth.md) |

@@ -327,18 +327,14 @@ func TestAccountDeletion_serviceRefusesATrainerWithDataAndAnAppleSignInBeforeAsk
 // An admin is refused before Apple whatever else it holds.
 func TestAccountDeletion_serviceRefusesAnAdminWithAnAppleSignInBeforeAskingApple(t *testing.T) {
 	pool := NewPool(t)
-	store := auth.NewStore(pool)
-	admin, err := store.RegisterTrainerEmailPassword(context.Background(), "svc-apple-admin@test.com", "hash", "Admin")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	admin := newTrainer(t, pool, "svc-apple-admin@test.com", "Admin")
 	promoteToAdminOnly(t, pool, admin)
 	addIdentity(t, pool, admin, auth.ProviderApple, "a-svc-admin")
 	before := takeSnapshot(t, pool, admin)
 	revoker := &scriptedRevoker{}
 	svc := deletionService(pool, scriptedVerifier{claims: validAppleClaims("a-svc-admin")}, revoker)
 
-	err = svc.DeleteAccount(context.Background(), admin, auth.AppleProof{IDToken: "t", AuthorizationCode: appleCode})
+	err := svc.DeleteAccount(context.Background(), admin, auth.AppleProof{IDToken: "t", AuthorizationCode: appleCode})
 
 	if !errors.Is(err, auth.ErrAccountDeletionUnavailable) {
 		t.Fatalf("error = %v, want ErrAccountDeletionUnavailable", err)
@@ -349,19 +345,15 @@ func TestAccountDeletion_serviceRefusesAnAdminWithAnAppleSignInBeforeAskingApple
 	before.assertUnchanged(t, pool, admin)
 }
 
-// A trainer without data is revoked at Apple and then deleted, a registered one and one
+// A trainer without data is revoked at Apple and then deleted, a legacy trainer-only one and one
 // who became a trainer in the app.
 func TestAccountDeletion_serviceRevokesAndDeletesATrainerWithoutData(t *testing.T) {
 	tests := []struct {
 		name string
 		make func(t *testing.T, pool *pgxpool.Pool, store *auth.Store) uuid.UUID
 	}{
-		{"registered trainer", func(t *testing.T, _ *pgxpool.Pool, store *auth.Store) uuid.UUID {
-			id, err := store.RegisterTrainerEmailPassword(context.Background(), "svc-apple-coach@test.com", "hash", "Coach")
-			if err != nil {
-				t.Fatalf("register trainer: %v", err)
-			}
-			return id
+		{"legacy trainer", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store) uuid.UUID {
+			return newTrainer(t, pool, "svc-apple-coach@test.com", "Coach")
 		}},
 		{"client who became a trainer", func(t *testing.T, _ *pgxpool.Pool, store *auth.Store) uuid.UUID {
 			id := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-svc-apple-coach", "")

@@ -136,7 +136,7 @@ func TestGoogle_rateLimited(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	h := testAuthHandlers(&fakeAuthService{})
-	h.limiter = NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	h.limiter = NewRateLimiter(rdb, 1, time.Minute)
 	e := echo.New()
 	e.POST("/auth/google", h.Google)
 
@@ -150,21 +150,15 @@ func TestGoogle_rateLimited(t *testing.T) {
 func TestCookieFlowsOmitRefreshTokenFromBody(t *testing.T) {
 	e := echo.New()
 	h := testAuthHandlers(&fakeAuthService{})
-	e.POST("/auth/register", h.Register)
-	e.POST("/auth/login", h.Login)
 	e.POST("/auth/refresh", h.Refresh)
 
-	reg := postJSON(e, "/auth/register", `{"email":"user@example.com","password":"password123"}`)
-	login := postJSON(e, "/auth/login", `{"email":"user@example.com","password":"password123"}`)
 	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", nil)
 	req.AddCookie(&http.Cookie{Name: "mentorix_refresh", Value: "cookie-token"})
 	refresh := httptest.NewRecorder()
 	e.ServeHTTP(refresh, req)
 
-	for name, rec := range map[string]*httptest.ResponseRecorder{"register": reg, "login": login, "refresh": refresh} {
-		if strings.Contains(rec.Body.String(), "refresh_token") {
-			t.Errorf("%s body carries refresh_token: %s", name, rec.Body.String())
-		}
+	if strings.Contains(refresh.Body.String(), "refresh_token") {
+		t.Errorf("refresh body carries refresh_token: %s", refresh.Body.String())
 	}
 }
 

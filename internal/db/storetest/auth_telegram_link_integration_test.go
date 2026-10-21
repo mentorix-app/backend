@@ -28,14 +28,11 @@ func newClientWithIdentity(t *testing.T, store *auth.Store, provider, subject, e
 	return id
 }
 
-// linkToNewTrainer registers a trainer and links clientID to it.
+// linkToNewTrainer creates a trainer and links clientID to it.
 func linkToNewTrainer(t *testing.T, pool *pgxpool.Pool, store *auth.Store, clientID uuid.UUID, trainerEmail string) {
 	t.Helper()
 	ctx := context.Background()
-	trainerUserID, err := store.RegisterTrainerEmailPassword(ctx, trainerEmail, "hash", "Coach")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, trainerEmail, "Coach")
 	if _, err := pool.Exec(ctx, `
 INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id)
 SELECT id, $2 FROM mentorix.trainers WHERE user_id = $1`, trainerUserID, clientID); err != nil {

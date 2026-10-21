@@ -90,9 +90,9 @@ func TestErrorHandler_defaultCodeFromStatus(t *testing.T) {
 
 func TestNewError_setsTheExplicitCode(t *testing.T) {
 	e := errorEcho()
-	e.GET("/x", failWith(NewError(http.StatusConflict, "email_taken", "email already registered")))
+	e.GET("/x", failWith(NewError(http.StatusConflict, "sample_conflict", "sample conflict")))
 
-	assertErrorBody(t, serve(e, http.MethodGet, "/x", nil), http.StatusConflict, "email_taken", "email already registered")
+	assertErrorBody(t, serve(e, http.MethodGet, "/x", nil), http.StatusConflict, "sample_conflict", "sample conflict")
 }
 
 func TestNewError_emptyCodeFallsBackToTheStatusCode(t *testing.T) {
@@ -256,7 +256,7 @@ func TestErrorHandler_panicBehindRecover(t *testing.T) {
 
 func TestErrorHandler_headAnswersWithoutBody(t *testing.T) {
 	e := errorEcho()
-	e.HEAD("/x", failWith(NewError(http.StatusConflict, "email_taken", "email already registered")))
+	e.HEAD("/x", failWith(NewError(http.StatusConflict, "sample_conflict", "sample conflict")))
 
 	t.Run("handler error", func(t *testing.T) {
 		rec := serve(e, http.MethodHead, "/x", nil)
@@ -278,7 +278,7 @@ func TestErrorHandler_leavesACommittedResponseAlone(t *testing.T) {
 		if err := c.String(http.StatusOK, "partial"); err != nil {
 			return err
 		}
-		return NewError(http.StatusConflict, "email_taken", "late failure")
+		return NewError(http.StatusConflict, "sample_conflict", "late failure")
 	})
 
 	rec := serve(e, http.MethodGet, "/x", nil)
@@ -342,7 +342,7 @@ func TestErrorHandler_logsAFailedWrite(t *testing.T) {
 	e.Logger.SetOutput(&logs)
 	c := e.NewContext(httptest.NewRequest(http.MethodGet, "/x", nil), &brokenWriter{header: http.Header{}})
 
-	ErrorHandler(NewError(http.StatusConflict, "email_taken", "email already registered"), c)
+	ErrorHandler(NewError(http.StatusConflict, "sample_conflict", "sample conflict"), c)
 
 	if !strings.Contains(logs.String(), "broken pipe") {
 		t.Fatalf("logger output = %q, want the write error", logs.String())
@@ -374,11 +374,11 @@ func TestRequestLog_codedErrorWithoutCauseShowsTheCode(t *testing.T) {
 	var buf bytes.Buffer
 	e := errorEcho()
 	e.Use(RequestLog(slog.New(slog.NewTextHandler(&buf, nil))))
-	e.GET("/x", failWith(NewError(http.StatusConflict, "email_taken", "email already registered")))
+	e.GET("/x", failWith(NewError(http.StatusConflict, "sample_conflict", "sample conflict")))
 
 	serve(e, http.MethodGet, "/x", nil)
 
-	if log := buf.String(); !strings.Contains(log, "email_taken") || !strings.Contains(log, "email already registered") {
+	if log := buf.String(); !strings.Contains(log, "sample_conflict") || !strings.Contains(log, "sample conflict") {
 		t.Fatalf("log = %q, want the code and the message", log)
 	}
 }

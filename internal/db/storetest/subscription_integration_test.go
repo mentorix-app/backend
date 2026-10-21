@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 
 	"mentorix-backend/internal/admin"
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/subscription"
@@ -24,15 +23,7 @@ func TestSubscription_grantUsageAndQuota(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "sub-quota@test.com", pwHash, "Sub Trainer")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "sub-quota@test.com", "Sub Trainer")
 
 	subs := subscription.NewService(pool)
 	sub, err := subs.ForUser(ctx, trainerUserID)
@@ -131,15 +122,7 @@ func TestSubscription_adminUserHasNilSubscription(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "sub-admin@test.com", pwHash, "Admin")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	adminID := newTrainer(t, pool, "sub-admin@test.com", "Admin")
 	promoteToAdminOnly(t, pool, adminID)
 
 	subs := subscription.NewService(pool)
@@ -162,15 +145,7 @@ func TestSubscription_grantInvalidAndMissingTrainer(t *testing.T) {
 		t.Fatalf("invalid plan err = %v, want ErrInvalidPlan", err)
 	}
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	userID, err := authStore.RegisterTrainerEmailPassword(ctx, "sub-missing@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	userID := newTrainer(t, pool, "sub-missing@test.com", "")
 	promoteToAdminOnly(t, pool, userID)
 	_, err = subs.GrantAdminPlan(ctx, userID, subscription.PlanElite)
 	if !errors.Is(err, subscription.ErrTrainerNotFound) {
@@ -182,15 +157,7 @@ func TestSubscription_clientInviteQuota(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "sub-clients@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "sub-clients@test.com", "")
 
 	progSvc := program.NewService(pool)
 	svc := trainerclient.NewService(pool, progSvc, trainerclient.InviteSettings{
@@ -213,7 +180,7 @@ func TestSubscription_clientInviteQuota(t *testing.T) {
 		}
 	}
 
-	_, err = svc.CreateInvite(ctx, trainerUserID)
+	_, err := svc.CreateInvite(ctx, trainerUserID)
 	var qe *subscription.QuotaError
 	if !errors.As(err, &qe) || qe.Resource != subscription.ResourceClients {
 		t.Fatalf("4th invite error = %v, want QuotaError clients", err)
@@ -224,19 +191,8 @@ func TestSubscription_privateExerciseInProgram(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	ownerID, err := authStore.RegisterTrainerEmailPassword(ctx, "sub-private-ex@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register owner: %v", err)
-	}
-	otherID, err := authStore.RegisterTrainerEmailPassword(ctx, "sub-private-other@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register other: %v", err)
-	}
+	ownerID := newTrainer(t, pool, "sub-private-ex@test.com", "")
+	otherID := newTrainer(t, pool, "sub-private-other@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	otherTrainerID, err := exStore.TrainerIDForUser(ctx, otherID)
@@ -276,15 +232,7 @@ func TestSubscription_checkerAndMutateQuota(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "sub-mutate@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "sub-mutate@test.com", "")
 
 	exStore := exercise.NewStore(pool)
 	trainerID, err := exStore.TrainerIDForUser(ctx, trainerUserID)
@@ -311,10 +259,7 @@ func TestSubscription_checkerAndMutateQuota(t *testing.T) {
 		t.Fatalf("OpMutate at exact limit should pass: %v", err)
 	}
 
-	adminID, err := authStore.RegisterTrainerEmailPassword(ctx, "sub-checker-admin@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register admin: %v", err)
-	}
+	adminID := newTrainer(t, pool, "sub-checker-admin@test.com", "")
 	promoteToAdminOnly(t, pool, adminID)
 	if err := checker.CheckQuota(ctx, adminID, subscription.ResourceExercises, subscription.OpCreate); err != nil {
 		t.Fatalf("admin without trainer profile must pass quota check: %v", err)
@@ -325,15 +270,7 @@ func TestAdmin_grantAndRevokePlanHTTPLayer(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "admin-plan-target@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "admin-plan-target@test.com", "")
 
 	adminSvc := admin.NewService(pool)
 	sub, err := adminSvc.GrantPlan(ctx, trainerUserID, subscription.PlanElite)
@@ -355,15 +292,7 @@ func TestAdmin_grantAndRevokePlanHTTPLayer(t *testing.T) {
 func TestProgram_deletePublishedClearsAssignments(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "del-pub@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "del-pub@test.com", "")
 	exStore := exercise.NewStore(pool)
 	ex, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
 		Name: "Squat", NameRu: "Присед", Type: exercise.ExerciseTypeStrength,
@@ -400,15 +329,7 @@ func TestProgram_deletePublishedClearsAssignments(t *testing.T) {
 func TestSubscription_republishBlockedWhenAtProgramLimit(t *testing.T) {
 	pool := NewPool(t)
 	ctx := context.Background()
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, "republish-quota@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, "republish-quota@test.com", "")
 	exStore := exercise.NewStore(pool)
 	ex, err := exStore.Create(ctx, trainerUserID, nil, exercise.UpsertInput{
 		Name: "Squat", NameRu: "Присед", Type: exercise.ExerciseTypeStrength,

@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewRateLimiter_nilRedis(t *testing.T) {
-	if got := NewRateLimiter(nil, 10, time.Minute, 10, time.Minute); got != nil {
+	if got := NewRateLimiter(nil, 10, time.Minute); got != nil {
 		t.Fatal("expected nil limiter without redis")
 	}
 }
@@ -19,7 +19,7 @@ func TestNewRateLimiter_nilRedis(t *testing.T) {
 func TestRateLimiter_disabled(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 0, time.Minute, 0, time.Minute)
+	l := NewRateLimiter(rdb, 0, time.Minute)
 	if err := l.AllowLogin(context.Background(), "1.2.3.4"); err != nil {
 		t.Errorf("AllowLogin() = %v", err)
 	}
@@ -28,7 +28,7 @@ func TestRateLimiter_disabled(t *testing.T) {
 func TestRateLimiter_allowAndBlock(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 2, time.Minute, 2, time.Minute)
+	l := NewRateLimiter(rdb, 2, time.Minute)
 	ctx := context.Background()
 	ip := "10.0.0.1"
 
@@ -40,22 +40,12 @@ func TestRateLimiter_allowAndBlock(t *testing.T) {
 	if err := l.AllowLogin(ctx, ip); !errors.Is(err, ErrRateLimited) {
 		t.Errorf("third AllowLogin = %v, want ErrRateLimited", err)
 	}
-
-	regIP := "10.0.0.2"
-	for i := 0; i < 2; i++ {
-		if err := l.AllowRegister(ctx, regIP); err != nil {
-			t.Fatalf("AllowRegister attempt %d: %v", i+1, err)
-		}
-	}
-	if err := l.AllowRegister(ctx, regIP); !errors.Is(err, ErrRateLimited) {
-		t.Errorf("third AllowRegister = %v, want ErrRateLimited", err)
-	}
 }
 
 func TestRateLimiter_refreshLimit(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 1, time.Minute, 5, time.Minute)
+	l := NewRateLimiter(rdb, 1, time.Minute)
 	ctx := context.Background()
 	ip := "10.0.0.3"
 
@@ -70,7 +60,7 @@ func TestRateLimiter_refreshLimit(t *testing.T) {
 func TestRateLimiter_unknownIP(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 5, time.Minute, 5, time.Minute)
+	l := NewRateLimiter(rdb, 5, time.Minute)
 	if err := l.AllowLogin(context.Background(), ""); err != nil {
 		t.Errorf("AllowLogin empty ip: %v", err)
 	}
@@ -79,15 +69,12 @@ func TestRateLimiter_unknownIP(t *testing.T) {
 func TestRateLimiter_failsOpenWhenRedisDown(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 1, time.Minute, 1, time.Minute)
+	l := NewRateLimiter(rdb, 1, time.Minute)
 	mr.Close()
 	ctx := context.Background()
 
 	if err := l.AllowLogin(ctx, "10.0.0.4"); err != nil {
 		t.Errorf("AllowLogin with redis down = %v, want nil", err)
-	}
-	if err := l.AllowRegister(ctx, "10.0.0.4"); err != nil {
-		t.Errorf("AllowRegister with redis down = %v, want nil", err)
 	}
 	if err := l.AllowRefresh(ctx, "10.0.0.4"); err != nil {
 		t.Errorf("AllowRefresh with redis down = %v, want nil", err)
@@ -97,7 +84,7 @@ func TestRateLimiter_failsOpenWhenRedisDown(t *testing.T) {
 func TestRateLimiter_setsTTLOnFirstHit(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 5, time.Minute, 5, time.Minute)
+	l := NewRateLimiter(rdb, 5, time.Minute)
 
 	if err := l.AllowLogin(context.Background(), "10.0.0.5"); err != nil {
 		t.Fatalf("AllowLogin: %v", err)
@@ -110,7 +97,7 @@ func TestRateLimiter_setsTTLOnFirstHit(t *testing.T) {
 func TestRateLimiter_healsKeyWithoutTTL(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 5, time.Minute, 5, time.Minute)
+	l := NewRateLimiter(rdb, 5, time.Minute)
 	key := "mentorix:rl:login:ip:10.0.0.6"
 	if err := mr.Set(key, "3"); err != nil {
 		t.Fatal(err)
@@ -127,7 +114,7 @@ func TestRateLimiter_healsKeyWithoutTTL(t *testing.T) {
 func TestRateLimiter_doesNotExtendWindow(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 5, time.Minute, 5, time.Minute)
+	l := NewRateLimiter(rdb, 5, time.Minute)
 	ctx := context.Background()
 	key := "mentorix:rl:login:ip:10.0.0.7"
 
@@ -142,7 +129,7 @@ func TestRateLimiter_doesNotExtendWindow(t *testing.T) {
 func TestRateLimiter_windowExpiryResets(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 1, time.Minute, 1, time.Minute)
+	l := NewRateLimiter(rdb, 1, time.Minute)
 	ctx := context.Background()
 
 	_ = l.AllowLogin(ctx, "10.0.0.8")
@@ -167,7 +154,7 @@ func retryAfterOf(t *testing.T, err error) time.Duration {
 func TestRateLimiter_retryAfterIsTimeToWindowReset(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 1, time.Minute, 1, time.Minute)
+	l := NewRateLimiter(rdb, 1, time.Minute)
 	ctx := context.Background()
 
 	_ = l.AllowLogin(ctx, "10.0.1.1")
@@ -192,7 +179,7 @@ func TestRateLimiter_retryAfterIsTimeToWindowReset(t *testing.T) {
 func TestRateLimiter_retryAfterForEveryAction(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 1, 2*time.Minute, 1, 5*time.Minute)
+	l := NewRateLimiter(rdb, 1, 2*time.Minute)
 	ctx := context.Background()
 	tests := []struct {
 		name   string
@@ -200,7 +187,6 @@ func TestRateLimiter_retryAfterForEveryAction(t *testing.T) {
 		window time.Duration
 	}{
 		{"login", l.AllowLogin, 2 * time.Minute},
-		{"register", l.AllowRegister, 5 * time.Minute},
 		{"refresh", l.AllowRefresh, 2 * time.Minute},
 	}
 	for _, tt := range tests {
@@ -247,7 +233,7 @@ func TestRateLimitError_isErrRateLimited(t *testing.T) {
 func TestRateLimiter_failsOpenOnScriptError(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	l := NewRateLimiter(rdb, 1, time.Minute, 1, time.Minute)
+	l := NewRateLimiter(rdb, 1, time.Minute)
 	// INCR fails on a non-integer value, so the script returns an error.
 	if err := mr.Set("mentorix:rl:login:ip:10.0.1.3", "not-a-number"); err != nil {
 		t.Fatal(err)

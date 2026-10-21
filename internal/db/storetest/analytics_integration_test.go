@@ -18,7 +18,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"mentorix-backend/internal/analytics"
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/program"
@@ -45,19 +44,8 @@ func seedAnalyticsFixture(t *testing.T, pool *pgxpool.Pool, emailPrefix string) 
 	ctx := context.Background()
 	q := sqlc.New(pool)
 
-	authStore := auth.NewStore(pool)
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash: %v", err)
-	}
-	trainerUserID, err := authStore.RegisterTrainerEmailPassword(ctx, emailPrefix+"-trainer@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
-	clientUserID, err := authStore.RegisterTrainerEmailPassword(ctx, emailPrefix+"-client@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register client: %v", err)
-	}
+	trainerUserID := newTrainer(t, pool, emailPrefix+"-trainer@test.com", "")
+	clientUserID := newTrainer(t, pool, emailPrefix+"-client@test.com", "")
 	trainerIDPG, err := q.GetTrainerIDByUserID(ctx, pgconv.ToPGUUID(trainerUserID))
 	if err != nil {
 		t.Fatalf("trainer id: %v", err)

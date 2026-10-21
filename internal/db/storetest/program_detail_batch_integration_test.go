@@ -18,7 +18,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"mentorix-backend/internal/auth"
 	"mentorix-backend/internal/db/pgconv"
 	"mentorix-backend/internal/db/sqlc"
 	"mentorix-backend/internal/exercise"
@@ -195,14 +194,7 @@ type detailFixture struct {
 func newDetailFixture(t *testing.T, pool *pgxpool.Pool, emailPrefix string) *detailFixture {
 	t.Helper()
 	ctx := context.Background()
-	pwHash, err := auth.HashPassword("password123")
-	if err != nil {
-		t.Fatalf("hash password: %v", err)
-	}
-	trainer, err := auth.NewStore(pool).RegisterTrainerEmailPassword(ctx, emailPrefix+"@test.com", pwHash, "")
-	if err != nil {
-		t.Fatalf("register trainer: %v", err)
-	}
+	trainer := newTrainer(t, pool, emailPrefix+"@test.com", "")
 	f := &detailFixture{
 		pool:    pool,
 		svc:     program.NewService(pool, program.WithQuotaChecker(nil)),

@@ -6,19 +6,6 @@ import (
 	"mentorix-backend/internal/subscription"
 )
 
-// AuthCredentials is the JSON body for POST /auth/login.
-type AuthCredentials struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-// RegisterRequest is the JSON body for POST /auth/register.
-type RegisterRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Name     string `json:"name"`
-}
-
 // MePatchRequest is the JSON body for PATCH /auth/me.
 type MePatchRequest struct {
 	Name string `json:"name"`
@@ -70,8 +57,8 @@ type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// TokenResponse is the JSON body for successful register, login, refresh, Google
-// and Apple sign-in, and Telegram link. RefreshExpiresAt is always set, also when
+// TokenResponse is the JSON body for successful refresh, Google and
+// Apple sign-in, and Telegram link. RefreshExpiresAt is always set, also when
 // the refresh token travels in a cookie. RefreshToken is set only for clients that
 // keep the refresh token themselves (Google and Apple sign-in, Telegram link,
 // body-mode refresh); cookie flows leave it out.
