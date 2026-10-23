@@ -22,7 +22,11 @@ const deleteAfterRevocationTimeout = 10 * time.Second
 // DeleteClientAccount deletes a client or a trainer without business data, and every row
 // that belongs to them, in one transaction. It removes the invites the account consumed and,
 // with the user row, the trainers row with the trainer's own invites and admin-granted
-// entitlements. It returns the Telegram user id of the account, empty when there is none.
+// entitlements. What the trainer deleted in the app is not business data: the soft-deleted
+// programs the account created, with their trees, versions and block visibility rules, and
+// then the soft-deleted exercises its trainers row owns, are removed before the user row (see
+// TrainerHasBusinessData for which of them qualify). It returns the Telegram user id of the
+// account, empty when there is none.
 //
 // revokedAppleSubject is the subject of the Apple sign-in whose authorization was
 // revoked at Apple just before, empty when none was. An account that has Apple
@@ -40,8 +44,18 @@ const deleteAfterRevocationTimeout = 10 * time.Second
 // account holds business data (see TrainerHasBusinessData, checked for every account), then
 // ErrAppleSignInNotRevoked when the account has an Apple sign-in and revokedAppleSubject is
 // not one of them. ErrAccountDeletionUnavailable is also returned when the database refuses
-// a delete because other rows still reference the user. pgx.ErrNoRows means the user does
-// not exist.
+// a delete because other rows still reference the user or a purged program or exercise.
+// pgx.ErrNoRows means the user does not exist.
+//
+// The purge takes no explicit program lock. The deletion holds the trainers row, then the
+// user row, so it reaches programs after the trainers row, the same relative order as
+// SetClientProgramAssignment (trainers row, then program row), and its DELETE locks the
+// program rows it removes anyway. A new assignment cannot slip in unseen: only the creator of
+// a program can assign it, a soft-deleted program is refused, and assigning locks the
+// trainers row, which the deletion holds FOR UPDATE. Completions: every completion carries a
+// trainer_id (a NO ACTION reference to trainers), so inserting one waits for the deletion's
+// trainers-row lock; in practice a completion on a program of this account carries this
+// trainers row and makes the check refuse.
 //
 // Known windows, each ending in a database error for one of the two sides, with nothing
 // changed and a repeat that works:
@@ -52,6 +66,11 @@ const deleteAfterRevocationTimeout = 10 * time.Second
 //     before the delete cascade reaches the invite rows can deadlock with the deletion.
 //   - The janitor's PurgeStaleTrainerInvites deletes invite rows in scan order and can
 //     deadlock with the deletion the same way the old cascade could.
+//   - A program edit in flight (ensureMutable checks before its transaction and does not
+//     re-check deleted_at under the program lock) while the same trainer soft-deletes that
+//     program and deletes the account can deadlock (40P01) with the purge: the edit locks the
+//     program row and then, when it sets modified_by, takes KEY SHARE on the user row through
+//     that foreign key, while the purge takes the user row first and then the program rows.
 func (s *Store) DeleteClientAccount(ctx context.Context, userID uuid.UUID, revokedAppleSubject string) (string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -106,6 +125,19 @@ func (s *Store) DeleteClientAccount(ctx context.Context, userID uuid.UUID, revok
 	}
 	if len(appleSubjects) > 0 && (revokedAppleSubject == "" || !slices.Contains(appleSubjects, revokedAppleSubject)) {
 		return "", ErrAppleSignInNotRevoked
+	}
+
+	// Programs go before exercises: a program tree that uses an exercise holds a RESTRICT
+	// reference to it. Under the locks above every row these two delete passed the check.
+	// As a safety net, an assignment that still references a purged program makes the database
+	// refuse (ErrAccountDeletionUnavailable, nothing changed). A workout completion the app
+	// writes carries the account's trainers row, so it cannot appear before the deletion
+	// commits; its insert waits for the deletion's lock.
+	if _, err := qtx.PurgeDeletedProgramsByCreator(ctx, userPG); err != nil {
+		return "", deletionError("purge deleted programs", err)
+	}
+	if _, err := qtx.PurgeDeletedExercisesByOwner(ctx, userPG); err != nil {
+		return "", deletionError("purge deleted exercises", err)
 	}
 
 	// Assignments go before completions: a trainer who removes an assignment takes
@@ -187,12 +219,20 @@ func (s *Service) revokeAppleSignIn(ctx context.Context, userID uuid.UUID, proof
 
 // TrainerHasBusinessData reports whether the account holds data that deleting it must not
 // destroy, without taking any lock: a client of the trainer (any status, blocked included), a
-// program or exercise they authored or last edited (soft-deleted ones count), a program week,
-// day or block exercise they last edited, a program version they published, a program
-// assignment made or last edited by them or made for the trainer, a workout completion or a
-// comment on one, a block visibility rule they created, or an entitlement paid through a store
-// (any status). Invites and admin-granted entitlements are not data: they are removed with the
-// account. A user without a trainers row has only what they authored, edited or published.
+// program or exercise they authored or last edited, a program week, day or block exercise
+// they last edited, a program version they published, a program assignment made or last
+// edited by them or made for the trainer, a workout completion or a comment on one, a block
+// visibility rule they created, or an entitlement paid through a store (any status). Invites
+// and admin-granted entitlements are not data: they are removed with the account. A user
+// without a trainers row has only what they authored, edited or published.
+//
+// What the trainer deleted is not data either. A soft-deleted program the account created
+// does not count, nor the rows the account holds inside its trees, when no assignment and no
+// workout completion references it or one of its versions. A soft-deleted exercise owned by
+// the account's trainers row does not count when no other program or version tree uses it.
+// The rest of the soft-deleted rows still count: an exercise the account created or last
+// edited that the account's trainers row does not own (a global one included), and a program
+// that another trainer created and the account last edited.
 func (s *Store) TrainerHasBusinessData(ctx context.Context, userID uuid.UUID) (bool, error) {
 	has, err := s.q.TrainerHasBusinessData(ctx, pgconv.ToPGUUID(userID))
 	if err != nil {

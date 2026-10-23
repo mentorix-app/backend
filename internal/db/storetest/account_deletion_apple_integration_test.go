@@ -345,8 +345,9 @@ func TestAccountDeletion_serviceRefusesAnAdminWithAnAppleSignInBeforeAskingApple
 	before.assertUnchanged(t, pool, admin)
 }
 
-// A trainer without data is revoked at Apple and then deleted, a legacy trainer-only one and one
-// who became a trainer in the app.
+// A trainer without data is revoked at Apple and then deleted: a legacy trainer-only one, one
+// who became a trainer in the app, and one whose only programs and exercises were deleted in
+// the app (the check before Apple ignores them, and the store removes them).
 func TestAccountDeletion_serviceRevokesAndDeletesATrainerWithoutData(t *testing.T) {
 	tests := []struct {
 		name string
@@ -360,6 +361,14 @@ func TestAccountDeletion_serviceRevokesAndDeletesATrainerWithoutData(t *testing.
 			if err := store.ActivateTrainer(context.Background(), id, "2026-10-01"); err != nil {
 				t.Fatalf("activate trainer: %v", err)
 			}
+			return id
+		}},
+		{"trainer who deleted their programs and exercises", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store) uuid.UUID {
+			id := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-svc-apple-deleted-work", "")
+			if err := store.ActivateTrainer(context.Background(), id, "2026-10-01"); err != nil {
+				t.Fatalf("activate trainer: %v", err)
+			}
+			seedDeletedTrainerData(t, pool, store, id, "svc-apple")
 			return id
 		}},
 	}
