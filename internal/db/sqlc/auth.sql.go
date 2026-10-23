@@ -440,6 +440,26 @@ func (q *Queries) RevokeRefreshSessionByHash(ctx context.Context, tokenHash []by
 	return err
 }
 
+const setUserPrimaryEmailIfEmpty = `-- name: SetUserPrimaryEmailIfEmpty :execrows
+UPDATE mentorix.users
+SET primary_email = $1::text
+WHERE id = $2
+  AND (primary_email IS NULL OR primary_email = '')
+`
+
+type SetUserPrimaryEmailIfEmptyParams struct {
+	PrimaryEmail string      `json:"primary_email"`
+	UserID       pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) SetUserPrimaryEmailIfEmpty(ctx context.Context, arg SetUserPrimaryEmailIfEmptyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserPrimaryEmailIfEmpty, arg.PrimaryEmail, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const trainerHasBusinessData = `-- name: TrainerHasBusinessData :one
 WITH trainer AS (
   SELECT t.id FROM mentorix.trainers t WHERE t.user_id = $1

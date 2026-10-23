@@ -63,6 +63,26 @@ func TestGoogle_success(t *testing.T) {
 	}
 }
 
+func TestGoogle_fillsEmptyEmailOfExistingAccount(t *testing.T) {
+	store := &fakeAuthStore{}
+	svc := testGoogleService(store, fakeIDTokenVerifier{claims: IDTokenClaims{
+		Subject: "s", Email: "  User@Example.COM ", EmailVerified: true,
+	}})
+	e := echo.New()
+	e.POST("/auth/google", testAuthHandlers(svc).Google)
+
+	rec := postJSON(e, "/auth/google", `{"id_token":"raw-token"}`)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	var resp TokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Email != "user@example.com" {
+		t.Errorf("response email = %q, want the filled, normalized email", resp.Email)
+	}
+}
+
 func TestGoogle_errors(t *testing.T) {
 	tests := []struct {
 		name       string

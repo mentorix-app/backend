@@ -18,6 +18,7 @@ import (
 type authStore interface {
 	FindOrCreateClientByIdentity(ctx context.Context, id ClientIdentity) (userID uuid.UUID, created bool, err error)
 	FillUserDisplayNameIfEmpty(ctx context.Context, userID uuid.UUID, displayName string) (bool, error)
+	SetUserPrimaryEmailIfEmpty(ctx context.Context, userID uuid.UUID, email string) (bool, error)
 	InsertRefreshSession(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
 	RotateRefreshSession(ctx context.Context, oldHash, newHash []byte, newExpiresAt time.Time) (uuid.UUID, string, error)
 	RevokeRefreshSession(ctx context.Context, tokenHash []byte) error
@@ -157,7 +158,8 @@ func (s *Service) SignInWithApple(ctx context.Context, rawIDToken, name, nonce s
 
 // signInWithProvider uses fallbackName only when the token carries no name. The
 // name goes into a new account; an existing account gets it only while its own
-// name is empty, so a name that is set is never overwritten. With nonceRequired
+// name is empty, so a name that is set is never overwritten. The same holds for a
+// verified token email and the account's primary email. With nonceRequired
 // an empty nonce is refused after the provider check and before the verifier runs;
 // that is the service's own order, the HTTP handler checks the nonce before it calls here.
 func (s *Service) signInWithProvider(ctx context.Context, provider string, verifier IDTokenVerifier, rawIDToken, fallbackName, nonce string, nonceRequired bool) (IssuedAuth, error) {
@@ -200,6 +202,11 @@ func (s *Service) signInWithProvider(ctx context.Context, provider string, verif
 	if !created && name != "" {
 		if _, err := s.store.FillUserDisplayNameIfEmpty(ctx, userID, name); err != nil {
 			return out, fmt.Errorf("fill display name: %w", err)
+		}
+	}
+	if !created && id.Email != "" {
+		if _, err := s.store.SetUserPrimaryEmailIfEmpty(ctx, userID, id.Email); err != nil {
+			return out, fmt.Errorf("fill primary email: %w", err)
 		}
 	}
 	profile, err := s.store.UserProfile(ctx, userID)

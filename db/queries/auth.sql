@@ -135,6 +135,12 @@ SET display_name = sqlc.arg('display_name')
 WHERE id = sqlc.arg('user_id')
   AND btrim(display_name) = '';
 
+-- name: SetUserPrimaryEmailIfEmpty :execrows
+UPDATE mentorix.users
+SET primary_email = sqlc.arg('primary_email')::text
+WHERE id = sqlc.arg('user_id')
+  AND (primary_email IS NULL OR primary_email = '');
+
 -- name: DeleteUserByID :execrows
 DELETE FROM mentorix.users
 WHERE id = $1;

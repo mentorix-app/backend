@@ -304,3 +304,133 @@ func TestAuthService_SignIn_fillsEmptyNameOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthStore_SetUserPrimaryEmailIfEmpty(t *testing.T) {
+	empty, kept := "", "kept@example.com"
+	tests := []struct {
+		name       string
+		setStored  *string // stored primary_email; nil means NULL
+		wantEmail  string
+		wantFilled bool
+	}{
+		{"null email is filled", nil, "filled@example.com", true},
+		{"empty string email is filled", &empty, "filled@example.com", true},
+		{"set email is kept", &kept, "kept@example.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := NewPool(t)
+			store := auth.NewStore(pool)
+			ctx := context.Background()
+
+			userID, _, err := store.FindOrCreateClientByIdentity(ctx, auth.ClientIdentity{
+				Provider: auth.ProviderApple, Subject: "apple-email-fill",
+			})
+			if err != nil {
+				t.Fatalf("create client: %v", err)
+			}
+			if _, err := pool.Exec(ctx, `UPDATE mentorix.users SET primary_email = $2 WHERE id = $1`, userID, tt.setStored); err != nil {
+				t.Fatalf("set stored email: %v", err)
+			}
+			filled, err := store.SetUserPrimaryEmailIfEmpty(ctx, userID, "filled@example.com")
+			if err != nil {
+				t.Fatalf("SetUserPrimaryEmailIfEmpty() error = %v", err)
+			}
+			if filled != tt.wantFilled {
+				t.Errorf("filled = %v, want %v", filled, tt.wantFilled)
+			}
+			profile, err := store.UserProfile(ctx, userID)
+			if err != nil {
+				t.Fatalf("UserProfile() error = %v", err)
+			}
+			if profile.Email != tt.wantEmail {
+				t.Errorf("email = %q, want %q", profile.Email, tt.wantEmail)
+			}
+		})
+	}
+}
+
+func TestAuthStore_SetUserPrimaryEmailIfEmpty_leavesOtherUsersAlone(t *testing.T) {
+	pool := NewPool(t)
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+
+	target, _, err := store.FindOrCreateClientByIdentity(ctx, auth.ClientIdentity{Provider: auth.ProviderApple, Subject: "apple-target"})
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+	other, _, err := store.FindOrCreateClientByIdentity(ctx, auth.ClientIdentity{Provider: auth.ProviderApple, Subject: "apple-other"})
+	if err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	if _, err := store.SetUserPrimaryEmailIfEmpty(ctx, target, "target@example.com"); err != nil {
+		t.Fatalf("SetUserPrimaryEmailIfEmpty() error = %v", err)
+	}
+	profile, err := store.UserProfile(ctx, other)
+	if err != nil {
+		t.Fatalf("UserProfile() error = %v", err)
+	}
+	if profile.Email != "" {
+		t.Errorf("other user email = %q, want it still empty", profile.Email)
+	}
+	profile, err = store.UserProfile(ctx, target)
+	if err != nil {
+		t.Fatalf("UserProfile() error = %v", err)
+	}
+	if profile.Email != "target@example.com" {
+		t.Errorf("target email = %q, want %q", profile.Email, "target@example.com")
+	}
+}
+
+// signInEmail signs in through the real service and returns the stored email and the
+// email the sign-in answer carries.
+func signInEmail(t *testing.T, pool *pgxpool.Pool, provider string, claims auth.IDTokenClaims) (stored, issuedEmail string) {
+	t.Helper()
+	ctx := context.Background()
+	const appleNonce = "integration-apple-nonce"
+	nonceHash := sha256.Sum256([]byte(appleNonce))
+	claims.Nonce = hex.EncodeToString(nonceHash[:])
+	verifier := scriptedVerifier{claims: claims}
+	svc := auth.NewService(pool, "integration-test-jwt-secret-32chars", 15*time.Minute, 30*24*time.Hour,
+		auth.WithGoogleVerifier(verifier), auth.WithAppleVerifier(verifier))
+	var (
+		issued auth.IssuedAuth
+		err    error
+	)
+	if provider == auth.ProviderApple {
+		issued, err = svc.SignInWithApple(ctx, "raw", "", appleNonce)
+	} else {
+		issued, err = svc.SignInWithGoogle(ctx, "raw", "")
+	}
+	if err != nil {
+		t.Fatalf("sign-in with %s: %v", provider, err)
+	}
+	profile, err := auth.NewStore(pool).UserProfile(ctx, issued.UserID)
+	if err != nil {
+		t.Fatalf("UserProfile() error = %v", err)
+	}
+	return profile.Email, issued.Email
+}
+
+func TestAuthService_SignIn_fillsEmptyEmailOnce(t *testing.T) {
+	for _, provider := range []string{auth.ProviderGoogle, auth.ProviderApple} {
+		t.Run(provider, func(t *testing.T) {
+			pool := NewPool(t)
+			signIn := func(email string, verified bool) (string, string) {
+				return signInEmail(t, pool, provider, auth.IDTokenClaims{
+					Subject: provider + "-email-flow", Email: email, EmailVerified: verified,
+				})
+			}
+
+			if stored, issued := signIn("first@example.com", false); stored != "" || issued != "" {
+				t.Fatalf("first sign-in with an unverified email: stored = %q, issued = %q, want both empty", stored, issued)
+			}
+			if stored, issued := signIn("  First@Example.COM ", true); stored != "first@example.com" || issued != "first@example.com" {
+				t.Errorf("second sign-in with a verified email: stored = %q, issued = %q, want first@example.com for both", stored, issued)
+			}
+			if stored, issued := signIn("second@example.com", true); stored != "first@example.com" || issued != "first@example.com" {
+				t.Errorf("third sign-in with another email: stored = %q, issued = %q, want first@example.com kept", stored, issued)
+			}
+		})
+	}
+}
