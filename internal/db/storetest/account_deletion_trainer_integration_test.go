@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"mentorix-backend/internal/auth"
+	"mentorix-backend/internal/exercise"
 	"mentorix-backend/internal/program"
 	"mentorix-backend/internal/trainerclient"
 )
@@ -180,6 +181,139 @@ func TestAccountDeletion_clientTrainerWithoutTrainerDataIsDeletedWithItsClientDa
 	}
 }
 
+// deletedTrainerData names the rows seedDeletedTrainerData left behind.
+type deletedTrainerData struct {
+	programID, exerciseID, clientID uuid.UUID
+}
+
+// seedDeletedTrainerData gives trainer what is left of work that was deleted in the app: a
+// published program that uses a private exercise and that carries a block visibility rule,
+// both soft-deleted. The rule belongs to a client who is not a client of the trainer.
+func seedDeletedTrainerData(t *testing.T, pool *pgxpool.Pool, store *auth.Store, trainer uuid.UUID, tag string) deletedTrainerData {
+	t.Helper()
+	ctx := context.Background()
+	trainerID := trainersRowID(t, pool, trainer)
+	ex, err := exercise.NewStore(pool).Create(ctx, trainer, &trainerID, exercise.UpsertInput{
+		Name:        "Row " + tag,
+		NameRu:      "Тяга " + tag,
+		Type:        exercise.ExerciseTypeStrength,
+		MuscleGroup: exercise.MuscleGroupBack,
+		Difficulty:  exercise.DifficultyBeginner,
+	})
+	if err != nil {
+		t.Fatalf("create exercise: %v", err)
+	}
+	programs := program.NewStore(pool)
+	detail, err := programs.CreateDraft(ctx, trainer)
+	if err != nil {
+		t.Fatalf("CreateDraft: %v", err)
+	}
+	detail, err = createSingleBlockStore(ctx, programs, trainer, detail.ID, detail.Weeks[0].ID, detail.Weeks[0].Days[0].ID,
+		program.DayExerciseInput{ExerciseID: ex.ID})
+	if err != nil {
+		t.Fatalf("createSingleBlockStore: %v", err)
+	}
+	published, err := programs.PublishFromDraft(ctx, detail.ID, trainer, detail)
+	if err != nil {
+		t.Fatalf("PublishFromDraft: %v", err)
+	}
+	client := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-deleted-rule-"+tag, "")
+	execSQL(t, pool, "block rule", `
+INSERT INTO mentorix.program_block_clients (program_id, block_key, client_user_id, created_by) VALUES ($1, $2, $3, $4)`,
+		published.ID, published.Weeks[0].Days[0].Blocks[0].BlockKey, client, trainer)
+	// Edits made while the program was live leave the trainer in these columns.
+	execSQL(t, pool, "week editor", `UPDATE mentorix.program_weeks SET modified_by = $1 WHERE program_id = $2`, trainer, published.ID)
+	execSQL(t, pool, "day editor", `UPDATE mentorix.program_week_days SET modified_by = $1 WHERE program_id = $2`, trainer, published.ID)
+	execSQL(t, pool, "block exercise editor", `
+UPDATE mentorix.program_week_day_block_exercises SET modified_by = $1
+WHERE program_week_day_block_id IN (
+  SELECT b.id FROM mentorix.program_week_day_blocks b
+  JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+  WHERE d.program_id = $2)`, trainer, published.ID)
+	if err := program.NewService(pool).Delete(ctx, trainer, published.ID); err != nil {
+		t.Fatalf("delete program: %v", err)
+	}
+	if n, err := exercise.NewStore(pool).DeleteMany(ctx, trainer, &trainerID, []uuid.UUID{ex.ID}); err != nil || n != 1 {
+		t.Fatalf("DeleteMany() = %d, %v, want 1", n, err)
+	}
+	return deletedTrainerData{programID: published.ID, exerciseID: ex.ID, clientID: client}
+}
+
+// A trainer who deleted everything they made in the app has no business data left: the
+// soft-deleted program with its trees, versions and rules, and the soft-deleted private
+// exercise, go with the account. Another trainer's program and exercise stay.
+func TestAccountDeletion_trainerWithOnlyDeletedProgramsAndExercisesIsDeleted(t *testing.T) {
+	pool := NewPool(t)
+	store := auth.NewStore(pool)
+	ctx := context.Background()
+	base := seedDeletionBase(t, pool, "del-trainer")
+	account := activatedTrainer(t, store, "g-deleted-data")
+	data := seedDeletedTrainerData(t, pool, store, account, "own")
+	baseCounts := func() []int {
+		return []int{
+			countRows(t, pool, `SELECT count(*) FROM mentorix.programs WHERE id = $1`, base.programID),
+			countRows(t, pool, `SELECT count(*) FROM mentorix.program_weeks WHERE program_id = $1`, base.programID),
+			countRows(t, pool, `SELECT count(*) FROM mentorix.program_versions WHERE program_id = $1`, base.programID),
+			countRows(t, pool, `SELECT count(*) FROM mentorix.program_block_clients WHERE program_id = $1`, base.programID),
+			countRows(t, pool, `SELECT count(*) FROM mentorix.exercises WHERE created_by = $1`, base.trainerUser),
+		}
+	}
+	baseBefore := baseCounts()
+	programRows := []struct{ name, query string }{
+		{"programs", `SELECT count(*) FROM mentorix.programs WHERE id = $1`},
+		{"program weeks", `SELECT count(*) FROM mentorix.program_weeks WHERE program_id = $1`},
+		{"program days", `SELECT count(*) FROM mentorix.program_week_days WHERE program_id = $1`},
+		{"program blocks", `SELECT count(*) FROM mentorix.program_week_day_blocks b JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id WHERE d.program_id = $1`},
+		{"block exercises", `SELECT count(*) FROM mentorix.program_week_day_block_exercises e JOIN mentorix.program_week_day_blocks b ON b.id = e.program_week_day_block_id JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id WHERE d.program_id = $1`},
+		{"program versions", `SELECT count(*) FROM mentorix.program_versions WHERE program_id = $1`},
+		{"version weeks", `SELECT count(*) FROM mentorix.program_version_weeks w JOIN mentorix.program_versions v ON v.id = w.program_version_id WHERE v.program_id = $1`},
+		{"version days", `SELECT count(*) FROM mentorix.program_version_week_days d JOIN mentorix.program_versions v ON v.id = d.program_version_id WHERE v.program_id = $1`},
+		{"version blocks", `SELECT count(*) FROM mentorix.program_version_week_day_blocks b JOIN mentorix.program_version_week_days d ON d.id = b.program_version_week_day_id JOIN mentorix.program_versions v ON v.id = d.program_version_id WHERE v.program_id = $1`},
+		{"version block exercises", `SELECT count(*) FROM mentorix.program_version_week_day_block_exercises e JOIN mentorix.program_version_week_day_blocks b ON b.id = e.program_version_week_day_block_id JOIN mentorix.program_version_week_days d ON d.id = b.program_version_week_day_id JOIN mentorix.program_versions v ON v.id = d.program_version_id WHERE v.program_id = $1`},
+		{"block visibility rules", `SELECT count(*) FROM mentorix.program_block_clients WHERE program_id = $1`},
+	}
+	const exerciseRows = `SELECT count(*) FROM mentorix.exercises WHERE id = $1`
+	for _, rows := range programRows {
+		if n := countRows(t, pool, rows.query, data.programID); n == 0 {
+			t.Fatalf("seeded %s: no rows, the test would prove nothing", rows.name)
+		}
+	}
+	if n := countRows(t, pool, exerciseRows, data.exerciseID); n == 0 {
+		t.Fatal("seeded exercise: no row, the test would prove nothing")
+	}
+
+	if has, err := store.TrainerHasBusinessData(ctx, account); err != nil || has {
+		t.Errorf("TrainerHasBusinessData() = %v, %v, want false", has, err)
+	}
+	_, err := store.DeleteClientAccount(ctx, account, "")
+
+	if err != nil {
+		t.Fatalf("DeleteClientAccount() error = %v", err)
+	}
+	if userExists(t, pool, account) {
+		t.Error("the user row is still there")
+	}
+	for key, n := range userReferences(t, pool, account) {
+		if n != 0 {
+			t.Errorf("%s still holds %d rows of the deleted trainer", key, n)
+		}
+	}
+	for _, rows := range programRows {
+		if n := countRows(t, pool, rows.query, data.programID); n != 0 {
+			t.Errorf("%s of the deleted program = %d rows, want 0", rows.name, n)
+		}
+	}
+	if n := countRows(t, pool, exerciseRows, data.exerciseID); n != 0 {
+		t.Errorf("the deleted exercise = %d rows, want 0", n)
+	}
+	if !userExists(t, pool, data.clientID) {
+		t.Error("the client of the visibility rule was removed")
+	}
+	if got := baseCounts(); !reflect.DeepEqual(got, baseBefore) {
+		t.Errorf("the other trainer's rows changed: %v, want %v", got, baseBefore)
+	}
+}
+
 // businessDataKind seeds one kind of trainer business data for account, a trainer-only
 // account. base is another trainer with a published program.
 type businessDataKind struct {
@@ -187,15 +321,65 @@ type businessDataKind struct {
 	seed func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase, account, trainerID uuid.UUID)
 }
 
-func insertExercise(t *testing.T, pool *pgxpool.Pool, createdBy uuid.UUID, ownerTrainer *uuid.UUID, deleted bool) {
+func insertExercise(t *testing.T, pool *pgxpool.Pool, createdBy uuid.UUID, ownerTrainer *uuid.UUID, deleted bool) uuid.UUID {
 	t.Helper()
 	deletedAt := "NULL"
 	if deleted {
 		deletedAt = "now()"
 	}
-	execSQL(t, pool, "exercise", `
+	var id uuid.UUID
+	err := pool.QueryRow(context.Background(), `
 INSERT INTO mentorix.exercises (name, name_ru, created_by, modified_by, exercise_type, muscle_group, difficulty, owner_trainer_id, deleted_at)
-VALUES ('Row', 'Тяга', $1, $1, 'strength', 'back', 'beginner', $2, `+deletedAt+`)`, createdBy, ownerTrainer)
+VALUES ('Row', 'Тяга', $1, $1, 'strength', 'back', 'beginner', $2, `+deletedAt+`)
+RETURNING id`, createdBy, ownerTrainer).Scan(&id)
+	if err != nil {
+		t.Fatalf("seed exercise: %v", err)
+	}
+	return id
+}
+
+// insertDeletedProgram adds a soft-deleted program that createdBy made and nobody else
+// edited, and returns its id.
+func insertDeletedProgram(t *testing.T, pool *pgxpool.Pool, createdBy uuid.UUID) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	err := pool.QueryRow(context.Background(), `
+INSERT INTO mentorix.programs (created_by, modified_by, deleted_at) VALUES ($1, $1, now()) RETURNING id`, createdBy).Scan(&id)
+	if err != nil {
+		t.Fatalf("seed deleted program: %v", err)
+	}
+	return id
+}
+
+// insertProgramVersion adds a version of programID that publishedBy published.
+func insertProgramVersion(t *testing.T, pool *pgxpool.Pool, programID, publishedBy uuid.UUID) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	err := pool.QueryRow(context.Background(), `
+INSERT INTO mentorix.program_versions (program_id, version_number, published_by) VALUES ($1, 1, $2) RETURNING id`, programID, publishedBy).Scan(&id)
+	if err != nil {
+		t.Fatalf("seed program version: %v", err)
+	}
+	return id
+}
+
+// baseVersionID is the version that seedDeletionBase published.
+func baseVersionID(t *testing.T, pool *pgxpool.Pool, base deletionBase) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(context.Background(), `SELECT id FROM mentorix.program_versions WHERE program_id = $1`, base.programID).Scan(&id); err != nil {
+		t.Fatalf("version id: %v", err)
+	}
+	return id
+}
+
+// insertAssignmentRow adds an assignment of the trainer of base for a client, made by base's
+// trainer user, that points at the given program and version.
+func insertAssignmentRow(t *testing.T, pool *pgxpool.Pool, base deletionBase, client, programID, versionID uuid.UUID) {
+	t.Helper()
+	execSQL(t, pool, "assignment", `
+INSERT INTO mentorix.program_assignments (program_id, program_version_id, trainer_id, client_user_id, created_by, modified_by)
+VALUES ($1, $2, $3, $4, $5, $5)`, programID, versionID, base.trainerID, client, base.trainerUser)
 }
 
 func insertAssignment(t *testing.T, pool *pgxpool.Pool, base deletionBase, trainerID, client, createdBy uuid.UUID) {
@@ -241,14 +425,52 @@ INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id, status, blocke
 				t.Fatalf("CreateDraft: %v", err)
 			}
 		}},
-		{"a soft-deleted program", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store, _ deletionBase, account, _ uuid.UUID) {
-			execSQL(t, pool, "deleted program", `INSERT INTO mentorix.programs (created_by, modified_by, deleted_at) VALUES ($1, $1, now())`, account)
+		{"a soft-deleted program an assignment points at", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase, account, _ uuid.UUID) {
+			// The assignment belongs to the other trainer, so only the program check refuses.
+			insertAssignmentRow(t, pool, base, otherClient(t, store, "deleted-program"), insertDeletedProgram(t, pool, account), baseVersionID(t, pool, base))
+		}},
+		{"a soft-deleted program whose version an assignment points at", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase, account, _ uuid.UUID) {
+			programID := insertDeletedProgram(t, pool, account)
+			versionID := insertProgramVersion(t, pool, programID, base.trainerUser)
+			insertAssignmentRow(t, pool, base, otherClient(t, store, "deleted-version"), base.programID, versionID)
+		}},
+		{"a soft-deleted program a workout completion points at", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase, account, _ uuid.UUID) {
+			completion := insertCompletion(t, pool, base.trainerID, otherClient(t, store, "deleted-program-done"))
+			execSQL(t, pool, "completion program", `UPDATE mentorix.client_workout_completions SET program_id = $1 WHERE id = $2`,
+				insertDeletedProgram(t, pool, account), completion)
+		}},
+		{"a soft-deleted program whose version a workout completion points at", func(t *testing.T, pool *pgxpool.Pool, store *auth.Store, base deletionBase, account, _ uuid.UUID) {
+			completion := insertCompletion(t, pool, base.trainerID, otherClient(t, store, "deleted-version-done"))
+			versionID := insertProgramVersion(t, pool, insertDeletedProgram(t, pool, account), base.trainerUser)
+			execSQL(t, pool, "completion version", `UPDATE mentorix.client_workout_completions SET program_version_id = $1 WHERE id = $2`, versionID, completion)
+		}},
+		{"a soft-deleted program of another trainer that the user last modified", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store, base deletionBase, account, _ uuid.UUID) {
+			execSQL(t, pool, "deleted program editor", `UPDATE mentorix.programs SET deleted_at = now(), modified_by = $1 WHERE id = $2`, account, base.programID)
 		}},
 		{"an exercise of the trainer", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store, _ deletionBase, account, trainerID uuid.UUID) {
 			insertExercise(t, pool, account, &trainerID, false)
 		}},
-		{"a soft-deleted exercise of the trainer", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store, _ deletionBase, account, trainerID uuid.UUID) {
-			insertExercise(t, pool, account, &trainerID, true)
+		{"a soft-deleted exercise of the trainer in another trainer's live program", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store, base deletionBase, account, trainerID uuid.UUID) {
+			exerciseID := insertExercise(t, pool, account, &trainerID, true)
+			execSQL(t, pool, "program tree exercise", `
+UPDATE mentorix.program_week_day_block_exercises SET exercise_id = $1
+WHERE program_week_day_block_id IN (
+  SELECT b.id FROM mentorix.program_week_day_blocks b
+  JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
+  WHERE d.program_id = $2)`, exerciseID, base.programID)
+		}},
+		{"a soft-deleted exercise of the trainer in another trainer's program version", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store, base deletionBase, account, trainerID uuid.UUID) {
+			exerciseID := insertExercise(t, pool, account, &trainerID, true)
+			execSQL(t, pool, "version tree exercise", `
+UPDATE mentorix.program_version_week_day_block_exercises SET exercise_id = $1
+WHERE program_version_week_day_block_id IN (
+  SELECT b.id FROM mentorix.program_version_week_day_blocks b
+  JOIN mentorix.program_version_week_days d ON d.id = b.program_version_week_day_id
+  JOIN mentorix.program_versions v ON v.id = d.program_version_id
+  WHERE v.program_id = $2)`, exerciseID, base.programID)
+		}},
+		{"a soft-deleted exercise the user created without an owner", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store, _ deletionBase, account, _ uuid.UUID) {
+			insertExercise(t, pool, account, nil, true)
 		}},
 		{"an exercise the user created without an owner", func(t *testing.T, pool *pgxpool.Pool, _ *auth.Store, _ deletionBase, account, _ uuid.UUID) {
 			insertExercise(t, pool, account, nil, false)
@@ -370,8 +592,9 @@ INSERT INTO mentorix.trainer_clients (trainer_id, client_user_id) VALUES ($1, $2
 	before.assertUnchanged(t, pool, account)
 }
 
-// What belongs to the account alone is not business data: invites, the admin grant, being
-// somebody's client, and an account that never had a trainers row.
+// What belongs to the account alone is not business data: invites, the admin grant, programs
+// and exercises it deleted that nothing else uses, being somebody's client, and an account that
+// never had a trainers row.
 func TestAccountDeletion_trainerHasBusinessDataIsFalseForWhatGoesWithTheAccount(t *testing.T) {
 	pool := NewPool(t)
 	store := auth.NewStore(pool)
@@ -379,13 +602,14 @@ func TestAccountDeletion_trainerHasBusinessDataIsFalseForWhatGoesWithTheAccount(
 	base := seedDeletionBase(t, pool, "del-trainer")
 	coach := newCoach(t, pool, "coach-clean@test.com")
 	seedTrainerOwnRows(t, pool, store, coach, "coach-clean")
+	seedDeletedTrainerData(t, pool, store, coach, "coach-clean")
 	asClient := newClientWithIdentity(t, store, auth.ProviderGoogle, "g-only-client", "")
 	seedClientData(t, pool, base, asClient, "only-client")
 
 	for name, id := range map[string]uuid.UUID{
-		"trainer with invites and an admin grant": coach,
-		"client with client data only":            asClient,
-		"unknown user":                            uuid.New(),
+		"trainer with invites, an admin grant and deleted work": coach,
+		"client with client data only":                          asClient,
+		"unknown user":                                          uuid.New(),
 	} {
 		if has, err := store.TrainerHasBusinessData(ctx, id); err != nil || has {
 			t.Errorf("%s: TrainerHasBusinessData() = %v, %v, want false", name, has, err)

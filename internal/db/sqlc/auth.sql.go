@@ -404,6 +404,44 @@ func (q *Queries) MoveSignInIdentitiesToUser(ctx context.Context, arg MoveSignIn
 	return result.RowsAffected(), nil
 }
 
+const purgeDeletedExercisesByOwner = `-- name: PurgeDeletedExercisesByOwner :execrows
+DELETE FROM mentorix.exercises
+WHERE owner_trainer_id = (SELECT t.id FROM mentorix.trainers t WHERE t.user_id = $1)
+  AND deleted_at IS NOT NULL
+`
+
+// Removes the soft-deleted exercises owned by the user's trainers row. Run after
+// PurgeDeletedProgramsByCreator: a program tree that still uses an exercise makes the delete
+// fail on the foreign key.
+func (q *Queries) PurgeDeletedExercisesByOwner(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeDeletedExercisesByOwner, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const purgeDeletedProgramsByCreator = `-- name: PurgeDeletedProgramsByCreator :execrows
+DELETE FROM mentorix.programs
+WHERE created_by = $1
+  AND deleted_at IS NOT NULL
+`
+
+// Removes the soft-deleted programs the user created, with their trees, versions and block
+// visibility rules (the foreign keys cascade). The deletion calls it after
+// TrainerHasBusinessData passed under the account locks, so every such program is purgeable.
+// As a safety net, an assignment that still references a purged program makes the delete
+// fail on the foreign key (RESTRICT, the deletion answers 409 and changes nothing). A workout
+// completion the app writes carries the account's trainers row, so it cannot appear before
+// the deletion commits; its insert waits for the deletion's lock.
+func (q *Queries) PurgeDeletedProgramsByCreator(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeDeletedProgramsByCreator, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const purgeStaleRefreshSessions = `-- name: PurgeStaleRefreshSessions :execrows
 DELETE FROM mentorix.auth_refresh_sessions
 WHERE (revoked_at IS NOT NULL AND revoked_at < now() - interval '30 days')
@@ -463,19 +501,89 @@ func (q *Queries) SetUserPrimaryEmailIfEmpty(ctx context.Context, arg SetUserPri
 const trainerHasBusinessData = `-- name: TrainerHasBusinessData :one
 WITH trainer AS (
   SELECT t.id FROM mentorix.trainers t WHERE t.user_id = $1
+),
+purgeable_programs AS (
+  SELECT p.id
+  FROM mentorix.programs p
+  WHERE p.created_by = $1
+    AND p.deleted_at IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM mentorix.program_assignments pa WHERE pa.program_id = p.id)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM mentorix.program_assignments pa
+      JOIN mentorix.program_versions pv ON pv.id = pa.program_version_id
+      WHERE pv.program_id = p.id
+    )
+    AND NOT EXISTS (SELECT 1 FROM mentorix.client_workout_completions cwc WHERE cwc.program_id = p.id)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM mentorix.client_workout_completions cwc
+      JOIN mentorix.program_versions pv ON pv.id = cwc.program_version_id
+      WHERE pv.program_id = p.id
+    )
+),
+purgeable_exercises AS (
+  SELECT e.id
+  FROM mentorix.exercises e
+  WHERE e.owner_trainer_id IN (SELECT id FROM trainer)
+    AND e.deleted_at IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM mentorix.program_week_day_block_exercises pwdbe
+      JOIN mentorix.program_week_day_blocks pwdb ON pwdb.id = pwdbe.program_week_day_block_id
+      JOIN mentorix.program_week_days pwd ON pwd.id = pwdb.program_week_day_id
+      WHERE pwdbe.exercise_id = e.id
+        AND NOT EXISTS (SELECT 1 FROM purgeable_programs pp WHERE pp.id = pwd.program_id)
+    )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM mentorix.program_version_week_day_block_exercises pvwdbe
+      JOIN mentorix.program_version_week_day_blocks pvwdb ON pvwdb.id = pvwdbe.program_version_week_day_block_id
+      JOIN mentorix.program_version_week_days pvwd ON pvwd.id = pvwdb.program_version_week_day_id
+      JOIN mentorix.program_versions pv ON pv.id = pvwd.program_version_id
+      WHERE pvwdbe.exercise_id = e.id
+        AND NOT EXISTS (SELECT 1 FROM purgeable_programs pp WHERE pp.id = pv.program_id)
+    )
 )
 SELECT (
   EXISTS (SELECT 1 FROM mentorix.trainer_clients tc WHERE tc.trainer_id IN (SELECT id FROM trainer))
-  OR EXISTS (SELECT 1 FROM mentorix.programs p WHERE p.created_by = $1 OR p.modified_by = $1)
+  OR EXISTS (
+    SELECT 1 FROM mentorix.programs p
+    WHERE (p.created_by = $1 OR p.modified_by = $1)
+      AND NOT EXISTS (SELECT 1 FROM purgeable_programs pp WHERE pp.id = p.id)
+  )
   OR EXISTS (
     SELECT 1 FROM mentorix.exercises e
-    WHERE e.created_by = $1 OR e.modified_by = $1
-      OR e.owner_trainer_id IN (SELECT id FROM trainer)
+    WHERE (e.created_by = $1 OR e.modified_by = $1
+        OR e.owner_trainer_id IN (SELECT id FROM trainer))
+      AND NOT EXISTS (SELECT 1 FROM purgeable_exercises pe WHERE pe.id = e.id)
   )
-  OR EXISTS (SELECT 1 FROM mentorix.program_weeks pw WHERE pw.modified_by = $1)
-  OR EXISTS (SELECT 1 FROM mentorix.program_week_days pwd WHERE pwd.modified_by = $1)
-  OR EXISTS (SELECT 1 FROM mentorix.program_week_day_block_exercises pwdbe WHERE pwdbe.modified_by = $1)
-  OR EXISTS (SELECT 1 FROM mentorix.program_versions pv WHERE pv.published_by = $1)
+  OR EXISTS (
+    SELECT 1 FROM mentorix.program_weeks pw
+    WHERE pw.modified_by = $1
+      AND NOT EXISTS (SELECT 1 FROM purgeable_programs pp WHERE pp.id = pw.program_id)
+  )
+  OR EXISTS (
+    SELECT 1 FROM mentorix.program_week_days pwd
+    WHERE pwd.modified_by = $1
+      AND NOT EXISTS (SELECT 1 FROM purgeable_programs pp WHERE pp.id = pwd.program_id)
+  )
+  OR EXISTS (
+    SELECT 1 FROM mentorix.program_week_day_block_exercises pwdbe
+    WHERE pwdbe.modified_by = $1
+      AND NOT EXISTS (
+        SELECT 1
+        FROM mentorix.program_week_day_blocks pwdb
+        JOIN mentorix.program_week_days pwd ON pwd.id = pwdb.program_week_day_id
+        JOIN purgeable_programs pp ON pp.id = pwd.program_id
+        WHERE pwdb.id = pwdbe.program_week_day_block_id
+      )
+  )
+  OR EXISTS (
+    SELECT 1 FROM mentorix.program_versions pv
+    WHERE pv.published_by = $1
+      AND NOT EXISTS (SELECT 1 FROM purgeable_programs pp WHERE pp.id = pv.program_id)
+  )
   OR EXISTS (
     SELECT 1 FROM mentorix.program_assignments pa
     WHERE pa.created_by = $1 OR pa.modified_by = $1
@@ -483,7 +591,11 @@ SELECT (
   )
   OR EXISTS (SELECT 1 FROM mentorix.client_workout_completions cwc WHERE cwc.trainer_id IN (SELECT id FROM trainer))
   OR EXISTS (SELECT 1 FROM mentorix.client_workout_completion_comments cwcc WHERE cwcc.trainer_id IN (SELECT id FROM trainer))
-  OR EXISTS (SELECT 1 FROM mentorix.program_block_clients pbc WHERE pbc.created_by = $1)
+  OR EXISTS (
+    SELECT 1 FROM mentorix.program_block_clients pbc
+    WHERE pbc.created_by = $1
+      AND NOT EXISTS (SELECT 1 FROM purgeable_programs pp WHERE pp.id = pbc.program_id)
+  )
   OR EXISTS (
     SELECT 1 FROM mentorix.trainer_plan_entitlements tpe
     WHERE tpe.source IN ('app_store', 'google_play') AND tpe.trainer_id IN (SELECT id FROM trainer)
@@ -494,10 +606,18 @@ SELECT (
 // True when the user's trainer side holds anything that account deletion must not destroy:
 // clients, authored or last edited programs, program trees, versions and exercises,
 // assignments, workout completions and comments on them, block visibility rules, and
-// entitlements paid through a store. Soft-deleted programs and exercises count. The edited
-// columns are the ones the database cannot detach from the user (RESTRICT, or SET NULL on a
-// NOT NULL column). Invites and admin-granted entitlements do not: they go
-// with the trainers row.
+// entitlements paid through a store. The edited columns are the ones the database cannot
+// detach from the user (RESTRICT, or SET NULL on a NOT NULL column). Invites and
+// admin-granted entitlements do not count: they go with the trainers row.
+// What the trainer deleted does not count either. A purgeable program is a soft-deleted
+// program the user created that no assignment or workout completion references, itself or
+// through one of its versions. A purgeable exercise is a soft-deleted exercise owned by the
+// user's trainers row that no program or version tree outside the purgeable programs uses.
+// PurgeDeletedProgramsByCreator and PurgeDeletedExercisesByOwner remove them. A purgeable
+// program is exempt from every column the user holds in its own rows and trees. An exercise
+// the user created or last edited that the user's trainers row does not own (a global one
+// included) still counts, and so does a soft-deleted program that another trainer created
+// and the user last edited.
 func (q *Queries) TrainerHasBusinessData(ctx context.Context, userID pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, trainerHasBusinessData, userID)
 	var has_business_data bool
