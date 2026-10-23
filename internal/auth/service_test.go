@@ -28,6 +28,8 @@ type fakeAuthStore struct {
 	clientCreated        bool
 	fillCalls            []fillDisplayNameCall
 	fillErr              error
+	emailFillCalls       []fillEmailCall
+	emailFillErr         error
 	linkRemaining        uuid.UUID
 	linkErr              error
 	linkCalls            []linkTelegramCall
@@ -51,6 +53,11 @@ type fakeAuthStore struct {
 type fillDisplayNameCall struct {
 	userID uuid.UUID
 	name   string
+}
+
+type fillEmailCall struct {
+	userID uuid.UUID
+	email  string
 }
 
 type linkTelegramCall struct {
@@ -87,6 +94,19 @@ func (f *fakeAuthStore) FillUserDisplayNameIfEmpty(_ context.Context, userID uui
 		return false, nil
 	}
 	f.profile.Name = name
+	return true, nil
+}
+
+// SetUserPrimaryEmailIfEmpty mirrors the SQL guard: only an empty stored email is replaced.
+func (f *fakeAuthStore) SetUserPrimaryEmailIfEmpty(_ context.Context, userID uuid.UUID, email string) (bool, error) {
+	f.emailFillCalls = append(f.emailFillCalls, fillEmailCall{userID, email})
+	if f.emailFillErr != nil {
+		return false, f.emailFillErr
+	}
+	if f.profile.Email != "" {
+		return false, nil
+	}
+	f.profile.Email = email
 	return true, nil
 }
 

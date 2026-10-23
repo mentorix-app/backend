@@ -54,6 +54,27 @@ func TestApple_success(t *testing.T) {
 	}
 }
 
+func TestApple_fillsEmptyEmailOfExistingAccount(t *testing.T) {
+	store := &fakeAuthStore{}
+	svc := testAuthService(store)
+	svc.appleVerifier = fakeIDTokenVerifier{claims: IDTokenClaims{
+		Subject: "s", Email: "  User@Example.COM ", EmailVerified: true, Nonce: hashedNonce(testAppleNonce),
+	}}
+	e := echo.New()
+	e.POST("/auth/apple", testAuthHandlers(svc).Apple)
+
+	rec := postJSON(e, "/auth/apple", `{"id_token":"raw-token","nonce":"`+testAppleNonce+`"}`)
+
+	assertHTTPStatus(t, rec, http.StatusOK)
+	var resp TokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Email != "user@example.com" {
+		t.Errorf("response email = %q, want the filled, normalized email", resp.Email)
+	}
+}
+
 func TestApple_nameIsOptionalAndNeverRejected(t *testing.T) {
 	long := strings.Repeat("я", 500)
 	for _, body := range []string{`{"id_token":"x","nonce":"n"}`, `{"id_token":"x","nonce":"n","name":"` + long + `"}`} {

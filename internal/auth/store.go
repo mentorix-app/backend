@@ -369,6 +369,19 @@ func (s *Store) FillUserDisplayNameIfEmpty(ctx context.Context, userID uuid.UUID
 	return rows > 0, nil
 }
 
+// SetUserPrimaryEmailIfEmpty sets the email only when the stored one is NULL
+// or empty, and reports whether it did.
+func (s *Store) SetUserPrimaryEmailIfEmpty(ctx context.Context, userID uuid.UUID, email string) (bool, error) {
+	rows, err := s.q.SetUserPrimaryEmailIfEmpty(ctx, sqlc.SetUserPrimaryEmailIfEmptyParams{
+		UserID:       pgconv.ToPGUUID(userID),
+		PrimaryEmail: email,
+	})
+	if err != nil {
+		return false, fmt.Errorf("set primary email: %w", err)
+	}
+	return rows > 0, nil
+}
+
 func (s *Store) UserRoles(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	roles, err := s.q.ListUserRoles(ctx, pgconv.ToPGUUID(userID))
 	if err != nil {
