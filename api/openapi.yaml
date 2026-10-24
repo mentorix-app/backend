@@ -2252,6 +2252,9 @@ paths:
     put:
       tags: [programs]
       summary: Update exercise in program day block
+      description: >
+        A block of type `emom`, `amrap`, `for_time`, `intervals`, `chipper` or
+        `superset` carries no sets: a non-empty `sets` returns 400.
       operationId: updateProgramBlockExercise
       security:
         - bearerAuth: []
@@ -2305,6 +2308,8 @@ paths:
     post:
       tags: [programs]
       summary: Merge program day blocks into one group
+      description: >
+        The merged block gets the type `skill_work` and no format settings.
       operationId: mergeProgramDayBlocks
       security:
         - bearerAuth: []
@@ -2420,6 +2425,9 @@ paths:
     post:
       tags: [programs]
       summary: Add exercise to a program day group block
+      description: >
+        A block of type `emom`, `amrap`, `for_time`, `intervals`, `chipper` or
+        `superset` carries no sets: a non-empty `sets` returns 400.
       operationId: addProgramBlockExercise
       security:
         - bearerAuth: []
@@ -2477,6 +2485,47 @@ paths:
           description: Forbidden (not owner and not admin)
         "404":
           description: Program, week, or block not found
+
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/copy:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+    post:
+      tags: [programs]
+      summary: Copy a block to the end of a day of the same program
+      description: >
+        Copies the block with its type, instruction, format settings and all
+        exercises (in order, with sets, reps and instruction). The target day
+        may be any day of any week of the program, the source day included.
+        The copy has its own client rules, copied from the source as separate
+        rows: changing one block's clients later does not change the other.
+        A limited copy may land in a day without a shared block; publishing
+        validates that.
+      operationId: copyProgramDayBlock
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProgramDayBlockCopy"
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not the program owner, or the program is archived and read-only; no admin override)
+        "404":
+          description: Program, week, block, or target day not found
 
   /programs/{id}/weeks/{week_id}/blocks/{block_id}/clients:
     parameters:
@@ -2551,6 +2600,39 @@ paths:
         "404":
           description: Program, week, block, or exercise item not found
 
+  /programs/{id}/weeks/{week_id}/blocks/{block_id}/exercises/{item_id}/duplicate:
+    parameters:
+      - $ref: "#/components/parameters/ProgramId"
+      - $ref: "#/components/parameters/ProgramWeekId"
+      - $ref: "#/components/parameters/ProgramDayBlockId"
+      - $ref: "#/components/parameters/ProgramDayExerciseId"
+    post:
+      tags: [programs]
+      summary: Duplicate an exercise
+      description: >
+        No request body. In a group block the copy (same exercise, sets, reps
+        and instruction) is inserted right after the original. In a single
+        block the copy becomes a new single block right after the original,
+        with the same instruction and a copy of the client rules.
+      operationId: duplicateProgramBlockExercise
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated program
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProgramDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Forbidden (not the program owner, or the program is archived and read-only; no admin override)
+        "404":
+          description: Program, week, block, or exercise item not found
+
   /programs/{id}/weeks/{week_id}/blocks/{block_id}/exercises/{item_id}/move:
     parameters:
       - $ref: "#/components/parameters/ProgramId"
@@ -2560,6 +2642,9 @@ paths:
     post:
       tags: [programs]
       summary: Move exercise into another block in the same week
+      description: >
+        Moving into a block of a type without sets (`emom`, `amrap`,
+        `for_time`, `intervals`, `chipper`, `superset`) clears the exercise sets.
       operationId: moveProgramExerciseToBlock
       security:
         - bearerAuth: []
@@ -3474,7 +3559,19 @@ components:
 
     ProgramDayBlock:
       type: object
-      required: [id, block_type, instruction, sort_order, client_user_ids, exercises, created_at]
+      required:
+        - id
+        - block_type
+        - instruction
+        - sort_order
+        - client_user_ids
+        - exercises
+        - created_at
+        - rounds
+        - duration_sec
+        - time_cap_sec
+        - work_sec
+        - rest_sec
       properties:
         id:
           type: string
@@ -3500,6 +3597,36 @@ components:
         created_at:
           type: string
           format: date-time
+        rounds:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100
+          description: Set only for `emom`, `for_time`, `intervals`, `superset`; null otherwise.
+        duration_sec:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 86400
+          description: Set only for `amrap`; null otherwise.
+        time_cap_sec:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 86400
+          description: Set only for `for_time`; null otherwise.
+        work_sec:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 86400
+          description: Set only for `intervals`; null otherwise.
+        rest_sec:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 86400
+          description: Set only for `intervals`; null otherwise.
 
     ProgramBlockType:
       type: string
@@ -3510,10 +3637,7 @@ components:
         - for_time
         - intervals
         - chipper
-        - ladder
-        - death_by
         - superset
-        - complex
         - skill_work
         - strength
         - conditioning
@@ -3528,10 +3652,7 @@ components:
         - for_time
         - intervals
         - chipper
-        - ladder
-        - death_by
         - superset
-        - complex
         - skill_work
         - strength
         - conditioning
@@ -3685,7 +3806,45 @@ components:
         instruction:
           type: string
           maxLength: 5000
-      description: Patch group block metadata. At least one field required.
+        rounds:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 100
+        duration_sec:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 86400
+        time_cap_sec:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 86400
+        work_sec:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 86400
+        rest_sec:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 86400
+      description: >
+        Patch group block metadata. At least one field required. For each of
+        `rounds`, `duration_sec`, `time_cap_sec`, `work_sec` and `rest_sec` an
+        absent key keeps the stored value, `null` clears it and an integer sets
+        it. The resulting block type (the request `block_type`, else the current
+        one) decides which of them apply: `emom` and `superset` take `rounds`;
+        `amrap` takes `duration_sec`; `for_time` takes `rounds` and
+        `time_cap_sec`; `intervals` takes `rounds`, `work_sec` and `rest_sec`;
+        every other type takes none. A non-null value for a field the resulting
+        type does not take returns 400, as does a value out of range. Stored
+        values of a field the new type does not take are reset, and `rounds`
+        carries over between the types that take it. Changing to a type without
+        sets (`emom`, `amrap`, `for_time`, `intervals`, `chipper`, `superset`)
+        clears the sets of the block's exercises.
 
     ProgramDayBlockMove:
       type: object
@@ -3700,6 +3859,15 @@ components:
           description: >
             Optional 1-based position among blocks in the target day.
             Omit to append at the end.
+
+    ProgramDayBlockCopy:
+      type: object
+      required: [target_day_id]
+      properties:
+        target_day_id:
+          type: string
+          format: uuid
+          description: Any day of the program. The copy is appended at its end.
 
     ProgramBlockClientsSet:
       type: object

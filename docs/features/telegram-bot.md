@@ -46,7 +46,7 @@ No push for: program removal (`program_id: null`), invite acceptance (welcome sh
 | «Статистика» | Inline URL button to the client's analytics page; link valid 30 minutes — [client-analytics.md](client-analytics.md) |
 | «Помощь» | Help text |
 
-Format for «Программа» and «Тренеры»: icons in header (`📅` or `👤`, `💪`, `📆`); exercises shown as `🏋 name - 3x8` with instructions in italics. Group blocks show a type icon (`🧩 Комплекс:`, `🔗 Суперсет:`, `🎯 Skill Work:`, `🦾 Сила:`, `🏃 Кондишн:`, `🤸 Гимнастика:`, `🏅 Тяжёлая атлетика:`, etc.), block instructions, and exercises labeled `А.` and `Б.`. «Тренеры» shows a trainer card `👤 Тренер:` plus `💪 Программа:`; with multiple trainers, a `✓` marks the active one, with inline selection.
+Format for «Программа» and «Тренеры»: icons in header (`📅` or `👤`, `💪`, `📆`); exercises shown as `🏋 name - 3x8` with instructions in italics. Group blocks show a type icon and label (`⏱ EMOM:`, `🔁 AMRAP:`, `🏁 For Time:`, `⚡ Интервалы:`, `📉 Чиппер:`, `🔗 Суперсет:`, `🎯 Skill Work:`, `🦾 Сила:`, `🏃 Кондишн:`, `🤸 Гимнастика:`, `🏅 Тяжёлая атлетика:`), block instructions, and exercises labeled `А.` and `Б.`. The bot does not print format settings (`rounds`, durations). «Тренеры» shows a trainer card `👤 Тренер:` plus `💪 Программа:`; with multiple trainers, a `✓` marks the active one, with inline selection.
 
 If no program is assigned: «<trainer name> пока не назначил программу». If the program has no workout days: «<trainer name> пока не добавил тренировочные дни в программу». In both cases, the trainer's display name is substituted.
 

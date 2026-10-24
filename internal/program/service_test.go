@@ -190,6 +190,14 @@ func (f *fakeProgramStore) ExtractBlockExercise(context.Context, uuid.UUID, uuid
 	return f.detail, f.err
 }
 
+func (f *fakeProgramStore) DuplicateBlockExercise(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
+func (f *fakeProgramStore) CopyDayBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
+	return f.detail, f.err
+}
+
 func (f *fakeProgramStore) MoveExerciseToBlock(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID) (Detail, error) {
 	return f.detail, f.err
 }

@@ -49,6 +49,17 @@ func (s *Store) AddBlockExercise(ctx context.Context, userID, programID, weekID,
 	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
 		return Detail{}, fmt.Errorf("lock program: %w", err)
 	}
+	// The type is read again under the lock: a concurrent patch may have changed it.
+	locked, err := qtx.GetDayBlockByID(ctx, pgconv.ToPGUUID(blockID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, pgx.ErrNoRows
+		}
+		return Detail{}, fmt.Errorf("get day block: %w", err)
+	}
+	if err := ensureSetsAllowed(BlockType(locked.BlockType), in.Sets); err != nil {
+		return Detail{}, err
+	}
 	blockPG := pgconv.ToPGUUID(blockID)
 	nextSort, err := qtx.NextBlockExerciseSort(ctx, blockPG)
 	if err != nil {
@@ -75,27 +86,56 @@ func (s *Store) PatchDayBlock(ctx context.Context, userID, programID, weekID, bl
 		return Detail{}, pgx.ErrNoRows
 	}
 
-	block, err := s.q.GetDayBlockByID(ctx, pgconv.ToPGUUID(blockID))
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+	block, err := qtx.GetDayBlockByID(ctx, pgconv.ToPGUUID(blockID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, pgx.ErrNoRows
 		}
 		return Detail{}, fmt.Errorf("get day block: %w", err)
 	}
-	if block.BlockType == string(BlockTypeSingle) {
+	current := BlockType(block.BlockType)
+	if current == BlockTypeSingle {
 		return Detail{}, fmt.Errorf("%w: single blocks cannot be patched", ErrValidation)
 	}
+	resulting := current
 	var blockType *string
 	if in.BlockType != nil {
-		v := string(*in.BlockType)
+		resulting = *in.BlockType
+		v := string(resulting)
 		blockType = &v
 	}
+	settings, err := in.resolveSettings(resulting, blockSettings{
+		Rounds:      intFromInt32(block.Rounds),
+		DurationSec: intFromInt32(block.DurationSec),
+		TimeCapSec:  intFromInt32(block.TimeCapSec),
+		WorkSec:     intFromInt32(block.WorkSec),
+		RestSec:     intFromInt32(block.RestSec),
+	})
+	if err != nil {
+		return Detail{}, err
+	}
+
 	modifiedAt, modifiedBy := dayBlockAudit(userID)
-	rows, err := s.q.UpdateDayBlock(ctx, sqlc.UpdateDayBlockParams{
+	rows, err := qtx.UpdateDayBlock(ctx, sqlc.UpdateDayBlockParams{
 		ID:               pgconv.ToPGUUID(blockID),
 		ProgramWeekDayID: block.ProgramWeekDayID,
 		BlockType:        blockType,
 		Instruction:      in.Instruction,
+		Rounds:           int32FromInt(settings.Rounds),
+		DurationSec:      int32FromInt(settings.DurationSec),
+		TimeCapSec:       int32FromInt(settings.TimeCapSec),
+		WorkSec:          int32FromInt(settings.WorkSec),
+		RestSec:          int32FromInt(settings.RestSec),
 		ModifiedAt:       modifiedAt,
 		ModifiedBy:       modifiedBy,
 	})
@@ -104,6 +144,20 @@ func (s *Store) PatchDayBlock(ctx context.Context, userID, programID, weekID, bl
 	}
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
+	}
+	// Every patch of a block without sets clears its sets, not only a type change: old code can
+	// write sets into such a block during a deploy. Rows without sets are not rewritten.
+	if !resulting.allowsSets() {
+		if err := qtx.ClearBlockExerciseSets(ctx, sqlc.ClearBlockExerciseSetsParams{
+			ProgramWeekDayBlockID: pgconv.ToPGUUID(blockID),
+			ModifiedAt:            modifiedAt,
+			ModifiedBy:            modifiedBy,
+		}); err != nil {
+			return Detail{}, fmt.Errorf("clear block exercise sets: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }
@@ -150,7 +204,9 @@ func (s *Store) MergeDayBlocks(ctx context.Context, userID, programID, weekID, d
 	primary := blocks[0]
 	mergedInstruction := mergeBlockInstructions(blocks)
 
-	blockType := string(BlockTypeComplex)
+	// The merged block starts with no format settings: UpdateDayBlock writes the
+	// unset ones as NULL.
+	blockType := string(BlockTypeSkillWork)
 	modifiedAt, modifiedBy := dayBlockAudit(userID)
 	if _, err := qtx.UpdateDayBlock(ctx, sqlc.UpdateDayBlockParams{
 		ID:               pgconv.ToPGUUID(primary.ID),
@@ -536,6 +592,18 @@ func (s *Store) MoveExerciseToBlock(ctx context.Context, userID, programID, week
 	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
 		return Detail{}, fmt.Errorf("lock program: %w", err)
 	}
+	// The target is read again under the lock, before anything is written: a concurrent
+	// request may have deleted it or changed its type.
+	lockedTarget, err := qtx.GetDayBlockByID(ctx, pgconv.ToPGUUID(targetBlockID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, pgx.ErrNoRows
+		}
+		return Detail{}, fmt.Errorf("get target block: %w", err)
+	}
+	if lockedTarget.BlockType == string(BlockTypeSingle) {
+		return Detail{}, fmt.Errorf("%w: cannot move exercise into single block", ErrValidation)
+	}
 	now := time.Now().UTC()
 	if err := qtx.UpdateBlockExercisePlacement(ctx, sqlc.UpdateBlockExercisePlacementParams{
 		ID:                    pgconv.ToPGUUID(itemID),
@@ -545,6 +613,16 @@ func (s *Store) MoveExerciseToBlock(ctx context.Context, userID, programID, week
 		ModifiedBy:            pgconv.ToPGUUID(userID),
 	}); err != nil {
 		return Detail{}, fmt.Errorf("move exercise to block: %w", err)
+	}
+	if !BlockType(lockedTarget.BlockType).allowsSets() {
+		if err := qtx.ClearBlockExerciseSetsByID(ctx, sqlc.ClearBlockExerciseSetsByIDParams{
+			ID:                    pgconv.ToPGUUID(itemID),
+			ModifiedAt:            now,
+			ModifiedBy:            pgconv.ToPGUUID(userID),
+			ProgramWeekDayBlockID: pgconv.ToPGUUID(targetBlockID),
+		}); err != nil {
+			return Detail{}, fmt.Errorf("clear moved exercise sets: %w", err)
+		}
 	}
 
 	sourceBlockID := pgconv.FromPGUUID(meta.ProgramWeekDayBlockID)

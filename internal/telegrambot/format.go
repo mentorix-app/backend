@@ -204,8 +204,6 @@ func blockTypeIcon(t program.BlockType) string {
 	switch t {
 	case program.BlockTypeSuperset:
 		return "🔗"
-	case program.BlockTypeComplex:
-		return "🧩"
 	case program.BlockTypeEMOM:
 		return "⏱"
 	case program.BlockTypeAMRAP:
@@ -216,10 +214,6 @@ func blockTypeIcon(t program.BlockType) string {
 		return "⚡"
 	case program.BlockTypeChipper:
 		return "📉"
-	case program.BlockTypeLadder:
-		return "📈"
-	case program.BlockTypeDeathBy:
-		return "💀"
 	case program.BlockTypeSkillWork:
 		return "🎯"
 	case program.BlockTypeStrength:
@@ -239,8 +233,6 @@ func blockTypeLabel(t program.BlockType) string {
 	switch t {
 	case program.BlockTypeSuperset:
 		return "Суперсет"
-	case program.BlockTypeComplex:
-		return "Комплекс"
 	case program.BlockTypeEMOM:
 		return "EMOM"
 	case program.BlockTypeAMRAP:
@@ -251,10 +243,6 @@ func blockTypeLabel(t program.BlockType) string {
 		return "Интервалы"
 	case program.BlockTypeChipper:
 		return "Чиппер"
-	case program.BlockTypeLadder:
-		return "Лестница"
-	case program.BlockTypeDeathBy:
-		return "Death By"
 	case program.BlockTypeSkillWork:
 		return "Skill Work"
 	case program.BlockTypeStrength:

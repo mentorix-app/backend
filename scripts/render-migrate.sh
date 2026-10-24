@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Render pre-deploy: apply golang-migrate migrations against DATABASE_URL.
-# Fail closed — a dirty or failed migrate aborts the deploy.
+# Render pre-deploy: apply golang-migrate migrations against DATABASE_URL, then refresh the
+# stored version fingerprints. Fail closed on migrate: a dirty or failed migrate aborts the deploy.
+# The refresh is best effort: the migrations are already committed, and an aborted deploy would
+# leave the old binary serving against the new schema. A failed refresh only warns; rerun it.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,3 +25,18 @@ fi
 echo "Running migrations..."
 migrate -path db/migrations -database "$DATABASE_URL" up
 echo "Migrations OK"
+
+refresh_fingerprints() {
+  if [[ -x ./bin/refresh-fingerprints ]]; then
+    ./bin/refresh-fingerprints
+  else
+    go run ./cmd/refresh-fingerprints
+  fi
+}
+
+echo "Refreshing version fingerprints..."
+if refresh_fingerprints; then
+  echo "Version fingerprints OK"
+else
+  echo "WARNING: version fingerprint refresh failed; continuing the deploy. Published programs may show unpublished changes until it is rerun (go run ./cmd/refresh-fingerprints)." >&2
+fi

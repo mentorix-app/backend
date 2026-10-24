@@ -128,7 +128,7 @@ func TestFormatTrainers_singleNoProgram(t *testing.T) {
 func TestFormatBlocks_groupExerciseInstruction(t *testing.T) {
 	sets, reps := "3", "5"
 	text := formatBlocks([]program.DayBlock{{
-		BlockType: program.BlockTypeComplex,
+		BlockType: program.BlockTypeSkillWork,
 		Exercises: []program.DayExercise{{
 			ExerciseNameRu: "Подтягивания",
 			Sets:           &sets,
@@ -192,7 +192,7 @@ func TestProgramDaysKeyboard_filtersEmptyDays(t *testing.T) {
 	sets, reps := "3", "10"
 	kb := programDaysKeyboard(1, []program.Day{
 		{DayNumber: 1},
-		{DayNumber: 2, Blocks: []program.DayBlock{{BlockType: program.BlockTypeComplex}}},
+		{DayNumber: 2, Blocks: []program.DayBlock{{BlockType: program.BlockTypeSkillWork}}},
 		{DayNumber: 3, Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{Sets: &sets, Reps: &reps}}}}},
 	}, nil)
 	if len(kb.InlineKeyboard) != 1 {
@@ -270,15 +270,15 @@ func TestProgramDayNavKeyboard_nextDayAndWeek(t *testing.T) {
 func TestFormatBlocks_withInstruction(t *testing.T) {
 	sets, reps := "3", "5"
 	text := formatBlocks([]program.DayBlock{{
-		BlockType:   program.BlockTypeComplex,
+		BlockType:   program.BlockTypeSkillWork,
 		Instruction: "3 раунда, отдых 2 мин",
 		Exercises: []program.DayExercise{
 			{ExerciseNameRu: "Подтягивания", Sets: &sets, Reps: &reps},
 			{ExerciseNameRu: "Жим", Sets: &sets, Reps: &reps},
 		},
 	}})
-	if !strings.Contains(text, "🧩 Комплекс:") {
-		t.Fatalf("expected complex header, got %q", text)
+	if !strings.Contains(text, "🎯 Skill Work:") {
+		t.Fatalf("expected skill work header, got %q", text)
 	}
 	if !strings.Contains(text, "3 раунда") {
 		t.Fatalf("expected block instruction, got %q", text)
@@ -312,8 +312,7 @@ func TestBlockTypeHeading_newTypes(t *testing.T) {
 func TestBlockTypeIcon_uniqueAmongGroupTypes(t *testing.T) {
 	groupTypes := []program.BlockType{
 		program.BlockTypeEMOM, program.BlockTypeAMRAP, program.BlockTypeForTime,
-		program.BlockTypeIntervals, program.BlockTypeChipper, program.BlockTypeLadder,
-		program.BlockTypeDeathBy, program.BlockTypeSuperset, program.BlockTypeComplex,
+		program.BlockTypeIntervals, program.BlockTypeChipper, program.BlockTypeSuperset,
 		program.BlockTypeSkillWork, program.BlockTypeStrength, program.BlockTypeConditioning,
 		program.BlockTypeGymnastics, program.BlockTypeWeightlifting,
 	}

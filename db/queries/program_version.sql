@@ -44,6 +44,16 @@ WHERE program_id = $1
 ORDER BY version_number DESC
 LIMIT 1;
 
+-- name: ListProgramVersionFingerprints :many
+SELECT id, content_fingerprint
+FROM mentorix.program_versions
+ORDER BY id;
+
+-- name: UpdateProgramVersionFingerprint :exec
+UPDATE mentorix.program_versions
+SET content_fingerprint = $2
+WHERE id = $1;
+
 -- name: GetMaxProgramVersionNumber :one
 SELECT COALESCE(MAX(version_number), 0)::int AS max_version_number
 FROM mentorix.program_versions
@@ -97,8 +107,13 @@ INSERT INTO mentorix.program_version_week_day_blocks (
   block_key,
   block_type,
   instruction,
-  sort_order
-) VALUES ($1, $2, $3, $4, $5)
+  sort_order,
+  rounds,
+  duration_sec,
+  time_cap_sec,
+  work_sec,
+  rest_sec
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING *;
 
 -- name: InsertProgramVersionDayExercise :one

@@ -1078,6 +1078,14 @@ func TestService_blockMutations_success(t *testing.T) {
 			_, err := svc.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, 1)
 			return err
 		}},
+		{"DuplicateBlockExercise", func() error {
+			_, err := svc.DuplicateBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+			return err
+		}},
+		{"CopyDayBlock", func() error {
+			_, err := svc.CopyDayBlock(ctx, userID, programID, weekID, blockID, dayID)
+			return err
+		}},
 		{"MoveExerciseToBlock", func() error {
 			_, err := svc.MoveExerciseToBlock(ctx, userID, programID, weekID, blockID, itemID, targetBlockID)
 			return err
@@ -1156,6 +1164,14 @@ func TestService_blockMutations_notFound(t *testing.T) {
 		}},
 		{"ExtractBlockExercise", func() error {
 			_, err := svc.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, 1)
+			return err
+		}},
+		{"DuplicateBlockExercise", func() error {
+			_, err := svc.DuplicateBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+			return err
+		}},
+		{"CopyDayBlock", func() error {
+			_, err := svc.CopyDayBlock(ctx, userID, programID, weekID, blockID, dayID)
 			return err
 		}},
 		{"MoveExerciseToBlock", func() error {
@@ -1271,6 +1287,14 @@ func TestService_blockMutations_readOnly(t *testing.T) {
 		}},
 		{"ExtractBlockExercise", func() error {
 			_, err := svc.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, 1)
+			return err
+		}},
+		{"DuplicateBlockExercise", func() error {
+			_, err := svc.DuplicateBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+			return err
+		}},
+		{"CopyDayBlock", func() error {
+			_, err := svc.CopyDayBlock(ctx, userID, programID, weekID, blockID, dayID)
 			return err
 		}},
 		{"MoveExerciseToBlock", func() error {
@@ -1432,6 +1456,14 @@ func TestService_blockMutations_forbidden(t *testing.T) {
 			_, err := svc.ExtractBlockExercise(ctx, otherID, programID, weekID, blockID, itemID, 1)
 			return err
 		}},
+		{"DuplicateBlockExercise", func() error {
+			_, err := svc.DuplicateBlockExercise(ctx, otherID, programID, weekID, blockID, itemID)
+			return err
+		}},
+		{"CopyDayBlock", func() error {
+			_, err := svc.CopyDayBlock(ctx, otherID, programID, weekID, blockID, dayID)
+			return err
+		}},
 		{"MoveExerciseToBlock", func() error {
 			_, err := svc.MoveExerciseToBlock(ctx, otherID, programID, weekID, blockID, itemID, targetBlockID)
 			return err
@@ -1574,6 +1606,14 @@ func TestService_blockMutations_storeError(t *testing.T) {
 		}},
 		{"ExtractBlockExercise", func() error {
 			_, err := svc.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, 1)
+			return err
+		}},
+		{"DuplicateBlockExercise", func() error {
+			_, err := svc.DuplicateBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+			return err
+		}},
+		{"CopyDayBlock", func() error {
+			_, err := svc.CopyDayBlock(ctx, userID, programID, weekID, blockID, dayID)
 			return err
 		}},
 		{"MoveExerciseToBlock", func() error {

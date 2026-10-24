@@ -63,6 +63,8 @@ func (h *Handlers) Mount(e *echo.Echo) {
 	g.POST("/:id/weeks/:week_id/blocks/:block_id/exercises", h.AddBlockExercise)
 	g.POST("/:id/weeks/:week_id/blocks/:block_id/move", h.MoveDayBlock)
 	g.POST("/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/extract", h.ExtractBlockExercise)
+	g.POST("/:id/weeks/:week_id/blocks/:block_id/copy", h.CopyDayBlock)
+	g.POST("/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/duplicate", h.DuplicateBlockExercise)
 	g.POST("/:id/weeks/:week_id/blocks/:block_id/exercises/:item_id/move", h.MoveExerciseToBlock)
 	g.PUT("/:id/weeks/:week_id/blocks/:block_id/clients", h.SetBlockClients)
 }
@@ -150,9 +152,16 @@ type DayBlocksMergeRequest struct {
 	BlockIDs []string `json:"block_ids"`
 }
 
+// DayBlockPatchRequest is the HTTP body. For each OptionalInt an absent key keeps
+// the stored value, null clears it and an integer sets it.
 type DayBlockPatchRequest struct {
-	BlockType   *BlockType `json:"block_type"`
-	Instruction *string    `json:"instruction"`
+	BlockType   *BlockType  `json:"block_type"`
+	Instruction *string     `json:"instruction"`
+	Rounds      OptionalInt `json:"rounds"`
+	DurationSec OptionalInt `json:"duration_sec"`
+	TimeCapSec  OptionalInt `json:"time_cap_sec"`
+	WorkSec     OptionalInt `json:"work_sec"`
+	RestSec     OptionalInt `json:"rest_sec"`
 }
 
 func (b DayBlockPatchRequest) toInput() BlockPatchInput {
@@ -162,6 +171,12 @@ func (b DayBlockPatchRequest) toInput() BlockPatchInput {
 type DayBlockMoveRequest struct {
 	TargetDayID string `json:"target_day_id"`
 	SortOrder   *int   `json:"sort_order"`
+}
+
+// DayBlockCopyRequest names the day the copy is appended to. It may be any day of the
+// program, the source day included.
+type DayBlockCopyRequest struct {
+	TargetDayID string `json:"target_day_id"`
 }
 
 type ExerciseMoveRequest struct {

@@ -59,6 +59,7 @@ func schemaBindings() []schemaBinding {
 		{name: "ProgramDayBlocksMerge", typ: reflect.TypeOf(program.DayBlocksMergeRequest{})},
 		{name: "ProgramDayBlockPatch", typ: reflect.TypeOf(program.DayBlockPatchRequest{})},
 		{name: "ProgramDayBlockMove", typ: reflect.TypeOf(program.DayBlockMoveRequest{})},
+		{name: "ProgramDayBlockCopy", typ: reflect.TypeOf(program.DayBlockCopyRequest{})},
 		{name: "ProgramBlockClientsSet", typ: reflect.TypeOf(program.BlockClientsSetRequest{})},
 		{name: "ProgramBlockExerciseExtract", typ: reflect.TypeOf(program.BlockExerciseExtractRequest{})},
 		{name: "ProgramExerciseMove", typ: reflect.TypeOf(program.ExerciseMoveRequest{})},
@@ -214,8 +215,7 @@ func enumBindings() []enumBinding {
 		{name: "ProgramBlockType", values: []string{
 			string(program.BlockTypeSingle), string(program.BlockTypeEMOM), string(program.BlockTypeAMRAP),
 			string(program.BlockTypeForTime), string(program.BlockTypeIntervals), string(program.BlockTypeChipper),
-			string(program.BlockTypeLadder), string(program.BlockTypeDeathBy), string(program.BlockTypeSuperset),
-			string(program.BlockTypeComplex), string(program.BlockTypeSkillWork), string(program.BlockTypeStrength),
+			string(program.BlockTypeSuperset), string(program.BlockTypeSkillWork), string(program.BlockTypeStrength),
 			string(program.BlockTypeConditioning), string(program.BlockTypeGymnastics), string(program.BlockTypeWeightlifting),
 		}},
 		{name: "PlanCode", values: []string{

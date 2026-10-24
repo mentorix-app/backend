@@ -9,7 +9,7 @@ func TestIsTrainingDay(t *testing.T) {
 	if !IsTrainingDay(Day{Blocks: []DayBlock{{Exercises: []DayExercise{{}}}}}) {
 		t.Fatal("day with exercise should count")
 	}
-	if !IsTrainingDay(Day{Blocks: []DayBlock{{BlockType: BlockTypeComplex}}}) {
+	if !IsTrainingDay(Day{Blocks: []DayBlock{{BlockType: BlockTypeSkillWork}}}) {
 		t.Fatal("day with block should count")
 	}
 }

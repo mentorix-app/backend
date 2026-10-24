@@ -16,13 +16,14 @@
 | Deployment | Render Blueprint ([`render.yaml`](../render.yaml)): stage from `develop`; CI-gated Deploy Hook |
 | Logs | `log/slog`, request ID |
 
-Migrations: version **35**, checked by `./scripts/migrate-check.sh`.
+Migrations: version **36**, checked by `./scripts/migrate-check.sh`.
 
 ## Layout
 
 ```text
 cmd/api/           — REST + Telegram webhook + push
 cmd/janitor/       — one-off cleanup of stale rows
+cmd/refresh-fingerprints/ — pre-deploy: rewrites stored program version fingerprints
 internal/app/      — mounts all OpenAPI routes; shared by cmd/api and the contract test
 internal/<feature>/ — domain
 internal/db/sqlc/  — generated

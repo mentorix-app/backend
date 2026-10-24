@@ -106,6 +106,11 @@ type DayBlock struct {
 	ClientUserIDs []uuid.UUID   `json:"client_user_ids"`
 	Exercises     []DayExercise `json:"exercises"`
 	CreatedAt     time.Time     `json:"created_at"`
+	Rounds        *int          `json:"rounds"`
+	DurationSec   *int          `json:"duration_sec"`
+	TimeCapSec    *int          `json:"time_cap_sec"`
+	WorkSec       *int          `json:"work_sec"`
+	RestSec       *int          `json:"rest_sec"`
 }
 
 type Week struct {
@@ -170,6 +175,11 @@ func (in CreateDayBlockInput) ValidateDraft() error {
 type BlockPatchInput struct {
 	BlockType   *BlockType
 	Instruction *string
+	Rounds      OptionalInt
+	DurationSec OptionalInt
+	TimeCapSec  OptionalInt
+	WorkSec     OptionalInt
+	RestSec     OptionalInt
 }
 
 type WeekBlockReorderDay struct {
@@ -285,6 +295,9 @@ func (in BlockPatchInput) Validate() error {
 		if !in.BlockType.isGroup() {
 			return fmt.Errorf("%w: single block_type cannot be set via patch", ErrValidation)
 		}
+	}
+	if err := in.validateBounds(); err != nil {
+		return err
 	}
 	return validateMaxRunes("instruction", in.Instruction, maxTextLen)
 }
