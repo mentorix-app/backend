@@ -113,8 +113,12 @@ func formatBlock(block program.DayBlock) string {
 	if blockIsGroup(block.BlockType) {
 		var b strings.Builder
 		fmt.Fprintf(&b, "%s:\n", blockTypeHeading(block.BlockType))
+		if line := blockSettingsLine(block); line != "" {
+			fmt.Fprintf(&b, "*%s*\n", line)
+		}
 		if instr := strings.TrimSpace(block.Instruction); instr != "" {
 			writeInstructionLine(&b, instr)
+			b.WriteString("\n")
 		}
 		b.WriteString("\n")
 		for i, ex := range block.Exercises {
@@ -198,6 +202,76 @@ func blockTypeHeading(t program.BlockType) string {
 		return label
 	}
 	return icon + " " + label
+}
+
+// blockSettingsLine renders the block format settings joined with " · ",
+// for example "8 раундов · работа 20 с / отдых 10 с". It returns an empty
+// string when no setting is set. The text is built from constants and
+// integers, so it contains no Markdown special characters and needs no
+// escaping inside the bold markers.
+func blockSettingsLine(block program.DayBlock) string {
+	var parts []string
+	if block.Rounds != nil {
+		parts = append(parts, roundsText(*block.Rounds))
+	}
+	if block.DurationSec != nil {
+		parts = append(parts, formatDurationSec(*block.DurationSec))
+	}
+	if block.TimeCapSec != nil {
+		parts = append(parts, "лимит "+formatDurationSec(*block.TimeCapSec))
+	}
+	if work := workRestText(block.WorkSec, block.RestSec); work != "" {
+		parts = append(parts, work)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// workRestText renders the work and rest intervals as one part, for example
+// "работа 20 с / отдых 10 с". A zero rest reads "без отдыха".
+func workRestText(workSec, restSec *int) string {
+	var parts []string
+	if workSec != nil {
+		parts = append(parts, "работа "+formatDurationSec(*workSec))
+	}
+	if restSec != nil {
+		if *restSec == 0 {
+			parts = append(parts, "без отдыха")
+		} else {
+			parts = append(parts, "отдых "+formatDurationSec(*restSec))
+		}
+	}
+	return strings.Join(parts, " / ")
+}
+
+// roundsText returns n with the Russian plural form of "раунд".
+func roundsText(n int) string {
+	word := "раундов"
+	if n%100 < 11 || n%100 > 14 {
+		switch n % 10 {
+		case 1:
+			word = "раунд"
+		case 2, 3, 4:
+			word = "раунда"
+		}
+	}
+	return fmt.Sprintf("%d %s", n, word)
+}
+
+// formatDurationSec renders seconds as "45 с", "12 мин", "1 мин 30 с" or
+// "1 ч 1 мин 1 с", omitting zero components.
+func formatDurationSec(sec int) string {
+	hours, minutes, seconds := sec/3600, sec%3600/60, sec%60
+	parts := make([]string, 0, 3)
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%d ч", hours))
+	}
+	if minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%d мин", minutes))
+	}
+	if seconds > 0 || len(parts) == 0 {
+		parts = append(parts, fmt.Sprintf("%d с", seconds))
+	}
+	return strings.Join(parts, " ")
 }
 
 func blockTypeIcon(t program.BlockType) string {
