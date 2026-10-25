@@ -457,3 +457,123 @@ func TestParseTrainerCallback(t *testing.T) {
 		t.Fatalf("parsed=%v ok=%v", parsed, ok)
 	}
 }
+
+func TestFormatBlock_settingsLine(t *testing.T) {
+	n := func(v int) *int { return &v }
+	tests := []struct {
+		name  string
+		block program.DayBlock
+		want  string
+	}{
+		{"emom rounds", program.DayBlock{BlockType: program.BlockTypeEMOM, Rounds: n(10)}, "⏱ EMOM:\n*10 раундов*\n\n"},
+		{"amrap duration", program.DayBlock{BlockType: program.BlockTypeAMRAP, DurationSec: n(720)}, "🔁 AMRAP:\n*12 мин*\n\n"},
+		{"for time rounds and cap", program.DayBlock{BlockType: program.BlockTypeForTime, Rounds: n(5), TimeCapSec: n(900)}, "🏁 For Time:\n*5 раундов · лимит 15 мин*\n\n"},
+		{"for time only rounds", program.DayBlock{BlockType: program.BlockTypeForTime, Rounds: n(5)}, "🏁 For Time:\n*5 раундов*\n\n"},
+		{"for time only cap", program.DayBlock{BlockType: program.BlockTypeForTime, TimeCapSec: n(900)}, "🏁 For Time:\n*лимит 15 мин*\n\n"},
+		{"intervals work and rest", program.DayBlock{BlockType: program.BlockTypeIntervals, Rounds: n(8), WorkSec: n(20), RestSec: n(10)}, "⚡ Интервалы:\n*8 раундов · работа 20 с / отдых 10 с*\n\n"},
+		{"intervals zero rest", program.DayBlock{BlockType: program.BlockTypeIntervals, Rounds: n(8), WorkSec: n(20), RestSec: n(0)}, "⚡ Интервалы:\n*8 раундов · работа 20 с / без отдыха*\n\n"},
+		{"intervals only work", program.DayBlock{BlockType: program.BlockTypeIntervals, WorkSec: n(20)}, "⚡ Интервалы:\n*работа 20 с*\n\n"},
+		{"intervals only rest", program.DayBlock{BlockType: program.BlockTypeIntervals, RestSec: n(10)}, "⚡ Интервалы:\n*отдых 10 с*\n\n"},
+		{"intervals only zero rest", program.DayBlock{BlockType: program.BlockTypeIntervals, RestSec: n(0)}, "⚡ Интервалы:\n*без отдыха*\n\n"},
+		{"superset rounds", program.DayBlock{BlockType: program.BlockTypeSuperset, Rounds: n(3)}, "🔗 Суперсет:\n*3 раунда*\n\n"},
+		{"mixed duration", program.DayBlock{BlockType: program.BlockTypeAMRAP, DurationSec: n(90)}, "🔁 AMRAP:\n*1 мин 30 с*\n\n"},
+		{"all fields in order", program.DayBlock{BlockType: program.BlockTypeIntervals, Rounds: n(2), DurationSec: n(600), TimeCapSec: n(60), WorkSec: n(30), RestSec: n(15)},
+			"⚡ Интервалы:\n*2 раунда · 10 мин · лимит 1 мин · работа 30 с / отдых 15 с*\n\n"},
+		{"settings and instruction", program.DayBlock{BlockType: program.BlockTypeEMOM, Rounds: n(10), Instruction: "темп ровный"}, "⏱ EMOM:\n*10 раундов*\n_темп ровный_\n\n"},
+		{"instruction without settings", program.DayBlock{BlockType: program.BlockTypeEMOM, Instruction: "темп ровный"}, "⏱ EMOM:\n_темп ровный_\n\n"},
+		{"no settings", program.DayBlock{BlockType: program.BlockTypeEMOM}, "⏱ EMOM:\n\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.block.Exercises = []program.DayExercise{{ExerciseNameRu: "Присед"}}
+			text := formatBlock(tt.block)
+			head, tail, ok := strings.Cut(text, "А. Присед")
+			if !ok {
+				t.Fatalf("exercise line missing in %q", text)
+			}
+			if tail != "" {
+				t.Fatalf("unexpected text after the exercise in %q", text)
+			}
+			if got, want := head, tt.want; got != want {
+				t.Fatalf("lines before the exercise = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestFormatBlock_fullLayout(t *testing.T) {
+	rounds, work, rest := 8, 20, 10
+	reps := "10"
+	text := formatBlock(program.DayBlock{
+		BlockType:   program.BlockTypeIntervals,
+		Rounds:      &rounds,
+		WorkSec:     &work,
+		RestSec:     &rest,
+		Instruction: "без пауз",
+		Exercises:   []program.DayExercise{{ExerciseNameRu: "Берпи", Reps: &reps}},
+	})
+	want := "⚡ Интервалы:\n*8 раундов · работа 20 с / отдых 10 с*\n_без пауз_\n\nА. Берпи - 10 повт."
+	if text != want {
+		t.Fatalf("block = %q, want %q", text, want)
+	}
+}
+
+func TestFormatBlock_noSettingsLayout(t *testing.T) {
+	reps := "10"
+	block := program.DayBlock{
+		BlockType: program.BlockTypeEMOM,
+		Exercises: []program.DayExercise{{ExerciseNameRu: "Берпи", Reps: &reps}},
+	}
+	if got, want := formatBlock(block), "⏱ EMOM:\n\nА. Берпи - 10 повт."; got != want {
+		t.Fatalf("block = %q, want %q", got, want)
+	}
+	block.Instruction = "темп ровный"
+	if got, want := formatBlock(block), "⏱ EMOM:\n_темп ровный_\n\nА. Берпи - 10 повт."; got != want {
+		t.Fatalf("block with instruction = %q, want %q", got, want)
+	}
+}
+
+func TestFormatBlock_singleBlockIgnoresSettings(t *testing.T) {
+	rounds := 3
+	text := formatBlock(program.DayBlock{
+		BlockType: program.BlockTypeSingle,
+		Rounds:    &rounds,
+		Exercises: []program.DayExercise{{ExerciseNameRu: "Присед"}},
+	})
+	if text != "🏋 Присед" {
+		t.Fatalf("single block = %q", text)
+	}
+}
+
+func TestRoundsText(t *testing.T) {
+	tests := []struct {
+		n    int
+		want string
+	}{
+		{1, "1 раунд"}, {2, "2 раунда"}, {4, "4 раунда"}, {5, "5 раундов"},
+		{11, "11 раундов"}, {12, "12 раундов"}, {14, "14 раундов"}, {20, "20 раундов"},
+		{21, "21 раунд"}, {22, "22 раунда"}, {25, "25 раундов"}, {100, "100 раундов"},
+		{101, "101 раунд"}, {111, "111 раундов"}, {13, "13 раундов"}, {113, "113 раундов"},
+	}
+	for _, tt := range tests {
+		if got := roundsText(tt.n); got != tt.want {
+			t.Errorf("roundsText(%d) = %q, want %q", tt.n, got, tt.want)
+		}
+	}
+}
+
+func TestFormatDurationSec(t *testing.T) {
+	tests := []struct {
+		sec  int
+		want string
+	}{
+		{1, "1 с"}, {45, "45 с"}, {59, "59 с"}, {60, "1 мин"}, {90, "1 мин 30 с"},
+		{720, "12 мин"}, {3599, "59 мин 59 с"}, {3600, "1 ч"}, {3660, "1 ч 1 мин"},
+		{3661, "1 ч 1 мин 1 с"}, {3601, "1 ч 1 с"}, {5400, "1 ч 30 мин"}, {86400, "24 ч"},
+	}
+	for _, tt := range tests {
+		if got := formatDurationSec(tt.sec); got != tt.want {
+			t.Errorf("formatDurationSec(%d) = %q, want %q", tt.sec, got, tt.want)
+		}
+	}
+}
