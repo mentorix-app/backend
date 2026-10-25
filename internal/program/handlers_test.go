@@ -1092,7 +1092,7 @@ func TestHandlers_Publish_mapsValidationError(t *testing.T) {
 		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
 		detail: Detail{
 			Program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
-			Weeks:   []Week{{WeekNumber: 1, Days: []Day{{DayNumber: 1, Blocks: []DayBlock{{BlockType: BlockTypeComplex}}}}}},
+			Weeks:   []Week{{WeekNumber: 1, Days: []Day{{DayNumber: 1, Blocks: []DayBlock{{BlockType: BlockTypeSkillWork}}}}}},
 		},
 	}
 	h := programHandler(store)

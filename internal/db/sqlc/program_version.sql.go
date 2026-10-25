@@ -253,9 +253,14 @@ INSERT INTO mentorix.program_version_week_day_blocks (
   block_key,
   block_type,
   instruction,
-  sort_order
-) VALUES ($1, $2, $3, $4, $5)
-RETURNING id, program_version_week_day_id, block_type, instruction, sort_order, created_at, block_key
+  sort_order,
+  rounds,
+  duration_sec,
+  time_cap_sec,
+  work_sec,
+  rest_sec
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, program_version_week_day_id, block_type, instruction, sort_order, created_at, block_key, rounds, duration_sec, time_cap_sec, work_sec, rest_sec
 `
 
 type InsertProgramVersionDayBlockParams struct {
@@ -264,6 +269,11 @@ type InsertProgramVersionDayBlockParams struct {
 	BlockType               string      `json:"block_type"`
 	Instruction             string      `json:"instruction"`
 	SortOrder               int32       `json:"sort_order"`
+	Rounds                  *int32      `json:"rounds"`
+	DurationSec             *int32      `json:"duration_sec"`
+	TimeCapSec              *int32      `json:"time_cap_sec"`
+	WorkSec                 *int32      `json:"work_sec"`
+	RestSec                 *int32      `json:"rest_sec"`
 }
 
 func (q *Queries) InsertProgramVersionDayBlock(ctx context.Context, arg InsertProgramVersionDayBlockParams) (MentorixProgramVersionWeekDayBlock, error) {
@@ -273,6 +283,11 @@ func (q *Queries) InsertProgramVersionDayBlock(ctx context.Context, arg InsertPr
 		arg.BlockType,
 		arg.Instruction,
 		arg.SortOrder,
+		arg.Rounds,
+		arg.DurationSec,
+		arg.TimeCapSec,
+		arg.WorkSec,
+		arg.RestSec,
 	)
 	var i MentorixProgramVersionWeekDayBlock
 	err := row.Scan(
@@ -283,6 +298,11 @@ func (q *Queries) InsertProgramVersionDayBlock(ctx context.Context, arg InsertPr
 		&i.SortOrder,
 		&i.CreatedAt,
 		&i.BlockKey,
+		&i.Rounds,
+		&i.DurationSec,
+		&i.TimeCapSec,
+		&i.WorkSec,
+		&i.RestSec,
 	)
 	return i, err
 }
@@ -401,7 +421,7 @@ func (q *Queries) ListLatestProgramVersionsByProgramIDs(ctx context.Context, pro
 }
 
 const listProgramVersionDayBlocksByVersionID = `-- name: ListProgramVersionDayBlocksByVersionID :many
-SELECT pvb.id, pvb.program_version_week_day_id, pvb.block_type, pvb.instruction, pvb.sort_order, pvb.created_at, pvb.block_key
+SELECT pvb.id, pvb.program_version_week_day_id, pvb.block_type, pvb.instruction, pvb.sort_order, pvb.created_at, pvb.block_key, pvb.rounds, pvb.duration_sec, pvb.time_cap_sec, pvb.work_sec, pvb.rest_sec
 FROM mentorix.program_version_week_day_blocks pvb
 JOIN mentorix.program_version_week_days pd ON pd.id = pvb.program_version_week_day_id
 WHERE pd.program_version_id = $1
@@ -425,6 +445,11 @@ func (q *Queries) ListProgramVersionDayBlocksByVersionID(ctx context.Context, pr
 			&i.SortOrder,
 			&i.CreatedAt,
 			&i.BlockKey,
+			&i.Rounds,
+			&i.DurationSec,
+			&i.TimeCapSec,
+			&i.WorkSec,
+			&i.RestSec,
 		); err != nil {
 			return nil, err
 		}
@@ -573,6 +598,37 @@ func (q *Queries) ListProgramVersionDaysByVersionID(ctx context.Context, program
 	return items, nil
 }
 
+const listProgramVersionFingerprints = `-- name: ListProgramVersionFingerprints :many
+SELECT id, content_fingerprint
+FROM mentorix.program_versions
+ORDER BY id
+`
+
+type ListProgramVersionFingerprintsRow struct {
+	ID                 pgtype.UUID `json:"id"`
+	ContentFingerprint string      `json:"content_fingerprint"`
+}
+
+func (q *Queries) ListProgramVersionFingerprints(ctx context.Context) ([]ListProgramVersionFingerprintsRow, error) {
+	rows, err := q.db.Query(ctx, listProgramVersionFingerprints)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProgramVersionFingerprintsRow{}
+	for rows.Next() {
+		var i ListProgramVersionFingerprintsRow
+		if err := rows.Scan(&i.ID, &i.ContentFingerprint); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProgramVersionWeeksByVersionID = `-- name: ListProgramVersionWeeksByVersionID :many
 SELECT id, program_version_id, week_number, sort_order, created_at
 FROM mentorix.program_version_weeks
@@ -669,4 +725,20 @@ func (q *Queries) ListProgramVersionsByProgramID(ctx context.Context, programID 
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateProgramVersionFingerprint = `-- name: UpdateProgramVersionFingerprint :exec
+UPDATE mentorix.program_versions
+SET content_fingerprint = $2
+WHERE id = $1
+`
+
+type UpdateProgramVersionFingerprintParams struct {
+	ID                 pgtype.UUID `json:"id"`
+	ContentFingerprint string      `json:"content_fingerprint"`
+}
+
+func (q *Queries) UpdateProgramVersionFingerprint(ctx context.Context, arg UpdateProgramVersionFingerprintParams) error {
+	_, err := q.db.Exec(ctx, updateProgramVersionFingerprint, arg.ID, arg.ContentFingerprint)
+	return err
 }

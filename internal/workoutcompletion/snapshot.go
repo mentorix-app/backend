@@ -18,6 +18,11 @@ type snapshotBlock struct {
 	BlockType   string             `json:"block_type"`
 	Instruction string             `json:"instruction,omitempty"`
 	Exercises   []snapshotExercise `json:"exercises"`
+	Rounds      *int               `json:"rounds,omitempty"`
+	DurationSec *int               `json:"duration_sec,omitempty"`
+	TimeCapSec  *int               `json:"time_cap_sec,omitempty"`
+	WorkSec     *int               `json:"work_sec,omitempty"`
+	RestSec     *int               `json:"rest_sec,omitempty"`
 }
 
 type daySnapshot struct {
@@ -41,6 +46,11 @@ func buildDaySnapshot(day program.Day) (json.RawMessage, error) {
 			BlockType:   string(b.BlockType),
 			Instruction: b.Instruction,
 			Exercises:   exs,
+			Rounds:      b.Rounds,
+			DurationSec: b.DurationSec,
+			TimeCapSec:  b.TimeCapSec,
+			WorkSec:     b.WorkSec,
+			RestSec:     b.RestSec,
 		})
 	}
 	return json.Marshal(daySnapshot{Blocks: blocks})

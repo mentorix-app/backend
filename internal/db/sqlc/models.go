@@ -159,6 +159,11 @@ type MentorixProgramVersionWeekDayBlock struct {
 	SortOrder               int32       `json:"sort_order"`
 	CreatedAt               time.Time   `json:"created_at"`
 	BlockKey                pgtype.UUID `json:"block_key"`
+	Rounds                  *int32      `json:"rounds"`
+	DurationSec             *int32      `json:"duration_sec"`
+	TimeCapSec              *int32      `json:"time_cap_sec"`
+	WorkSec                 *int32      `json:"work_sec"`
+	RestSec                 *int32      `json:"rest_sec"`
 }
 
 type MentorixProgramVersionWeekDayBlockExercise struct {
@@ -204,6 +209,11 @@ type MentorixProgramWeekDayBlock struct {
 	ModifiedAt       time.Time   `json:"modified_at"`
 	ModifiedBy       pgtype.UUID `json:"modified_by"`
 	BlockKey         pgtype.UUID `json:"block_key"`
+	Rounds           *int32      `json:"rounds"`
+	DurationSec      *int32      `json:"duration_sec"`
+	TimeCapSec       *int32      `json:"time_cap_sec"`
+	WorkSec          *int32      `json:"work_sec"`
+	RestSec          *int32      `json:"rest_sec"`
 }
 
 type MentorixProgramWeekDayBlockExercise struct {

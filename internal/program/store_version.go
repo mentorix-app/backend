@@ -202,6 +202,11 @@ func (s *Store) RestoreWorkingTreeFromLatestVersion(ctx context.Context, id, use
 					SortOrder:        int32(block.SortOrder),
 					ModifiedAt:       now,
 					ModifiedBy:       userPG,
+					Rounds:           int32FromInt(block.Rounds),
+					DurationSec:      int32FromInt(block.DurationSec),
+					TimeCapSec:       int32FromInt(block.TimeCapSec),
+					WorkSec:          int32FromInt(block.WorkSec),
+					RestSec:          int32FromInt(block.RestSec),
 				})
 				if err != nil {
 					return Detail{}, fmt.Errorf("insert day block: %w", err)
@@ -306,6 +311,11 @@ func (s *Store) freezeVersion(ctx context.Context, q *sqlc.Queries, d Detail, us
 					BlockType:               string(block.BlockType),
 					Instruction:             block.Instruction,
 					SortOrder:               int32(block.SortOrder),
+					Rounds:                  int32FromInt(block.Rounds),
+					DurationSec:             int32FromInt(block.DurationSec),
+					TimeCapSec:              int32FromInt(block.TimeCapSec),
+					WorkSec:                 int32FromInt(block.WorkSec),
+					RestSec:                 int32FromInt(block.RestSec),
 				})
 				if err != nil {
 					return fmt.Errorf("insert program version day block: %w", err)

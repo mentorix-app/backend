@@ -172,6 +172,95 @@ func TestHandlers_ExtractBlockExercise(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 }
 
+type duplicateCaptureStore struct {
+	fakeProgramStore
+	programID, weekID, blockID, itemID uuid.UUID
+}
+
+func (s *duplicateCaptureStore) DuplicateBlockExercise(_ context.Context, _, programID, weekID, blockID, itemID uuid.UUID) (Detail, error) {
+	s.programID, s.weekID, s.blockID, s.itemID = programID, weekID, blockID, itemID
+	return s.detail, nil
+}
+
+func TestHandlers_DuplicateBlockExercise(t *testing.T) {
+	userID := uuid.New()
+	programID, weekID, blockID, itemID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	store := &duplicateCaptureStore{fakeProgramStore: fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+	}}
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/exercises/"+itemID.String()+"/duplicate", "", userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
+		"item_id":  itemID.String(),
+	})
+	if err := programHandler(store).DuplicateBlockExercise(c); err != nil {
+		t.Fatalf("DuplicateBlockExercise: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+	got := [4]uuid.UUID{store.programID, store.weekID, store.blockID, store.itemID}
+	if want := [4]uuid.UUID{programID, weekID, blockID, itemID}; got != want {
+		t.Fatalf("store got program/week/block/item %v, want %v", got, want)
+	}
+}
+
+func TestHandlers_CopyDayBlock(t *testing.T) {
+	userID, programID, weekID, dayID, blockID, h := blockHandlerFixture()
+	body := `{"target_day_id":"` + dayID.String() + `"}`
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPost, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String()+"/copy", body, userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
+	})
+	if err := h.CopyDayBlock(c); err != nil {
+		t.Fatalf("CopyDayBlock: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+}
+
+type copyCaptureStore struct {
+	fakeProgramStore
+	blockID, targetDayID uuid.UUID
+}
+
+func (s *copyCaptureStore) CopyDayBlock(_ context.Context, _, _, _, blockID, targetDayID uuid.UUID) (Detail, error) {
+	s.blockID, s.targetDayID = blockID, targetDayID
+	return s.detail, nil
+}
+
+func TestHandlers_CopyDayBlock_passesBlockAndTargetDay(t *testing.T) {
+	userID := uuid.New()
+	programID := uuid.New()
+	blockID := uuid.New()
+	targetDayID := uuid.New()
+	store := &copyCaptureStore{fakeProgramStore: fakeProgramStore{
+		program: Program{ID: programID, CreatedBy: userID, Status: StatusDraft},
+	}}
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPost, "/", `{"target_day_id":"`+targetDayID.String()+`"}`, userID, map[string]string{
+		"id": programID.String(), "week_id": uuid.New().String(), "block_id": blockID.String(),
+	})
+	if err := programHandler(store).CopyDayBlock(c); err != nil {
+		t.Fatalf("CopyDayBlock: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+	if store.blockID != blockID || store.targetDayID != targetDayID {
+		t.Fatalf("store got block %s target %s, want %s and %s", store.blockID, store.targetDayID, blockID, targetDayID)
+	}
+}
+
+func TestHandlers_CopyDayBlock_invalidJSON(t *testing.T) {
+	userID := uuid.New()
+	h := programHandler(&fakeProgramStore{})
+	e := echo.New()
+	c, _ := programContext(e, http.MethodPost, "/", "{", userID, map[string]string{
+		"id": uuid.New().String(), "week_id": uuid.New().String(), "block_id": uuid.New().String(),
+	})
+	assertHTTPError(t, h.CopyDayBlock(c), http.StatusBadRequest)
+}
+
 func TestHandlers_MoveExerciseToBlock(t *testing.T) {
 	userID, programID, weekID, _, blockID, h := blockHandlerFixture()
 	itemID := uuid.New()
@@ -205,12 +294,107 @@ func TestHandlers_ReorderDayBlocks(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK)
 }
 
+type patchCaptureStore struct {
+	fakeProgramStore
+	got BlockPatchInput
+	err error
+}
+
+func (s *patchCaptureStore) PatchDayBlock(_ context.Context, _, _, _, _ uuid.UUID, in BlockPatchInput) (Detail, error) {
+	s.got = in
+	return s.detail, s.err
+}
+
+func patchBlockRequest(t *testing.T, store *patchCaptureStore, body string) (*httptest.ResponseRecorder, error) {
+	t.Helper()
+	userID := uuid.New()
+	programID := uuid.New()
+	weekID := uuid.New()
+	blockID := uuid.New()
+	store.program = Program{ID: programID, CreatedBy: userID, Status: StatusDraft}
+	e := echo.New()
+	c, rec := programContext(e, http.MethodPatch, "/programs/"+programID.String()+"/weeks/"+weekID.String()+"/blocks/"+blockID.String(), body, userID, map[string]string{
+		"id":       programID.String(),
+		"week_id":  weekID.String(),
+		"block_id": blockID.String(),
+	})
+	return rec, programHandler(store).PatchDayBlock(c)
+}
+
+func TestHandlers_PatchDayBlock_passesTriStateFields(t *testing.T) {
+	store := &patchCaptureStore{}
+	body := `{"rounds":8,"duration_sec":null,"rest_sec":0}`
+	rec, err := patchBlockRequest(t, store, body)
+	if err != nil {
+		t.Fatalf("PatchDayBlock: %v", err)
+	}
+	assertStatus(t, rec, http.StatusOK)
+
+	got := store.got
+	if !got.Rounds.Present || got.Rounds.Value == nil || *got.Rounds.Value != 8 {
+		t.Fatalf("rounds = %+v, want set to 8", got.Rounds)
+	}
+	if !got.DurationSec.Present || got.DurationSec.Value != nil {
+		t.Fatalf("duration_sec = %+v, want present and null", got.DurationSec)
+	}
+	if !got.RestSec.Present || got.RestSec.Value == nil || *got.RestSec.Value != 0 {
+		t.Fatalf("rest_sec = %+v, want set to 0", got.RestSec)
+	}
+	if got.TimeCapSec.Present || got.WorkSec.Present {
+		t.Fatalf("absent keys must stay absent: time_cap_sec=%+v work_sec=%+v", got.TimeCapSec, got.WorkSec)
+	}
+}
+
+func TestHandlers_PatchDayBlock_rejectsBadBodies(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		storeErr  error
+		wantCode  int
+		wantStore bool
+	}{
+		{"string value", `{"rounds":"8"}`, nil, http.StatusBadRequest, false},
+		{"fractional value", `{"rounds":8.5}`, nil, http.StatusBadRequest, false},
+		{"bool value", `{"work_sec":true}`, nil, http.StatusBadRequest, false},
+		{"rounds above max", `{"rounds":101}`, nil, http.StatusBadRequest, false},
+		{"rounds zero", `{"rounds":0}`, nil, http.StatusBadRequest, false},
+		{"duration above max", `{"duration_sec":86401}`, nil, http.StatusBadRequest, false},
+		{"rest negative", `{"rest_sec":-1}`, nil, http.StatusBadRequest, false},
+		{"removed block type", `{"block_type":"complex"}`, nil, http.StatusBadRequest, false},
+		{"unknown block type", `{"block_type":"nope"}`, nil, http.StatusBadRequest, false},
+		{"field not allowed for the type", `{"duration_sec":600}`, fmt.Errorf("%w: duration_sec is not allowed for block_type emom", ErrValidation), http.StatusBadRequest, true},
+		{"block not found", `{"rounds":3}`, pgx.ErrNoRows, http.StatusNotFound, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &patchCaptureStore{err: tt.storeErr}
+			_, err := patchBlockRequest(t, store, tt.body)
+			assertHTTPError(t, err, tt.wantCode)
+			if called := store.got != (BlockPatchInput{}); called != tt.wantStore {
+				t.Fatalf("store called = %v, want %v", called, tt.wantStore)
+			}
+		})
+	}
+}
+
 func TestPatchBlockBody_toInput(t *testing.T) {
 	blockType := BlockTypeEMOM
 	instr := "work"
-	got := DayBlockPatchRequest{BlockType: &blockType, Instruction: &instr}.toInput()
+	rounds := 6
+	got := DayBlockPatchRequest{
+		BlockType:   &blockType,
+		Instruction: &instr,
+		Rounds:      OptionalInt{Present: true, Value: &rounds},
+		RestSec:     OptionalInt{Present: true},
+	}.toInput()
 	if got.BlockType == nil || *got.BlockType != BlockTypeEMOM || got.Instruction == nil || *got.Instruction != instr {
 		t.Fatalf("toInput() = %+v", got)
+	}
+	if !got.Rounds.Present || got.Rounds.Value == nil || *got.Rounds.Value != 6 {
+		t.Fatalf("rounds = %+v", got.Rounds)
+	}
+	if !got.RestSec.Present || got.RestSec.Value != nil || got.DurationSec.Present {
+		t.Fatalf("rest_sec/duration_sec = %+v / %+v", got.RestSec, got.DurationSec)
 	}
 }
 
@@ -277,6 +461,20 @@ func TestHandlers_blockEndpoints_unauthorized(t *testing.T) {
 			c.SetParamValues(programID.String(), weekID.String(), blockID.String(), itemID.String())
 			return h.ExtractBlockExercise(c)
 		}},
+		{"DuplicateBlockExercise", func() error {
+			c := e.NewContext(httptest.NewRequest(http.MethodPost, "/", nil), httptest.NewRecorder())
+			c.SetParamNames("id", "week_id", "block_id", "item_id")
+			c.SetParamValues(programID.String(), weekID.String(), blockID.String(), itemID.String())
+			return h.DuplicateBlockExercise(c)
+		}},
+		{"CopyDayBlock", func() error {
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"target_day_id":"`+dayID.String()+`"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			c := e.NewContext(req, httptest.NewRecorder())
+			c.SetParamNames("id", "week_id", "block_id")
+			c.SetParamValues(programID.String(), weekID.String(), blockID.String())
+			return h.CopyDayBlock(c)
+		}},
 		{"MoveExerciseToBlock", func() error {
 			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"target_block_id":"`+blockID.String()+`"}`))
 			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -330,6 +528,60 @@ func TestHandlers_blockEndpoints_invalidID(t *testing.T) {
 				"id": uuid.New().String(), "week_id": weekID.String(), "block_id": blockID.String(),
 			})
 			return h.MoveDayBlock(c)
+		}},
+		{"CopyDayBlock invalid target", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", `{"target_day_id":"bad"}`, userID, map[string]string{
+				"id": uuid.New().String(), "week_id": weekID.String(), "block_id": blockID.String(),
+			})
+			return h.CopyDayBlock(c)
+		}},
+		{"CopyDayBlock missing target", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", `{}`, userID, map[string]string{
+				"id": uuid.New().String(), "week_id": weekID.String(), "block_id": blockID.String(),
+			})
+			return h.CopyDayBlock(c)
+		}},
+		{"CopyDayBlock invalid block", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", `{"target_day_id":"`+dayID.String()+`"}`, userID, map[string]string{
+				"id": uuid.New().String(), "week_id": weekID.String(), "block_id": "bad",
+			})
+			return h.CopyDayBlock(c)
+		}},
+		{"CopyDayBlock invalid program", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", `{"target_day_id":"`+dayID.String()+`"}`, userID, map[string]string{
+				"id": "bad", "week_id": weekID.String(), "block_id": blockID.String(),
+			})
+			return h.CopyDayBlock(c)
+		}},
+		{"CopyDayBlock invalid week", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", `{"target_day_id":"`+dayID.String()+`"}`, userID, map[string]string{
+				"id": uuid.New().String(), "week_id": "bad", "block_id": blockID.String(),
+			})
+			return h.CopyDayBlock(c)
+		}},
+		{"DuplicateBlockExercise invalid program", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", "", userID, map[string]string{
+				"id": "bad", "week_id": weekID.String(), "block_id": blockID.String(), "item_id": uuid.New().String(),
+			})
+			return h.DuplicateBlockExercise(c)
+		}},
+		{"DuplicateBlockExercise invalid week", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", "", userID, map[string]string{
+				"id": uuid.New().String(), "week_id": "bad", "block_id": blockID.String(), "item_id": uuid.New().String(),
+			})
+			return h.DuplicateBlockExercise(c)
+		}},
+		{"DuplicateBlockExercise invalid block", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", "", userID, map[string]string{
+				"id": uuid.New().String(), "week_id": weekID.String(), "block_id": "bad", "item_id": uuid.New().String(),
+			})
+			return h.DuplicateBlockExercise(c)
+		}},
+		{"DuplicateBlockExercise invalid item", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", "", userID, map[string]string{
+				"id": uuid.New().String(), "week_id": weekID.String(), "block_id": blockID.String(), "item_id": "bad",
+			})
+			return h.DuplicateBlockExercise(c)
 		}},
 		{"AddBlockExercise invalid exercise", func() error {
 			c, _ := programContext(e, http.MethodPost, "/", `{"exercise_id":"bad","sets":"3","reps":"10"}`, userID, map[string]string{
@@ -523,6 +775,18 @@ func TestHandlers_blockEndpoints_notFound(t *testing.T) {
 				"id": programID.String(), "week_id": weekID.String(), "block_id": blockID.String(), "item_id": itemID.String(),
 			})
 			return h.ExtractBlockExercise(c)
+		}},
+		{"DuplicateBlockExercise", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", "", userID, map[string]string{
+				"id": programID.String(), "week_id": weekID.String(), "block_id": blockID.String(), "item_id": itemID.String(),
+			})
+			return h.DuplicateBlockExercise(c)
+		}},
+		{"CopyDayBlock", func() error {
+			c, _ := programContext(e, http.MethodPost, "/", `{"target_day_id":"`+dayID.String()+`"}`, userID, map[string]string{
+				"id": programID.String(), "week_id": weekID.String(), "block_id": blockID.String(),
+			})
+			return h.CopyDayBlock(c)
 		}},
 		{"MoveExerciseToBlock", func() error {
 			c, _ := programContext(e, http.MethodPost, "/", `{"target_block_id":"`+blockID.String()+`"}`, userID, map[string]string{

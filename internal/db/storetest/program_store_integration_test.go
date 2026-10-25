@@ -512,7 +512,6 @@ func TestProgramStore_WeeksAndReorder(t *testing.T) {
 
 	withAdded, err := progStore.AddBlockExercise(ctx, trainerID, draft.ID, week2ID, patchedGroup.ID, program.DayExerciseInput{
 		ExerciseID: catalogExercise.ID,
-		Sets:       &sets,
 		Reps:       &reps,
 	})
 	if err != nil {

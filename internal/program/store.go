@@ -287,6 +287,11 @@ func (s *Store) listWeeksWithDaysAndExercises(ctx context.Context, q *sqlc.Queri
 			SortOrder:   int(row.SortOrder),
 			Exercises:   exercises,
 			CreatedAt:   row.CreatedAt.UTC(),
+			Rounds:      intFromInt32(row.Rounds),
+			DurationSec: intFromInt32(row.DurationSec),
+			TimeCapSec:  intFromInt32(row.TimeCapSec),
+			WorkSec:     intFromInt32(row.WorkSec),
+			RestSec:     intFromInt32(row.RestSec),
 		})
 	}
 
@@ -769,8 +774,30 @@ func (s *Store) UpdateBlockExercise(ctx context.Context, userID, programID, week
 		}
 	}
 
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Detail{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := s.q.WithTx(tx)
+	if err := qtx.LockProgramForUpdate(ctx, pgconv.ToPGUUID(programID)); err != nil {
+		return Detail{}, fmt.Errorf("lock program: %w", err)
+	}
+	// The type is read again under the lock: a concurrent patch may have changed it.
+	locked, err := qtx.GetDayBlockByID(ctx, pgconv.ToPGUUID(blockID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, pgx.ErrNoRows
+		}
+		return Detail{}, fmt.Errorf("get day block: %w", err)
+	}
+	if err := ensureSetsAllowed(BlockType(locked.BlockType), in.Sets); err != nil {
+		return Detail{}, err
+	}
+
 	now := time.Now().UTC()
-	rows, err := s.q.UpdateBlockExercise(ctx, sqlc.UpdateBlockExerciseParams{
+	rows, err := qtx.UpdateBlockExercise(ctx, sqlc.UpdateBlockExerciseParams{
 		ID:                    pgconv.ToPGUUID(itemID),
 		ProgramWeekDayBlockID: pgconv.ToPGUUID(blockID),
 		ExerciseID:            pgconv.ToPGUUID(in.ExerciseID),
@@ -785,6 +812,9 @@ func (s *Store) UpdateBlockExercise(ctx context.Context, userID, programID, week
 	}
 	if rows == 0 {
 		return Detail{}, pgx.ErrNoRows
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Detail{}, fmt.Errorf("commit: %w", err)
 	}
 	return s.GetDetail(ctx, programID)
 }

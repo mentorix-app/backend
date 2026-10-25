@@ -39,6 +39,8 @@ The same migration added `block_key uuid NOT NULL DEFAULT gen_random_uuid()` to 
 | Merge (`.../blocks/merge`) | `400` if blocks being merged have different client lists (including "all shared" ≠ "one limited") — no single correct result |
 | Ungroup (`.../blocks/{block_id}/ungroup`) | each resulting `single` inherits group client list |
 | Extract exercise (`.../exercises/{item_id}/extract`) | new `single` inherits client list from source block |
+| Duplicate a `single` (`.../exercises/{item_id}/duplicate`) | the new `single` gets a copy of the client list, as separate rows |
+| Copy block (`.../blocks/{block_id}/copy`) | the copy gets a copy of the client list, as separate rows; later changes to one block do not touch the other; the day invariant is not checked, publish catches it |
 | Move exercise (`.../exercises/{item_id}/move`) | rule **not transferred** — exercise gets visibility of target block |
 | Move block to another day (`.../blocks/{block_id}/move`) | block client list does not change |
 

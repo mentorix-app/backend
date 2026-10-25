@@ -35,6 +35,11 @@ type blockFingerprint struct {
 	Instruction string                `json:"instruction"`
 	SortOrder   int                   `json:"sort_order"`
 	Exercises   []exerciseFingerprint `json:"exercises"`
+	Rounds      *int                  `json:"rounds,omitempty"`
+	DurationSec *int                  `json:"duration_sec,omitempty"`
+	TimeCapSec  *int                  `json:"time_cap_sec,omitempty"`
+	WorkSec     *int                  `json:"work_sec,omitempty"`
+	RestSec     *int                  `json:"rest_sec,omitempty"`
 }
 
 type exerciseFingerprint struct {
@@ -100,6 +105,11 @@ func DetailFingerprint(d Detail) (string, error) {
 					Instruction: block.Instruction,
 					SortOrder:   block.SortOrder,
 					Exercises:   make([]exerciseFingerprint, 0, len(block.Exercises)),
+					Rounds:      block.Rounds,
+					DurationSec: block.DurationSec,
+					TimeCapSec:  block.TimeCapSec,
+					WorkSec:     block.WorkSec,
+					RestSec:     block.RestSec,
 				}
 				exercises := append([]DayExercise(nil), block.Exercises...)
 				sort.Slice(exercises, func(i, j int) bool {

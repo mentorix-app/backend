@@ -6,7 +6,7 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 
 | Feature | Link |
 | ------- | ---- |
-| Exercise blocks in a program day (single / groups, merge, move) | [features/program-blocks.md](features/program-blocks.md) |
+| Exercise blocks in a program day (single / groups, merge, move, copy, duplicate, format settings) | [features/program-blocks.md](features/program-blocks.md) |
 | Per-client block visibility (`block_key`, client list on block) | [features/program-block-visibility.md](features/program-block-visibility.md) |
 | Infrastructure (health, config, slog, CORS, proxy) | [features/health.md](features/health.md), [architecture.md](architecture.md) |
 | Auth (refresh, logout, me, rate limit) | [features/auth.md](features/auth.md) |
@@ -33,5 +33,5 @@ Lists only **implemented** features, aligned with code. Plans are added as work 
 | Render stage (Blueprint) | [environments.md](environments.md), [`render.yaml`](../render.yaml) |
 | Garbage cleanup (one-row assignments, auto version purge, orphaned block visibility rules, invites, stale Redis, janitor) | [features/garbage-cleanup.md](features/garbage-cleanup.md) |
 
-_Migrations: version 35 (`./scripts/migrate-check.sh`)._
+_Migrations: version 36 (`./scripts/migrate-check.sh`)._
 

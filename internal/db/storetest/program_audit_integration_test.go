@@ -219,6 +219,55 @@ func TestProgramStore_mutatorsRecordActingUser(t *testing.T) {
 		assertModifiedBy(t, pool, editor, exercisesOfBlockQuery, group.ID)
 	})
 
+	t.Run("DuplicateBlockExercise in group", func(t *testing.T) {
+		f, group, _ := newGroup(t, 2)
+		if _, err := store.DuplicateBlockExercise(ctx, editor, f.programID, f.weekID, group.ID, group.Exercises[0].ID); err != nil {
+			t.Fatalf("DuplicateBlockExercise: %v", err)
+		}
+		assertModifiedBy(t, pool, editor, exercisesOfBlockQuery, group.ID)
+	})
+
+	t.Run("DuplicateBlockExercise of single", func(t *testing.T) {
+		f, group, single := newGroup(t, 2)
+		d, err := store.GetDetail(ctx, f.programID)
+		if err != nil {
+			t.Fatalf("GetDetail: %v", err)
+		}
+		day, _ := findDay(d.Weeks[0], f.dayID)
+		var itemID uuid.UUID
+		for _, b := range day.Blocks {
+			if b.ID == single {
+				itemID = b.Exercises[0].ID
+			}
+		}
+		d, err = store.DuplicateBlockExercise(ctx, editor, f.programID, f.weekID, single, itemID)
+		if err != nil {
+			t.Fatalf("DuplicateBlockExercise: %v", err)
+		}
+		day, _ = findDay(d.Weeks[0], f.dayID)
+		for _, b := range day.Blocks {
+			if b.ID != group.ID && b.ID != single {
+				assertModifiedBy(t, pool, editor, exercisesOfBlockQuery, b.ID)
+			}
+		}
+		assertModifiedBy(t, pool, editor, blocksOfDayQuery, f.dayID)
+	})
+
+	t.Run("CopyDayBlock", func(t *testing.T) {
+		f, group, _ := newGroup(t, 2)
+		d, err := store.CopyDayBlock(ctx, editor, f.programID, f.weekID, group.ID, f.dayID)
+		if err != nil {
+			t.Fatalf("CopyDayBlock: %v", err)
+		}
+		day, _ := findDay(d.Weeks[0], f.dayID)
+		copied := day.Blocks[len(day.Blocks)-1]
+		if copied.ID == group.ID {
+			t.Fatal("copy was not appended")
+		}
+		assertModifiedBy(t, pool, editor, exercisesOfBlockQuery, copied.ID)
+		assertModifiedBy(t, pool, editor, blocksOfDayQuery, f.dayID)
+	})
+
 	t.Run("MoveExerciseToBlock", func(t *testing.T) {
 		f, group, _ := newGroup(t, 3)
 		before := map[uuid.UUID]bool{}

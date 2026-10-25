@@ -203,13 +203,15 @@ WHERE week_id = $1
 ORDER BY sort_order ASC, day_number ASC;
 
 -- name: ListDayBlocks :many
-SELECT id, block_key, block_type, instruction, sort_order, created_at
+SELECT id, block_key, block_type, instruction, sort_order, created_at,
+  rounds, duration_sec, time_cap_sec, work_sec, rest_sec
 FROM mentorix.program_week_day_blocks
 WHERE program_week_day_id = $1
 ORDER BY sort_order ASC, created_at ASC;
 
 -- name: GetDayBlockByID :one
-SELECT id, block_key, program_week_day_id, block_type, instruction, sort_order, created_at
+SELECT id, block_key, program_week_day_id, block_type, instruction, sort_order, created_at,
+  rounds, duration_sec, time_cap_sec, work_sec, rest_sec
 FROM mentorix.program_week_day_blocks
 WHERE id = $1;
 
@@ -241,14 +243,39 @@ RETURNING id, block_key;
 -- name: InsertDayBlockWithKey :one
 INSERT INTO mentorix.program_week_day_blocks (
   program_week_day_id, block_key, block_type, instruction,
-  sort_order, modified_at, modified_by
-) VALUES ($1, $2, $3, $4, $5, $6, $7)
+  sort_order, modified_at, modified_by,
+  rounds, duration_sec, time_cap_sec, work_sec, rest_sec
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+RETURNING id, block_key;
+
+-- name: InsertDayBlockCopy :one
+-- A new block with the type, instruction and format settings of the source block. The block_key
+-- is new (column default), so its client rules are separate rows. The source must belong to
+-- program_id, otherwise nothing is inserted (no rows).
+INSERT INTO mentorix.program_week_day_blocks (
+  program_week_day_id, block_type, instruction, sort_order,
+  rounds, duration_sec, time_cap_sec, work_sec, rest_sec,
+  modified_at, modified_by
+)
+SELECT sqlc.arg('program_week_day_id'), src.block_type, src.instruction, sqlc.arg('sort_order'),
+  src.rounds, src.duration_sec, src.time_cap_sec, src.work_sec, src.rest_sec,
+  sqlc.arg('modified_at'), sqlc.arg('modified_by')
+FROM mentorix.program_week_day_blocks src
+JOIN mentorix.program_week_days src_day ON src_day.id = src.program_week_day_id
+WHERE src.id = sqlc.arg('source_block_id') AND src_day.program_id = sqlc.arg('program_id')
 RETURNING id, block_key;
 
 -- name: UpdateDayBlock :execrows
+-- The five format settings are written as given: NULL clears them, so the caller
+-- passes the final values, not a delta.
 UPDATE mentorix.program_week_day_blocks SET
   block_type = COALESCE(sqlc.narg('block_type'), block_type),
   instruction = COALESCE(sqlc.narg('instruction'), instruction),
+  rounds = sqlc.narg('rounds'),
+  duration_sec = sqlc.narg('duration_sec'),
+  time_cap_sec = sqlc.narg('time_cap_sec'),
+  work_sec = sqlc.narg('work_sec'),
+  rest_sec = sqlc.narg('rest_sec'),
   modified_at = sqlc.arg('modified_at'),
   modified_by = sqlc.arg('modified_by')
 WHERE id = sqlc.arg('id') AND program_week_day_id = sqlc.arg('program_week_day_id');
@@ -306,7 +333,8 @@ ORDER BY d.sort_order ASC, d.day_number ASC;
 -- name: ListProgramBlocks :many
 -- Every block of the program, same columns and order as ListDayBlocks plus
 -- program_week_day_id to assign each block to its day.
-SELECT b.id, b.program_week_day_id, b.block_key, b.block_type, b.instruction, b.sort_order, b.created_at
+SELECT b.id, b.program_week_day_id, b.block_key, b.block_type, b.instruction, b.sort_order, b.created_at,
+  b.rounds, b.duration_sec, b.time_cap_sec, b.work_sec, b.rest_sec
 FROM mentorix.program_week_day_blocks b
 JOIN mentorix.program_week_days d ON d.id = b.program_week_day_id
 JOIN mentorix.program_weeks w ON w.id = d.week_id
@@ -347,6 +375,33 @@ INSERT INTO mentorix.program_week_day_block_exercises (
   modified_at, modified_by
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
+-- name: InsertBlockExerciseCopy :one
+-- A new exercise row with the exercise, sets, reps and instruction of the source item. The item
+-- must sit in source_block_id, otherwise nothing is inserted (no rows).
+INSERT INTO mentorix.program_week_day_block_exercises (
+  program_week_day_block_id, exercise_id, sort_order, sets, reps, instruction,
+  modified_at, modified_by
+)
+SELECT sqlc.arg('program_week_day_block_id'), src.exercise_id, sqlc.arg('sort_order'),
+  src.sets, src.reps, src.instruction, sqlc.arg('modified_at'), sqlc.arg('modified_by')
+FROM mentorix.program_week_day_block_exercises src
+WHERE src.id = sqlc.arg('source_item_id')
+  AND src.program_week_day_block_id = sqlc.arg('source_block_id')
+RETURNING id;
+
+-- name: InsertBlockExercisesCopy :exec
+-- Copies every exercise of the source block into the target block in one statement, in the
+-- source order, numbered 1..N.
+INSERT INTO mentorix.program_week_day_block_exercises (
+  program_week_day_block_id, exercise_id, sort_order, sets, reps, instruction,
+  modified_at, modified_by
+)
+SELECT sqlc.arg('program_week_day_block_id'), src.exercise_id,
+  (row_number() OVER (ORDER BY src.sort_order, src.created_at, src.id))::int,
+  src.sets, src.reps, src.instruction, sqlc.arg('modified_at'), sqlc.arg('modified_by')
+FROM mentorix.program_week_day_block_exercises src
+WHERE src.program_week_day_block_id = sqlc.arg('source_block_id');
+
 -- name: UpdateBlockExercise :execrows
 UPDATE mentorix.program_week_day_block_exercises SET
   exercise_id = $3,
@@ -356,6 +411,20 @@ UPDATE mentorix.program_week_day_block_exercises SET
   modified_at = $7,
   modified_by = $8
 WHERE id = $1 AND program_week_day_block_id = $2;
+
+-- name: ClearBlockExerciseSets :exec
+UPDATE mentorix.program_week_day_block_exercises SET
+  sets = NULL,
+  modified_at = $2,
+  modified_by = $3
+WHERE program_week_day_block_id = $1 AND sets IS NOT NULL;
+
+-- name: ClearBlockExerciseSetsByID :exec
+UPDATE mentorix.program_week_day_block_exercises SET
+  sets = NULL,
+  modified_at = $2,
+  modified_by = $3
+WHERE id = $1 AND program_week_day_block_id = $4 AND sets IS NOT NULL;
 
 -- name: DeleteBlockExercise :execrows
 DELETE FROM mentorix.program_week_day_block_exercises

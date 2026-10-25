@@ -30,6 +30,14 @@ import (
 // on purpose, so the production loaders can stay set-based while the proof of
 // equality stays independent of them.
 
+func optInt(v *int32) *int {
+	if v == nil {
+		return nil
+	}
+	n := int(*v)
+	return &n
+}
+
 // oracleWeeks is the original per-parent loader: weeks, then days per week,
 // blocks per day, exercises per block, then the Go sort and the block client
 // rules.
@@ -78,6 +86,11 @@ func oracleWeeks(ctx context.Context, q *sqlc.Queries, programID uuid.UUID) ([]p
 					SortOrder:   int(b.SortOrder),
 					Exercises:   exercises,
 					CreatedAt:   b.CreatedAt.UTC(),
+					Rounds:      optInt(b.Rounds),
+					DurationSec: optInt(b.DurationSec),
+					TimeCapSec:  optInt(b.TimeCapSec),
+					WorkSec:     optInt(b.WorkSec),
+					RestSec:     optInt(b.RestSec),
 				})
 			}
 			days = append(days, program.Day{
@@ -364,6 +377,18 @@ func (f *detailFixture) buildRichProgram(t *testing.T, name string, clients []uu
 	}
 	if d, err = f.svc.ReorderBlockExercises(ctx, f.trainer, d.ID, week1.ID, group.ID, exIDs); err != nil {
 		t.Fatalf("ReorderBlockExercises: %v", err)
+	}
+
+	// The group becomes a for_time block with format settings, so the loaders are
+	// compared on non-null settings too.
+	forTime := program.BlockTypeForTime
+	rounds, timeCap := 5, 900
+	if d, err = f.svc.PatchDayBlock(ctx, f.trainer, d.ID, week1.ID, group.ID, program.BlockPatchInput{
+		BlockType:  &forTime,
+		Rounds:     program.OptionalInt{Present: true, Value: &rounds},
+		TimeCapSec: program.OptionalInt{Present: true, Value: &timeCap},
+	}); err != nil {
+		t.Fatalf("PatchDayBlock: %v", err)
 	}
 
 	// Visibility rules on the group block (two clients) and on one single.

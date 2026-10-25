@@ -71,6 +71,11 @@ func (s *Store) getVersionDetail(ctx context.Context, q *sqlc.Queries, versionID
 			SortOrder:   int(blockRow.SortOrder),
 			Exercises:   nil,
 			CreatedAt:   blockRow.CreatedAt.UTC(),
+			Rounds:      intFromInt32(blockRow.Rounds),
+			DurationSec: intFromInt32(blockRow.DurationSec),
+			TimeCapSec:  intFromInt32(blockRow.TimeCapSec),
+			WorkSec:     intFromInt32(blockRow.WorkSec),
+			RestSec:     intFromInt32(blockRow.RestSec),
 		})
 	}
 

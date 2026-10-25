@@ -39,6 +39,8 @@ type programStore interface {
 	UngroupDayBlock(ctx context.Context, userID, programID, weekID, blockID uuid.UUID) (Detail, error)
 	MoveDayBlock(ctx context.Context, userID, programID, weekID, blockID, targetDayID uuid.UUID, insertSort int) (Detail, error)
 	ExtractBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID, insertSort int) (Detail, error)
+	DuplicateBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID) (Detail, error)
+	CopyDayBlock(ctx context.Context, userID, programID, weekID, blockID, targetDayID uuid.UUID) (Detail, error)
 	MoveExerciseToBlock(ctx context.Context, userID, programID, weekID, blockID, itemID, targetBlockID uuid.UUID) (Detail, error)
 	DeleteDayBlock(ctx context.Context, userID, programID, weekID, blockID uuid.UUID) (Detail, error)
 	ReorderWeeks(ctx context.Context, programID uuid.UUID, weekIDs []uuid.UUID) (Detail, error)
@@ -563,6 +565,34 @@ func (s *Service) ExtractBlockExercise(ctx context.Context, userID, programID, w
 		return Detail{}, err
 	}
 	d, err := s.store.ExtractBlockExercise(ctx, userID, programID, weekID, blockID, itemID, insertSort)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) DuplicateBlockExercise(ctx context.Context, userID, programID, weekID, blockID, itemID uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.DuplicateBlockExercise(ctx, userID, programID, weekID, blockID, itemID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Detail{}, ErrNotFound
+		}
+		return Detail{}, err
+	}
+	return d, nil
+}
+
+func (s *Service) CopyDayBlock(ctx context.Context, userID, programID, weekID, blockID, targetDayID uuid.UUID) (Detail, error) {
+	if err := s.ensureMutable(ctx, userID, programID); err != nil {
+		return Detail{}, err
+	}
+	d, err := s.store.CopyDayBlock(ctx, userID, programID, weekID, blockID, targetDayID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, ErrNotFound

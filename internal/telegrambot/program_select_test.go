@@ -12,7 +12,7 @@ func TestDayHasExercises(t *testing.T) {
 	if dayHasExercises(program.Day{}) {
 		t.Fatal("empty day should not have exercises")
 	}
-	if dayHasExercises(program.Day{Blocks: []program.DayBlock{{BlockType: program.BlockTypeComplex}}}) {
+	if dayHasExercises(program.Day{Blocks: []program.DayBlock{{BlockType: program.BlockTypeSkillWork}}}) {
 		t.Fatal("block without exercises should not count")
 	}
 	if !dayHasExercises(program.Day{Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{}}}}}) {
@@ -24,7 +24,7 @@ func TestWeekHasSelectableDays(t *testing.T) {
 	week := program.Week{
 		Days: []program.Day{
 			{},
-			{Blocks: []program.DayBlock{{BlockType: program.BlockTypeComplex}}},
+			{Blocks: []program.DayBlock{{BlockType: program.BlockTypeSkillWork}}},
 			{Blocks: []program.DayBlock{{Exercises: []program.DayExercise{{}}}}},
 		},
 	}

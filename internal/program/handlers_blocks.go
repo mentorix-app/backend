@@ -173,6 +173,50 @@ func (h *Handlers) ExtractBlockExercise(c echo.Context) error {
 	return c.JSON(http.StatusOK, d)
 }
 
+func (h *Handlers) CopyDayBlock(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, weekID, blockID, err := parseWeekBlockIDs(c)
+	if err != nil {
+		return err
+	}
+	var body DayBlockCopyRequest
+	if err := c.Bind(&body); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidJSON)
+	}
+	targetDayID, err := uuid.Parse(body.TargetDayID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	d, err := h.svc.CopyDayBlock(c.Request().Context(), uid, programID, weekID, blockID, targetDayID)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
+func (h *Handlers) DuplicateBlockExercise(c echo.Context) error {
+	uid, ok := auth.UserIDFromContext(c)
+	if !ok {
+		return echo.NewHTTPError(http.StatusUnauthorized, httpx.MsgUnauthorized)
+	}
+	programID, weekID, blockID, err := parseWeekBlockIDs(c)
+	if err != nil {
+		return err
+	}
+	itemID, err := parseID(c.Param("item_id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, httpx.MsgInvalidID)
+	}
+	d, err := h.svc.DuplicateBlockExercise(c.Request().Context(), uid, programID, weekID, blockID, itemID)
+	if err != nil {
+		return mapProgramError(err)
+	}
+	return c.JSON(http.StatusOK, d)
+}
+
 func (h *Handlers) MoveExerciseToBlock(c echo.Context) error {
 	uid, ok := auth.UserIDFromContext(c)
 	if !ok {

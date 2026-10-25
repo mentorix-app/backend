@@ -13,7 +13,11 @@ Clients mark workout days in Telegram or in the app (result as text goes to the 
 - `program_assignments.completion_cycle_id` (new on assignment or `program_id` change; stays the same on sync; repeating the same `program_id` in `PUT` returns `already_assigned`)
 - `client_workout_completions` is the log; `source` is `telegram` or `app`
 
-Migrations: `000020_workout_completions`, `000033_workout_completion_source_app` (widens the source check).
+Migrations: `000020_workout_completions`, `000033_workout_completion_source_app` (widens the source check), `000036_program_block_settings` (rewrites removed block types in `day_snapshot`).
+
+## Snapshot
+
+`day_snapshot` is the day as the client saw it: `blocks` in order, each with `block_type`, `instruction`, its exercises (`name`, `name_ru`, `sets`, `reps`, `instruction`), and `rounds`, `duration_sec`, `time_cap_sec`, `work_sec`, `rest_sec` when set (keys absent when null). Blocks the client cannot see are left out ([program-block-visibility.md](program-block-visibility.md)). Migration `000036` renamed the block type `ladder`, `death_by` and `complex` to `skill_work` in existing snapshots and changed nothing else.
 
 ## Telegram
 
